@@ -43,3 +43,10 @@ export const loginSchema = z.object({
 // ═══════════════════════════════════════════
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// ═══════════════════════════════════════════
+// ثوابت الجلسة
+// ═══════════════════════════════════════════
+export const SESSION_COOKIE_NAME = "nokhba_session";
+export const SESSION_DURATION_DAYS = 30;
+export const SESSION_DURATION_MS = SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000;
