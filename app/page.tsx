@@ -22,6 +22,8 @@ import PromoBanners from "@/components/home/PromoBanners";
 import FlashDeals from "@/components/home/FlashDeals";
 
 import ProductGrid from "@/components/products/ProductGrid";
+import CartDrawer from "@/components/cart/CartDrawer";
+import { useCart } from "@/lib/hooks/useCart";
 
 type SortBy = "featured" | "price-low" | "price-high" | "rating";
 
@@ -29,8 +31,8 @@ export default function Home() {
   const [activeCategoryId, setActiveCategoryId] = useState<CategoryId | "all">("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("featured");
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const { items: cartItems, totalCount: cartCount, subtotal, addItem, updateQuantity, removeItem } = useCart();
 
   const filteredProducts = useMemo(() => {
     let result = search.trim() ? searchProducts(search) : PRODUCTS;
@@ -50,17 +52,7 @@ export default function Home() {
   const featuredProducts = useMemo(() => getFeaturedProducts(8), []);
 
   function handleAddToCart(product: Product) {
-    setCart((current) => {
-      const existing = current.find((item) => item.id === product.id);
-      if (existing) {
-        return current.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-      return [...current, { ...product, quantity: 1 }];
-    });
+    addItem(product);
     setIsCartOpen(true);
   }
 
@@ -68,8 +60,6 @@ export default function Home() {
     setActiveCategoryId(id);
     document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
   }
-
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f7f6f2] pb-12 text-[#161616] sm:pb-0">
@@ -165,31 +155,14 @@ export default function Home() {
         onCartClick={() => setIsCartOpen(true)}
       />
 
-      {isCartOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
-          onClick={() => setIsCartOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl bg-white p-8 text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-5xl">🛒</div>
-            <h3 className="mt-4 text-xl font-bold">السلة</h3>
-            <p className="mt-2 text-sm text-gray-600">
-              لديك <strong>{cartCount}</strong> منتج في السلة.
-              <br />
-              (السلة الكاملة ستُبنى في الخطوة القادمة)
-            </p>
-            <button
-              onClick={() => setIsCartOpen(false)}
-              className="mt-6 rounded-xl bg-[#1b1c1a] px-6 py-3 text-sm font-bold text-white hover:bg-[#b17f3f]"
-            >
-              حسناً
-            </button>
-          </div>
-        </div>
-      )}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        subtotal={subtotal}
+        onQuantityChange={updateQuantity}
+        onRemove={removeItem}
+      />
     </main>
   );
 }
