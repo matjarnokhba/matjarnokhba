@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Grid3x3, Heart, User, ShoppingCart } from "lucide-react";
@@ -9,8 +10,65 @@ type BottomNavProps = {
   onCartClick: () => void;
 };
 
+// ═══════════════════════════════════════════
+// عتبات ضبط السلوك
+// ═══════════════════════════════════════════
+const TOP_THRESHOLD = 20;      // دائماً ظاهر عند أعلى الصفحة
+const HIDE_AFTER = 100;         // اخفِ بعد 100px تمرير لأسفل متراكمة
+const SHOW_AFTER = 50;          // أظهر بعد 50px تمرير لأعلى متراكمة
+
 export default function BottomNav({ cartCount, onCartClick }: BottomNavProps) {
   const pathname = usePathname();
+  const [isVisible, setIsVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const accumulatedDown = useRef(0);
+  const accumulatedUp = useRef(0);
+  const ticking = useRef(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (ticking.current) return;
+      ticking.current = true;
+
+      requestAnimationFrame(() => {
+        const currentY = window.scrollY;
+        const diff = currentY - lastScrollY.current;
+
+        // ─── في أعلى الصفحة → ظاهر دائماً ───
+        if (currentY < TOP_THRESHOLD) {
+          setIsVisible(true);
+          accumulatedDown.current = 0;
+          accumulatedUp.current = 0;
+        }
+        // ─── نمرر لأسفل ───
+        else if (diff > 0) {
+          accumulatedDown.current += diff;
+          accumulatedUp.current = 0;
+
+          if (accumulatedDown.current >= HIDE_AFTER) {
+            setIsVisible(false);
+            accumulatedDown.current = 0;
+          }
+        }
+        // ─── نمرر لأعلى ───
+        else if (diff < 0) {
+          accumulatedUp.current += Math.abs(diff);
+          accumulatedDown.current = 0;
+
+          if (accumulatedUp.current >= SHOW_AFTER) {
+            setIsVisible(true);
+            accumulatedUp.current = 0;
+          }
+        }
+
+        lastScrollY.current = currentY;
+        ticking.current = false;
+      });
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const items = [
     { label: "الرئيسية", icon: Home, href: "/", type: "link" as const },
@@ -21,7 +79,11 @@ export default function BottomNav({ cartCount, onCartClick }: BottomNavProps) {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] sm:hidden">
+    <nav
+      className={`fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] transition-transform duration-300 ease-out sm:hidden ${
+        isVisible ? "translate-y-0" : "translate-y-full"
+      }`}
+    >
       <div className="grid grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
