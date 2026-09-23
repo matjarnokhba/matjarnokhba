@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -24,67 +24,138 @@ import ProductActionBar from "@/components/products/ProductActionBar";
 import ProductGrid from "@/components/products/ProductGrid";
 
 import {
-  PRODUCTS,
   CURRENCY,
   FREE_SHIPPING_THRESHOLD,
   type Product,
-  type CartItem,
 } from "@/lib/data/products";
-import { getCategoryById } from "@/lib/data/categories";
+import { useCart } from "@/lib/hooks/useCart";
 
 export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
 
-  // ═══════ إيجاد المنتج ═══════
-  const product = useMemo(
-    () => PRODUCTS.find((p) => p.slug === slug),
-    [slug]
-  );
-
   // ═══════ State ═══════
+  const [product, setProduct] = useState<Product | null>(null);
+  const [related, setRelated] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [selectedImage, setSelectedImage] = useState(0);
-  const [selectedColor, setSelectedColor] = useState<string | undefined>(
-    product?.colors?.[0]
-  );
-  const [selectedSize, setSelectedSize] = useState<string | undefined>(
-    product?.sizes?.[0]
-  );
+  const [selectedColor, setSelectedColor] = useState<string | undefined>();
+  const [selectedSize, setSelectedSize] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  // ═══════ localStorage للعربة ═══════
+  const {
+    items: cartItems,
+    totalCount: cartCount,
+    subtotal,
+    addItem,
+    updateQuantity,
+    removeItem,
+  } = useCart();
+
+  // ═══════ جلب المنتج من API ═══════
   useEffect(() => {
-    const saved = localStorage.getItem("nokhba-cart");
-    if (saved) {
+    async function loadProduct() {
+      setLoading(true);
+      setError(null);
+
       try {
-        setCartItems(JSON.parse(saved));
-      } catch {}
+        const res = await fetch(`/api/products/${slug}`);
+        const data = await res.json();
+
+        if (!data.success) {
+          setError(data.message || "المنتج غير موجود");
+          setLoading(false);
+          return;
+        }
+
+        const p: Product = data.product;
+        setProduct(p);
+        setSelectedColor(p.colors?.[0]);
+        setSelectedSize(p.sizes?.[0]);
+
+        // جلب منتجات مشابهة
+        if (p.categoryId) {
+          const relatedRes = await fetch(
+            `/api/products?category=${p.categoryId}`
+          );
+          const relatedData = await relatedRes.json();
+          if (relatedData.success) {
+            setRelated(
+              relatedData.products.filter((rp: Product) => rp.id !== p.id).slice(0, 8)
+            );
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        setError("فشل الاتصال بالخادم");
+      } finally {
+        setLoading(false);
+      }
     }
-  }, []);
 
-  useEffect(() => {
-    localStorage.setItem("nokhba-cart", JSON.stringify(cartItems));
-  }, [cartItems]);
+    if (slug) loadProduct();
+  }, [slug]);
 
-  // ═══════ إذا لم يُوجَد المنتج ═══════
-  if (!product) {
+  // ═══════ إضافة للسلة ═══════
+  function handleAddToCart() {
+    if (!product) return;
+    addItem(product, quantity, selectedColor, selectedSize);
+    setIsCartOpen(true);
+  }
+
+  function handleRelatedAddToCart(p: Product) {
+    addItem(p);
+    setIsCartOpen(true);
+  }
+
+  // ═══════ العرض: التحميل ═══════
+  if (loading) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
         <TopBar />
         <Header
           search={search}
           onSearchChange={setSearch}
-          cartCount={0}
-          onCartClick={() => {}}
+          cartCount={cartCount}
+          onCartClick={() => setIsCartOpen(true)}
+        />
+        <div className="mx-auto max-w-7xl px-3 py-6">
+          <div className="grid gap-6 lg:grid-cols-2 lg:gap-10">
+            <div className="aspect-square animate-pulse rounded-2xl bg-gray-200" />
+            <div className="space-y-4">
+              <div className="h-8 animate-pulse rounded bg-gray-200" />
+              <div className="h-6 w-2/3 animate-pulse rounded bg-gray-200" />
+              <div className="h-12 animate-pulse rounded bg-gray-200" />
+              <div className="h-32 animate-pulse rounded bg-gray-200" />
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ═══════ العرض: خطأ ═══════
+  if (error || !product) {
+    return (
+      <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
+        <TopBar />
+        <Header
+          search={search}
+          onSearchChange={setSearch}
+          cartCount={cartCount}
+          onCartClick={() => setIsCartOpen(true)}
         />
         <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
           <div className="text-6xl">😕</div>
-          <h1 className="mt-4 text-2xl font-black">المنتج غير موجود</h1>
+          <h1 className="mt-4 text-2xl font-black">
+            {error || "المنتج غير موجود"}
+          </h1>
           <p className="mt-2 text-sm text-[#6b7280]">
             ربما تم حذفه أو الرابط غير صحيح.
           </p>
@@ -96,78 +167,26 @@ export default function ProductPage() {
           </Link>
         </div>
         <Footer />
-        <ProductActionBar onAddToCart={() => {}} onBuyNow={() => {}} />
       </main>
     );
   }
 
-  // Reference مُضيّق
-  const p = product;
-
-  const category = getCategoryById(p.categoryId);
+  // ═══════ حسابات ═══════
   const discountPercent = product.oldPrice
     ? Math.round(
         ((product.oldPrice - product.price) / product.oldPrice) * 100
       )
     : 0;
-  const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
-
-  // ═══════ منتجات مشابهة ═══════
-  const relatedProducts = PRODUCTS.filter(
-    (p) => p.categoryId === product.categoryId && p.id !== product.id
-  ).slice(0, 8);
-
-  // ═══════ إضافة للسلة ═══════
-  function handleAddToCart() {
-    setCartItems((current) => {
-      const existing = current.find(
-        (item) =>
-          item.id === p.id &&
-          item.selectedColor === selectedColor &&
-          item.selectedSize === selectedSize
-      );
-      if (existing) {
-        return current.map((item) =>
-          item.id === p.id &&
-          item.selectedColor === selectedColor &&
-          item.selectedSize === selectedSize
-            ? { ...item, quantity: item.quantity + quantity }
-            : item
-        );
-      }
-      return [
-        ...current,
-        {
-          ...p,
-          quantity,
-          selectedColor,
-          selectedSize,
-        },
-      ];
-    });
-    setIsCartOpen(true);
-  }
-
-  function handleRelatedAddToCart(p: Product) {
-    setCartItems((current) => {
-      const existing = current.find((item) => item.id === p.id);
-      if (existing) {
-        return current.map((item) =>
-          item.id === p.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-      return [...current, { ...p, quantity: 1 }];
-    });
-    setIsCartOpen(true);
-  }
 
   const hasNextImage = selectedImage < product.images.length - 1;
   const hasPrevImage = selectedImage > 0;
 
+  // ═══════ العرض الرئيسي ═══════
   return (
-    <main dir="rtl" className="min-h-screen bg-[#f7f6f2] pb-24 text-[#161616] sm:pb-0">
+    <main
+      dir="rtl"
+      className="min-h-screen bg-[#f7f6f2] pb-24 text-[#161616] sm:pb-0"
+    >
       <TopBar />
 
       <Header
@@ -177,7 +196,7 @@ export default function ProductPage() {
         onCartClick={() => setIsCartOpen(true)}
       />
 
-      {/* ═══════ Breadcrumb ═══════ */}
+      {/* Breadcrumb */}
       <div className="border-b border-gray-100 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-xs text-[#6b7280]">
           <button
@@ -191,19 +210,19 @@ export default function ProductPage() {
           <Link href="/" className="hover:text-[#ff5c00]">
             الرئيسية
           </Link>
-          {category && (
+          {product.categoryName && (
             <>
               <span>/</span>
-              <span>{category.name}</span>
+              <span>{product.categoryName}</span>
             </>
           )}
         </div>
       </div>
 
-      {/* ═══════ المحتوى الرئيسي ═══════ */}
-      <div className="mx-auto max-w-7xl px-3 py-3 lg:py-6 lg:px-4">
+      {/* المحتوى */}
+      <div className="mx-auto max-w-7xl px-3 py-3 lg:px-4 lg:py-6">
         <div className="grid gap-4 lg:grid-cols-2 lg:gap-8">
-          {/* ═══════ معرض الصور ═══════ */}
+          {/* معرض الصور */}
           <div className="lg:sticky lg:top-24 lg:self-start">
             <div className="relative overflow-hidden rounded-2xl bg-white">
               <div className="relative aspect-square overflow-hidden bg-gray-50">
@@ -213,7 +232,6 @@ export default function ProductPage() {
                   className="h-full w-full object-cover"
                 />
 
-                {/* شارات */}
                 {discountPercent > 0 && (
                   <span className="absolute left-3 top-3 rounded-md bg-[#ff5c00] px-2.5 py-1 text-xs font-black text-white shadow-md">
                     -{discountPercent}%
@@ -225,13 +243,10 @@ export default function ProductPage() {
                   </span>
                 )}
 
-                {/* زر المفضلة */}
                 <button
                   onClick={() => setIsFavorite(!isFavorite)}
                   className={`absolute bottom-3 left-3 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition ${
-                    isFavorite
-                      ? "bg-red-500 text-white"
-                      : "bg-white text-[#111827]"
+                    isFavorite ? "bg-red-500 text-white" : "bg-white text-[#111827]"
                   }`}
                   aria-label="المفضلة"
                 >
@@ -240,7 +255,6 @@ export default function ProductPage() {
                   />
                 </button>
 
-                {/* أسهم التنقل */}
                 {product.images.length > 1 && (
                   <>
                     {hasPrevImage && (
@@ -265,7 +279,6 @@ export default function ProductPage() {
                 )}
               </div>
 
-              {/* المصغرات */}
               {product.images.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto p-2">
                   {product.images.map((img, i) => (
@@ -278,11 +291,7 @@ export default function ProductPage() {
                           : "border-transparent opacity-60 hover:opacity-100"
                       }`}
                     >
-                      <img
-                        src={img}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
+                      <img src={img} alt="" className="h-full w-full object-cover" />
                     </button>
                   ))}
                 </div>
@@ -290,13 +299,13 @@ export default function ProductPage() {
             </div>
           </div>
 
-          {/* ═══════ التفاصيل ═══════ */}
+          {/* التفاصيل */}
           <div className="flex flex-col gap-3">
             {/* التصنيف + الماركة */}
             <div className="flex flex-wrap items-center gap-2">
-              {category && (
+              {product.categoryName && (
                 <span className="rounded-full bg-[#fff4ed] px-3 py-1 text-xs font-bold text-[#ff5c00]">
-                  {category.icon} {category.name}
+                  {product.categoryName}
                 </span>
               )}
               {product.brand && (
@@ -306,23 +315,17 @@ export default function ProductPage() {
               )}
             </div>
 
-            {/* الاسم */}
             <h1 className="text-lg font-black leading-tight text-[#111827] lg:text-2xl">
               {product.name}
             </h1>
 
-            {/* التقييم + المبيعات */}
             <div className="flex items-center gap-3 text-sm">
               <div className="flex items-center gap-1">
                 <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                 <strong className="text-[#111827]">{product.rating}</strong>
               </div>
-              <span className="text-[#6b7280]">
-                · {product.reviews} مراجعة
-              </span>
-              <span className="text-[#6b7280]">
-                · {product.sold} مبيع
-              </span>
+              <span className="text-[#6b7280]">· {product.reviews} مراجعة</span>
+              <span className="text-[#6b7280]">· {product.sold} مبيع</span>
             </div>
 
             {/* السعر */}
@@ -330,9 +333,7 @@ export default function ProductPage() {
               <strong className="text-2xl font-black text-[#ff5c00]">
                 {product.price}
               </strong>
-              <span className="text-xs font-bold text-[#6b7280]">
-                {CURRENCY}
-              </span>
+              <span className="text-xs font-bold text-[#6b7280]">{CURRENCY}</span>
               {product.oldPrice && (
                 <del className="text-sm text-gray-400">
                   {product.oldPrice} {CURRENCY}
@@ -430,8 +431,8 @@ export default function ProductPage() {
               </span>
             </div>
 
-            {/* زر أضف للسلة */}
-            <div className="flex gap-2">
+            {/* زر أضف للسلة (سطح المكتب) */}
+            <div className="hidden gap-2 sm:flex">
               <button
                 onClick={handleAddToCart}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#e64a00] active:scale-[0.98]"
@@ -448,13 +449,11 @@ export default function ProductPage() {
                 }`}
                 aria-label="المفضلة"
               >
-                <Heart
-                  className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`}
-                />
+                <Heart className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`} />
               </button>
             </div>
 
-            {/* معلومات الشحن والإرجاع */}
+            {/* معلومات */}
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2">
                 <Truck className="h-4 w-4 shrink-0 text-green-600" />
@@ -506,18 +505,16 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* ═══════ الوصف ═══════ */}
+        {/* الوصف */}
         <section className="mt-5 rounded-lg bg-white p-4">
           <h2 className="mb-2 text-base font-black">الوصف</h2>
-          <p className="text-xs leading-7 text-[#4b5563]">
-            {product.description}
-          </p>
+          <p className="text-xs leading-7 text-[#4b5563]">{product.description}</p>
         </section>
 
-        {/* ═══════ التقييمات ═══════ */}
+        {/* التقييمات */}
         <section className="mt-4 rounded-lg bg-white p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-black">التقييمات</h2>
+            <h2 className="text-base font-black">التقييمات</h2>
             <span className="text-xs text-[#6b7280]">
               {product.reviews} مراجعة
             </span>
@@ -561,9 +558,7 @@ export default function ProductPage() {
                         style={{ width: `${percent}%` }}
                       />
                     </div>
-                    <span className="w-10 text-left text-[#6b7280]">
-                      {percent}%
-                    </span>
+                    <span className="w-10 text-left text-[#6b7280]">{percent}%</span>
                   </div>
                 );
               })}
@@ -571,16 +566,13 @@ export default function ProductPage() {
           </div>
         </section>
 
-        {/* ═══════ منتجات مشابهة ═══════ */}
-        {relatedProducts.length > 0 && (
+        {/* منتجات مشابهة */}
+        {related.length > 0 && (
           <section className="mt-5">
             <div className="mb-3 flex items-end justify-between">
               <h2 className="text-base font-black sm:text-lg">منتجات مشابهة</h2>
             </div>
-            <ProductGrid
-              products={relatedProducts}
-              onAddToCart={handleRelatedAddToCart}
-            />
+            <ProductGrid products={related} onAddToCart={handleRelatedAddToCart} />
           </section>
         )}
       </div>
@@ -594,31 +586,6 @@ export default function ProductPage() {
           router.push("/checkout");
         }}
       />
-
-      {/* ═══════ نافذة السلة المؤقتة ═══════ */}
-      {isCartOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
-          onClick={() => setIsCartOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl bg-white p-8 text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-5xl">🛒</div>
-            <h3 className="mt-4 text-xl font-bold">تمت الإضافة</h3>
-            <p className="mt-2 text-sm text-gray-600">
-              لديك <strong>{cartCount}</strong> منتج في السلة.
-            </p>
-            <button
-              onClick={() => setIsCartOpen(false)}
-              className="mt-6 rounded-xl bg-[#ff5c00] px-6 py-3 text-sm font-bold text-white hover:bg-[#e64a00]"
-            >
-              متابعة التسوق
-            </button>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
