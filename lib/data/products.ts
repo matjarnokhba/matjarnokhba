@@ -8,7 +8,8 @@ export type Product = {
   id: number;
   slug: string;
   name: string;
-  categoryId: CategoryId;
+  categoryId: CategoryId | string;
+  categoryName?: string;
   price: number;
   oldPrice?: number;
   rating: number;

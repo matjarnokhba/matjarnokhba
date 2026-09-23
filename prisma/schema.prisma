@@ -251,6 +251,12 @@ model Product {
   name        String
   slug        String        @unique
   description String?
+  brand       String?
+  badge       String?
+  rating      Float         @default(0)
+  reviewsCount Int          @default(0)
+  sold        Int           @default(0)
+  freeShipping Boolean      @default(false)
   status      ProductStatus @default(DRAFT)
   isFeatured  Boolean       @default(false)
   isNew       Boolean       @default(false)

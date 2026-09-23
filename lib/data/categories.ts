@@ -180,7 +180,7 @@ export const FEATURED_CATEGORY_IDS: CategoryId[] = [
 ];
 
 // دالة للبحث عن تصنيف بـ id
-export function getCategoryById(id: CategoryId): Category | undefined {
+export function getCategoryById(id: string): Category | undefined {
   return CATEGORIES.find((c) => c.id === id);
 }
 
