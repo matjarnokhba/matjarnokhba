@@ -46,9 +46,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (!body.imageUrl?.trim()) {
+    if (!body.imageUrls || !Array.isArray(body.imageUrls) || body.imageUrls.length === 0) {
       return NextResponse.json(
-        { success: false, message: "صورة المنتج مطلوبة" },
+        { success: false, message: "صورة واحدة على الأقل مطلوبة" },
         { status: 400 }
       );
     }
@@ -90,14 +90,14 @@ export async function POST(request: Request) {
         },
       });
 
-      // 2. الصورة
-      await tx.productImage.create({
-        data: {
+      // 2. الصور
+      await tx.productImage.createMany({
+        data: body.imageUrls.map((url: string, i: number) => ({
           productId: newProduct.id,
-          url: body.imageUrl.trim(),
-          order: 0,
-          isMain: true,
-        },
+          url: url.trim(),
+          order: i,
+          isMain: i === 0,
+        })),
       });
 
       // 3. الـVariant
