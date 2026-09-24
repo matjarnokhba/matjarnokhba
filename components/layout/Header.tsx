@@ -11,6 +11,7 @@ import {
   Bell,
 } from "lucide-react";
 import BrandLogo from "@/components/ui/Logo";
+import UserMenu from "@/components/UserMenu";
 
 type HeaderProps = {
   search: string;
@@ -114,13 +115,8 @@ export default function Header({
             <Heart className="h-[18px] w-[18px] text-[#111827]" />
           </button>
 
-          {/* الحساب */}
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
-            aria-label="الحساب"
-          >
-            <User className="h-[18px] w-[18px] text-[#111827]" />
-          </button>
+          {/* الحساب — UserMenu */}
+          <UserMenu />
 
           {/* الإشعارات */}
           <button
