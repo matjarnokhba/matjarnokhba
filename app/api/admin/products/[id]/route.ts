@@ -34,7 +34,6 @@ export async function PATCH(
       where: { id: productId },
       include: {
         variants: { where: { isDefault: true } },
-        images: { where: { isMain: true }, take: 1 },
       },
     });
 
@@ -45,7 +44,6 @@ export async function PATCH(
       );
     }
 
-    // التحقق من slug إن تغير
     if (body.slug && body.slug !== existing.slug) {
       const duplicate = await prisma.product.findUnique({
         where: { slug: body.slug },
@@ -75,12 +73,30 @@ export async function PATCH(
         },
       });
 
-      // 2. الصورة الرئيسية
-      if (body.imageUrl && existing.images[0]) {
-        await tx.productImage.update({
-          where: { id: existing.images[0].id },
-          data: { url: body.imageUrl },
-        });
+      // 2. الصور — استبدال كامل
+      const urls: string[] | null = Array.isArray(body.imageUrls)
+        ? body.imageUrls
+        : typeof body.imageUrl === "string" && body.imageUrl.trim() !== ""
+          ? [body.imageUrl]
+          : null;
+
+      if (urls !== null) {
+        await tx.productImage.deleteMany({ where: { productId } });
+
+        const cleanUrls = urls.filter(
+          (u): u is string => typeof u === "string" && u.trim().length > 0
+        );
+
+        if (cleanUrls.length > 0) {
+          await tx.productImage.createMany({
+            data: cleanUrls.map((url, idx) => ({
+              productId,
+              url: url.trim(),
+              order: idx,
+              isMain: idx === 0,
+            })),
+          });
+        }
       }
 
       // 3. الـVariant
@@ -93,7 +109,6 @@ export async function PATCH(
           },
         });
 
-        // 4. Inventory
         await tx.inventory.updateMany({
           where: { variantId: variant.id },
           data: { quantity: body.stock ?? 0 },
@@ -128,7 +143,6 @@ export async function DELETE(
     const { id } = await params;
     const productId = parseInt(id);
 
-    // Soft Delete
     await prisma.product.update({
       where: { id: productId },
       data: {
