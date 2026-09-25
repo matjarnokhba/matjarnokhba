@@ -2,8 +2,9 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.2
-**Status:** Final Architecture Reference
+**Version:** 2.3
+**Status:** Final Architecture Reference + Implementation Status
+**Last Updated:** 2026-09-25
 **Currency:** MAD
 **Database:** PostgreSQL
 **ORM:** Prisma
@@ -28,6 +29,9 @@
 4. بعد اعتماد التعديل يتم تعديل الكود وSchema وMigration عند الحاجة.
 
 هذه الوثيقة لا تعتبر مجرد Documentation، بل تمثل **مصدر الحقيقة المعماري للمشروع**.
+
+**ملاحظة (v2.3):** هذا الملف يوثّق البنية المعمارية المثالية للـMVP. للاطلاع على **ما تم تنفيذه فعلاً** حتى الآن، راجع:
+**القسم 76 — Implementation Status**
 
 ---
 
