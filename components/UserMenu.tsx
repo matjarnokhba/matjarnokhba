@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User, LogOut, LayoutDashboard, ChevronDown } from "lucide-react";
+import { User, LogOut, LayoutDashboard, ChevronDown, Package } from "lucide-react";
 
 type UserData = {
   id: number;
@@ -127,6 +127,15 @@ export default function UserMenu() {
 
           {/* خيارات */}
           <div className="p-1">
+            <Link
+              href="/orders"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+            >
+              <Package className="h-3.5 w-3.5" />
+              طلباتي
+            </Link>
+
             <Link
               href="/profile"
               onClick={() => setOpen(false)}

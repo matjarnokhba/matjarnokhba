@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Grid3x3, Heart, User, ShoppingCart } from "lucide-react";
+import { Home, Grid3x3, Package, User, ShoppingCart } from "lucide-react";
 
 type BottomNavProps = {
   cartCount: number;
@@ -73,8 +73,8 @@ export default function BottomNav({ cartCount, onCartClick }: BottomNavProps) {
   const items = [
     { label: "الرئيسية", icon: Home, href: "/", type: "link" as const },
     { label: "الفئات", icon: Grid3x3, href: "/#categories", type: "link" as const },
-    { label: "المفضلة", icon: Heart, href: "/favorites", type: "link" as const },
-    { label: "حسابي", icon: User, href: "/profile", type: "link" as const },
+    { label: "طلباتي", icon: Package, href: "/orders", type: "link" as const },
+    { label: "دخول", icon: User, href: "/login", type: "link" as const },
     { label: "السلة", icon: ShoppingCart, type: "cart" as const },
   ];
 
