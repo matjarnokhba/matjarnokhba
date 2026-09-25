@@ -112,7 +112,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items: items.map((item) => ({
             productId: item.id,
-            variantId: undefined,
+            variantId: item.variantId,
             productName: item.name,
             variantName: [item.selectedColor, item.selectedSize]
               .filter(Boolean)

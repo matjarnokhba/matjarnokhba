@@ -17,6 +17,7 @@ type PrismaProduct = {
   category: { slug: string; name: string } | null;
   images: { url: string }[];
   variants: {
+    id: number;
     price: unknown;
     discountPrice: unknown;
     inventory: { quantity: number } | null;
@@ -28,6 +29,7 @@ function formatProduct(p: PrismaProduct) {
 
   return {
     id: p.id,
+    variantId: defaultVariant?.id,
     name: p.name,
     slug: p.slug,
     description: p.description || "",
