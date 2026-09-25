@@ -22,6 +22,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ProductActionBar from "@/components/products/ProductActionBar";
 import ProductGrid from "@/components/products/ProductGrid";
+import CartDrawer from "@/components/cart/CartDrawer";
 
 import {
   CURRENCY,
@@ -585,6 +586,15 @@ export default function ProductPage() {
           handleAddToCart();
           router.push("/checkout");
         }}
+      />
+
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        subtotal={subtotal}
+        onQuantityChange={updateQuantity}
+        onRemove={removeItem}
       />
     </main>
   );
