@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.4
+**Version:** 2.5
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -4797,3 +4797,29 @@ npm run recalc
 - تغيير Stack / API / صفحة
 
 End of Section 76 (v2.4)
+
+## 76.14 نظام الكوبونات (v2.5)
+
+### الملفات
+- services/coupon.service.ts
+- app/api/coupons/validate/route.ts
+- app/api/admin/coupons/route.ts
+- app/api/admin/coupons/[id]/route.ts
+- app/admin/coupons/page.tsx
+
+### الميزات
+- نوعان: نسبة (%) أو مبلغ ثابت
+- حد أدنى للطلب (اختياري)
+- حد أقصى للاستخدامات (عام + لكل مستخدم)
+- تاريخ بدء ونهاية
+- تفعيل / تعطيل / حذف Soft
+- تطبيق في Checkout مع معاينة مباشرة
+- CouponUsage tracking تلقائي
+
+### الحماية
+- التحقق داخل CouponService.validate
+- منع تجاوز maxUsesPerUser
+- discount لا يتجاوز subtotal
+- CouponUsage يُنشأ داخل نفس Transaction مع Order
+
+End of Section 76 (v2.5)
