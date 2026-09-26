@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.3
+**Version:** 2.4
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -4657,3 +4657,143 @@ Historical Integrity
 ## 76.3 تفاصيل تقنية دقيقة
 
 ### Cookie Name
+
+nokhba_session
+موقعها: lib/validations/auth.ts → SESSION_COOKIE_NAME
+
+### Prisma Client Import
+import { PrismaClient } from "@/app/generated/prisma/client";
+لا تستخدم @prisma/client
+
+### Migration الأخيرة
+20260923211141_add_product_metadata
+
+### Seed
+npm run seed
+npm run recalc
+
+## 76.4 نظام صور المنتج
+
+### قاعدة حرجة
+في app/admin/products/[id]/page.tsx استخدم:
+images: { orderBy: { order: "asc" } }
+
+لا تستخدم:
+images: { where: { isMain: true }, take: 1 }
+لأنها تمسح كل الصور عند الحفظ.
+
+### PATCH
+- يستقبل imageUrls (مصفوفة)
+- حذف كل الصور + createMany
+- يُنشئ variant لو غير موجود
+
+## 76.5 CartDrawer Pattern
+
+كل صفحة فيها useCart + زر أضف للسلة → تحتاج CartDrawer.
+
+الصفحات:
+- app/page.tsx
+- app/product/[slug]/page.tsx
+
+لا تحتاج: login, register, checkout
+
+## 76.6 الصفحات والـAPIs
+
+### Customer Routes
+/ , /product/[slug] , /login , /register , /checkout , /orders , /orders/[id] , /profile
+
+### Admin Routes
+/admin , /admin/orders , /admin/products , /admin/reviews
+
+### APIs جديدة (v2.3 - v2.4)
+GET    /api/orders/[id]
+GET    /api/user/profile
+PATCH  /api/user/profile
+POST   /api/reviews
+GET    /api/reviews?productId=X   (عام)
+GET    /api/reviews?orderId=X     (يحتاج auth)
+GET    /api/admin/reviews
+PATCH  /api/admin/reviews/[id]
+
+## 76.7 نظام المراجعات (v2.4)
+
+### الملفات
+- services/review.service.ts
+- components/reviews/ReviewModal.tsx
+- app/admin/reviews/page.tsx
+
+### القواعد
+- التقييم فقط بعد DELIVERED
+- مرة واحدة لكل (productId, userId)
+- isApproved = false افتراضياً
+- Admin يوافق من /admin/reviews
+
+### Auto-Recalc
+recalcProductStats(tx, productId) في review.service.ts
+عند approve/reject → يحدّث Product.rating + reviewsCount
+
+### Script يدوي
+npm run recalc
+
+## 76.8 Product.sold Auto-Increment (v2.4)
+
+### القاعدة
+عند الانتقال إلى DELIVERED → Product.sold += quantity تلقائياً
+
+### التطبيق
+في app/api/admin/orders/[id]/status/route.ts داخل نفس Transaction
+
+## 76.9 Navigation (v2.4)
+
+### BottomNav
+1. الرئيسية → /
+2. الفئات → /#categories
+3. طلباتي → /orders
+4. دخول → /login
+5. السلة → CartDrawer
+
+### AdminSidebar
+لوحة التحكم , المنتجات , الطلبات , المراجعات , المستخدمون
+
+### UserMenu
+طلباتي → /orders
+حسابي → /profile
+
+## 76.10 المشاكل المحلولة (v2.4)
+
+1. CartDrawer ناقص من صفحة المنتج
+2. PATCH لا يحفظ الصور المتعددة
+3. صفحة تعديل المنتج تجلب صورة واحدة
+4. variantId: undefined في OrderItem
+5. Seed يحذف Variants بدون إعادة إنشائها
+6. PATCH يفشل عند غياب variant
+7. Product.rating لا يتزامن مع Reviews
+
+## 76.11 ما تزال مفتوحة
+
+- Reservation System (Schema جاهز، منطق مفقود)
+- Idempotency
+- Coupons
+- Returns
+- Shipping Zones Admin
+- Audit Log تلقائي
+- Rate Limiting
+- Password Reset
+- Cron Job للـReservations
+
+## 76.12 Git History (v2.4)
+
+3724efd Docs: add Section 76
+778afb9 Feat: review submission from order detail
+...     Feat: admin reviews management page
+...     Fix: PATCH creates variant when missing
+...     Feat: auto-increment Product.sold on DELIVERED
+
+## 76.13 When to Update
+
+يُحدَّث عند:
+- إضافة Feature
+- إصلاح مشكلة من 76.11
+- تغيير Stack / API / صفحة
+
+End of Section 76 (v2.4)
