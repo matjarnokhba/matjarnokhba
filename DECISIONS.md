@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.5
+**Version:** 2.6
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -4823,3 +4823,51 @@ End of Section 76 (v2.4)
 - CouponUsage يُنشأ داخل نفس Transaction مع Order
 
 End of Section 76 (v2.5)
+
+## 76.15 نظام المفضلة (v2.6)
+
+### الملفات
+- lib/hooks/useFavorites.ts
+- app/favorites/page.tsx
+- components/products/ProductCard.tsx (زر القلب)
+- app/product/[slug]/page.tsx (زر القلب)
+- components/layout/Header.tsx (رابط + عداد)
+
+### القواعد
+- localStorage (key: nokhba-favorites)
+- لا يحتاج تسجيل دخول
+- Heart في ProductCard + صفحة المنتج
+- stopPropagation لمنع فتح الرابط عند الضغط على القلب
+- عداد في Header
+
+### التوسع المستقبلي
+عند الحاجة: مزامنة عبر DB (جدول Favorites) بدل localStorage.
+
+## 76.16 صفحة التصنيفات (v2.6)
+
+### الملف
+- app/category/[slug]/page.tsx
+
+### الميزات
+- Breadcrumb (الرئيسية / اسم التصنيف)
+- أيقونة التصنيف + عدّاد المنتجات
+- ترتيب: الأحدث / الأكثر مبيعاً / الأعلى تقييماً / السعر
+- حالة فارغة (تصنيف بلا منتجات)
+- حالة خطأ (slug خاطئ)
+
+### العلاقة مع الصفحة الرئيسية
+- الصفحة الرئيسية تحتفظ بالفلترة inline (CategoryGrid + Navigation)
+- `/category/[slug]` هي للروابط المباشرة + SEO
+
+### ملاحظة
+مستقبلاً: قد نُحدّث CategoryGrid + Navigation ليربطا بـ/category/[slug] بدل الفلترة inline.
+
+## 76.17 Git History (v2.6)
+
+بعد v2.5:
+- Feat: coupon system complete (admin + checkout)
+- Feat: favorites system (localStorage + page + header)
+- Feat: add heart button to ProductCard
+- Feat: category page with sorting
+
+End of Section 76 (v2.6)
