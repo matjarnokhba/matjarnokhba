@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Star, Truck, ShoppingCart } from "lucide-react";
+import { Star, Truck, ShoppingCart, Heart } from "lucide-react";
 import type { Product } from "@/lib/data/products";
 import { CURRENCY } from "@/lib/data/products";
 import { getCategoryById } from "@/lib/data/categories";
+import { useFavorites } from "@/lib/hooks/useFavorites";
 
 type ProductCardProps = {
   product: Product;
@@ -15,12 +16,15 @@ export default function ProductCard({
   product,
   onAddToCart,
 }: ProductCardProps) {
+  const { isFavorite, toggleFavorite } = useFavorites();
+
   const discountPercent = product.oldPrice
     ? Math.round(((product.oldPrice - product.price) / product.oldPrice) * 100)
     : 0;
 
   const category = getCategoryById(product.categoryId);
   const mainImage = product.images[0];
+  const fav = isFavorite(product.id);
 
   return (
     <article className="group relative flex flex-col overflow-hidden bg-white sm:rounded-xl sm:border sm:border-gray-100 sm:transition sm:hover:border-[#ff5c00]/30 sm:hover:shadow-lg">
@@ -42,12 +46,35 @@ export default function ProductCard({
           </span>
         )}
 
-        {/* شارة badge (سطح المكتب فقط) */}
+        {/* شارة badge (سطح المكتب فقط) — تظهر تحت شارة الخصم */}
         {product.badge && (
-          <span className="absolute right-2 top-2 hidden rounded-md bg-[#111827]/85 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur sm:block">
+          <span
+            className={`absolute left-1.5 hidden rounded-md bg-[#111827]/85 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur sm:block ${
+              discountPercent > 0 ? "top-9" : "top-2"
+            }`}
+          >
             {product.badge}
           </span>
         )}
+
+        {/* زر القلب */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleFavorite(product);
+          }}
+          className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full shadow-md backdrop-blur transition active:scale-90 sm:right-2 sm:top-2 sm:h-8 sm:w-8 ${
+            fav
+              ? "bg-red-500 text-white"
+              : "bg-white/90 text-[#111827] hover:bg-white"
+          }`}
+          aria-label="المفضلة"
+        >
+          <Heart
+            className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${fav ? "fill-current" : ""}`}
+          />
+        </button>
 
         {/* شحن مجاني (سطح المكتب فقط) */}
         {product.freeShipping && (
