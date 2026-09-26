@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   X,
+  Star,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
+  { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
   { href: "/admin/users", label: "المستخدمون", icon: Users, exact: false },
 ];
 

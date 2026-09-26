@@ -47,6 +47,8 @@ export default function ProductPage() {
   const [selectedSize, setSelectedSize] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -102,6 +104,24 @@ export default function ProductPage() {
 
     if (slug) loadProduct();
   }, [slug]);
+
+  // جلب مراجعات المنتج
+  useEffect(() => {
+    async function loadReviews() {
+      if (!product) return;
+      setReviewsLoading(true);
+      try {
+        const res = await fetch(`/api/reviews?productId=${product.id}`);
+        const data = await res.json();
+        if (data.success) setReviews(data.reviews);
+      } catch {
+        // silent
+      } finally {
+        setReviewsLoading(false);
+      }
+    }
+    loadReviews();
+  }, [product]);
 
   // ═══════ إضافة للسلة ═══════
   function handleAddToCart() {
@@ -517,54 +537,122 @@ export default function ProductPage() {
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-black">التقييمات</h2>
             <span className="text-xs text-[#6b7280]">
-              {product.reviews} مراجعة
+              {reviews.length} مراجعة
             </span>
           </div>
 
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-8">
-            <div className="text-center">
-              <div className="text-3xl font-black text-[#ff5c00]">
-                {product.rating}
+          {reviews.length === 0 ? (
+            <div className="py-8 text-center">
+              <div className="text-4xl">💬</div>
+              <p className="mt-2 text-sm text-[#6b7280]">
+                لا توجد مراجعات بعد. كن أول من يقيّم!
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* متوسط التقييم */}
+              <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-8">
+                <div className="text-center">
+                  {(() => {
+                    const avg =
+                      reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
+                    return (
+                      <>
+                        <div className="text-3xl font-black text-[#ff5c00]">
+                          {avg.toFixed(1)}
+                        </div>
+                        <div className="mt-1 flex items-center justify-center gap-0.5">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`h-4 w-4 ${
+                                i < Math.round(avg)
+                                  ? "fill-yellow-400 text-yellow-400"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <span className="mt-1 block text-xs text-[#6b7280]">
+                          من {reviews.length} مراجعة
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex-1 space-y-1.5">
+                  {[5, 4, 3, 2, 1].map((stars) => {
+                    const count = reviews.filter((r) => r.rating === stars).length;
+                    const percent = reviews.length
+                      ? Math.round((count / reviews.length) * 100)
+                      : 0;
+                    return (
+                      <div key={stars} className="flex items-center gap-2 text-xs">
+                        <span className="flex w-8 items-center gap-0.5 font-bold">
+                          {stars}
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                        </span>
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className="h-full bg-yellow-400"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-left text-[#6b7280]">
+                          {percent}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="mt-1 flex items-center justify-center gap-0.5">
-                {[...Array(5)].map((_, i) => (
-                  <Star
-                    key={i}
-                    className={`h-4 w-4 ${
-                      i < Math.round(product.rating)
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "text-gray-300"
-                    }`}
-                  />
+
+              {/* قائمة المراجعات */}
+              <div className="mt-6 space-y-4 border-t border-gray-100 pt-4">
+                {reviews.map((review) => (
+                  <div key={review.id} className="border-b border-gray-50 pb-3 last:border-0">
+                    <div className="flex items-start gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-xs font-black text-white">
+                        {review.user?.name?.charAt(0) || "؟"}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold">
+                            {review.user?.name || "مستخدم"}
+                          </span>
+                          <span className="text-[10px] text-[#6b7280]">
+                            {new Date(review.createdAt).toLocaleDateString("ar-MA", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-0.5">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`h-3 w-3 ${
+                                i < review.rating
+                                  ? "fill-yellow-400 text-yellow-400"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        {review.comment && (
+                          <p className="mt-1.5 text-xs leading-6 text-[#4b5563]">
+                            {review.comment}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-              <span className="mt-1 block text-xs text-[#6b7280]">
-                من {product.reviews} مراجعة
-              </span>
-            </div>
-
-            <div className="flex-1 space-y-1.5">
-              {[5, 4, 3, 2, 1].map((stars) => {
-                const percent =
-                  stars === 5 ? 68 : stars === 4 ? 22 : stars === 3 ? 7 : stars === 2 ? 2 : 1;
-                return (
-                  <div key={stars} className="flex items-center gap-2 text-xs">
-                    <span className="flex w-8 items-center gap-0.5 font-bold">
-                      {stars}
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                    </span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="h-full bg-yellow-400"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-left text-[#6b7280]">{percent}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+            </>
+          )}
         </section>
 
         {/* منتجات مشابهة */}

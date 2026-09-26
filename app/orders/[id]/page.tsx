@@ -17,11 +17,13 @@ import {
   User,
   Home,
   ShoppingBag,
+  Star,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import ReviewModal from "@/components/reviews/ReviewModal";
 
 // ═══════ الأنواع ═══════
 type OrderItem = {
@@ -126,6 +128,12 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [reviewedItems, setReviewedItems] = useState<number[]>([]);
+  const [reviewModal, setReviewModal] = useState<{
+    orderItemId: number;
+    productName: string;
+    productImage: string | null;
+  } | null>(null);
 
   useEffect(() => {
     async function loadOrder() {
@@ -150,6 +158,22 @@ export default function OrderDetailPage() {
     }
 
     if (orderId) loadOrder();
+  }, [orderId]);
+
+  // جلب المراجعات الموجودة لهذا الطلب
+  useEffect(() => {
+    async function loadReviews() {
+      try {
+        const res = await fetch(`/api/reviews?orderId=${orderId}`);
+        const data = await res.json();
+        if (data.success && data.reviews) {
+          setReviewedItems(data.reviews.map((r: any) => r.orderItemId));
+        }
+      } catch {
+        // silent
+      }
+    }
+    if (orderId) loadReviews();
   }, [orderId]);
 
   // ═══════ حالة التحميل ═══════
@@ -330,51 +354,84 @@ export default function OrderDetailPage() {
           </h2>
 
           <div className="space-y-3">
-            {order.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
-              >
-                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                  {item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt={item.productName}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-gray-400">
-                      <Package className="h-6 w-6" />
-                    </div>
-                  )}
-                </div>
+            {order.items.map((item) => {
+              const isReviewed = reviewedItems.includes(item.id);
+              const canReview = order.status === "DELIVERED";
 
-                <div className="min-w-0 flex-1">
-                  <div className="line-clamp-2 text-sm font-bold">
-                    {item.productName}
-                  </div>
-                  {item.variantName && (
-                    <div className="mt-0.5 text-xs text-[#6b7280]">
-                      {item.variantName}
+              return (
+                <div
+                  key={item.id}
+                  className="border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex gap-3">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                      {item.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.productName}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-gray-400">
+                          <Package className="h-6 w-6" />
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="mt-1 text-xs text-[#6b7280]">
-                    الكمية: {item.quantity}
-                  </div>
-                </div>
 
-                <div className="shrink-0 text-left">
-                  <div className="text-sm font-black text-[#ff5c00]">
-                    {item.total} {CURRENCY}
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-sm font-bold">
+                        {item.productName}
+                      </div>
+                      {item.variantName && (
+                        <div className="mt-0.5 text-xs text-[#6b7280]">
+                          {item.variantName}
+                        </div>
+                      )}
+                      <div className="mt-1 text-xs text-[#6b7280]">
+                        الكمية: {item.quantity}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-left">
+                      <div className="text-sm font-black text-[#ff5c00]">
+                        {item.total} {CURRENCY}
+                      </div>
+                      {item.quantity > 1 && (
+                        <div className="text-[10px] text-[#6b7280]">
+                          {item.unitPrice} × {item.quantity}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {item.quantity > 1 && (
-                    <div className="text-[10px] text-[#6b7280]">
-                      {item.unitPrice} × {item.quantity}
+
+                  {/* زر التقييم */}
+                  {canReview && (
+                    <div className="mt-2 pl-19">
+                      {isReviewed ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700">
+                          <CheckCircle2 className="h-3 w-3" />
+                          تم التقييم
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setReviewModal({
+                              orderItemId: item.id,
+                              productName: item.productName,
+                              productImage: item.imageUrl,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-[#ff5c00] bg-white px-3 py-1 text-[11px] font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+                        >
+                          <Star className="h-3 w-3" />
+                          قيّم المنتج
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -504,6 +561,20 @@ export default function OrderDetailPage() {
       </div>
 
       <Footer />
+
+      {reviewModal && (
+        <ReviewModal
+          isOpen={true}
+          onClose={() => setReviewModal(null)}
+          onSuccess={() => {
+            setReviewedItems((prev) => [...prev, reviewModal.orderItemId]);
+            setReviewModal(null);
+          }}
+          orderItemId={reviewModal.orderItemId}
+          productName={reviewModal.productName}
+          productImage={reviewModal.productImage}
+        />
+      )}
     </main>
   );
 }

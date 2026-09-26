@@ -33,7 +33,7 @@ const CATEGORIES = [
 ];
 
 // ═══════════════════════════════════════════
-// المنتجات (8 تجريبية)
+// المنتجات (نفس الـ8)
 // ═══════════════════════════════════════════
 const PRODUCTS = [
   {
@@ -167,24 +167,13 @@ const PRODUCTS = [
 ];
 
 // ═══════════════════════════════════════════
-// الدالة الرئيسية
+// الدالة الرئيسية — SAFE UPSERT
 // ═══════════════════════════════════════════
 async function main() {
-  console.log("🌱 بدء Seed...\n");
+  console.log("🌱 بدء Seed الآمن (Upsert فقط)...\n");
 
-  // 1. تنظيف البيانات القديمة
-  console.log("🗑️  تنظيف البيانات القديمة...");
-  await prisma.inventoryMovement.deleteMany({});
-  await prisma.inventory.deleteMany({});
-  await prisma.productVariantOptionValue.deleteMany({});
-  await prisma.productVariant.deleteMany({});
-  await prisma.productImage.deleteMany({});
-  await prisma.product.deleteMany({});
-  await prisma.category.deleteMany({});
-  console.log("✅ تم التنظيف\n");
-
-  // 2. المستخدم + البائع
-  console.log("👤 إنشاء المستخدم والبائع...");
+  // ─── 1. المستخدم + البائع ───
+  console.log("👤 المستخدم والبائع...");
   const user = await prisma.user.upsert({
     where: { email: "admin@matjarnokhba.ma" },
     update: {},
@@ -209,13 +198,15 @@ async function main() {
 
   console.log(`✅ البائع: ${seller.storeName}\n`);
 
-  // 3. التصنيفات
-  console.log("📁 إنشاء التصنيفات...");
+  // ─── 2. التصنيفات (Upsert) ───
+  console.log("📁 التصنيفات...");
   const categoryMap = new Map<string, number>();
 
   for (const cat of CATEGORIES) {
-    const created = await prisma.category.create({
-      data: {
+    const created = await prisma.category.upsert({
+      where: { slug: cat.slug },
+      update: { name: cat.name, isActive: true },
+      create: {
         name: cat.name,
         slug: cat.slug,
         isActive: true,
@@ -226,9 +217,9 @@ async function main() {
 
   console.log(`✅ ${CATEGORIES.length} تصنيف\n`);
 
-  // 4. المنتجات
-  console.log("📦 إنشاء المنتجات...");
-  let successCount = 0;
+  // ─── 3. المنتجات (Upsert + إعادة بناء Variants/Images/Inventory) ───
+  console.log("📦 المنتجات (Upsert)...");
+  let restored = 0;
 
   for (const p of PRODUCTS) {
     const categoryId = categoryMap.get(p.categorySlug);
@@ -238,8 +229,23 @@ async function main() {
     }
 
     try {
-      const product = await prisma.product.create({
-        data: {
+      // 3.1 — المنتج: Upsert بـ slug
+      const product = await prisma.product.upsert({
+        where: { slug: p.slug },
+        update: {
+          name: p.name,
+          description: p.description,
+          brand: p.brand,
+          badge: p.badge ?? null,
+          rating: p.rating,
+          reviewsCount: p.reviewsCount,
+          sold: p.sold,
+          freeShipping: p.freeShipping,
+          status: "ACTIVE",
+          categoryId,
+          sellerId: seller.id,
+        },
+        create: {
           sellerId: seller.id,
           categoryId,
           name: p.name,
@@ -252,34 +258,60 @@ async function main() {
           sold: p.sold,
           freeShipping: p.freeShipping,
           status: "ACTIVE",
-          images: {
-            create: [
-              {
-                url: p.image,
-                order: 0,
-                isMain: true,
-              },
-            ],
+        },
+      });
+
+      // 3.2 — الصور: إذا لا توجد صور، أنشئ
+      const imageCount = await prisma.productImage.count({
+        where: { productId: product.id },
+      });
+
+      if (imageCount === 0) {
+        await prisma.productImage.create({
+          data: {
+            productId: product.id,
+            url: p.image,
+            order: 0,
+            isMain: true,
           },
-        },
+        });
+      }
+
+      // 3.3 — الـVariant الافتراضي: إذا لا يوجد، أنشئ
+      let variant = await prisma.productVariant.findFirst({
+        where: { productId: product.id, isDefault: true },
       });
 
-      // Variant افتراضي
-      const variant = await prisma.productVariant.create({
-        data: {
-          productId: product.id,
-          sku: `${p.slug}-default`,
-          price: p.price,
-          discountPrice: p.oldPrice,
-          isDefault: true,
-          isActive: true,
-          optionsHash: "DEFAULT",
-        },
-      });
+      if (!variant) {
+        variant = await prisma.productVariant.create({
+          data: {
+            productId: product.id,
+            sku: `${p.slug}-default-${Date.now()}`,
+            price: p.price,
+            discountPrice: p.oldPrice ?? null,
+            isDefault: true,
+            isActive: true,
+            optionsHash: "DEFAULT",
+          },
+        });
+      } else {
+        // تحديث السعر إن كان مختلفاً
+        await prisma.productVariant.update({
+          where: { id: variant.id },
+          data: {
+            price: p.price,
+            discountPrice: p.oldPrice ?? null,
+          },
+        });
+      }
 
-      // Inventory
-      await prisma.inventory.create({
-        data: {
+      // 3.4 — Inventory: Upsert
+      await prisma.inventory.upsert({
+        where: { variantId: variant.id },
+        update: {
+          quantity: p.stock,
+        },
+        create: {
           variantId: variant.id,
           quantity: p.stock,
           reservedQuantity: 0,
@@ -287,15 +319,17 @@ async function main() {
         },
       });
 
-      successCount++;
+      restored++;
       console.log(`  ✅ ${p.name}`);
     } catch (err) {
       console.error(`  ❌ ${p.name}:`, err);
     }
   }
 
-  console.log(`\n✅ ${successCount}/${PRODUCTS.length} منتج`);
-  console.log("\n🎉 اكتمل Seed بنجاح!");
+  console.log(`\n✅ ${restored}/${PRODUCTS.length} منتج تم استعادته`);
+  console.log("\n🎉 اكتمل Seed الآمن!");
+  console.log("ℹ️  ملاحظة: المنتجات المُضافة يدوياً لم تُلمس — لكن فقدت variantsها.");
+  console.log("ℹ️  أعد إدخالها من Admin UI.\n");
 }
 
 main()

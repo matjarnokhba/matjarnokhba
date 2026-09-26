@@ -99,7 +99,7 @@ export async function PATCH(
         }
       }
 
-      // 3. الـVariant
+      // 3. الـVariant — يُنشأ إن لم يوجد
       if (variant) {
         await tx.productVariant.update({
           where: { id: variant.id },
@@ -109,9 +109,37 @@ export async function PATCH(
           },
         });
 
-        await tx.inventory.updateMany({
+        await tx.inventory.upsert({
           where: { variantId: variant.id },
-          data: { quantity: body.stock ?? 0 },
+          update: { quantity: body.stock ?? 0 },
+          create: {
+            variantId: variant.id,
+            quantity: body.stock ?? 0,
+            reservedQuantity: 0,
+            lowStockThreshold: 5,
+          },
+        });
+      } else {
+        // لا يوجد variant — أنشئه
+        const newVariant = await tx.productVariant.create({
+          data: {
+            productId,
+            sku: `${body.slug}-default-${Date.now()}`,
+            price: body.price,
+            discountPrice: body.oldPrice || null,
+            isDefault: true,
+            isActive: true,
+            optionsHash: "DEFAULT",
+          },
+        });
+
+        await tx.inventory.create({
+          data: {
+            variantId: newVariant.id,
+            quantity: body.stock ?? 0,
+            reservedQuantity: 0,
+            lowStockThreshold: 5,
+          },
         });
       }
     });
