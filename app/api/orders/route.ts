@@ -51,6 +51,8 @@ export async function POST(request: Request) {
       subtotal: body.subtotal,
       shippingCost: body.shippingCost,
       total: body.total,
+      discount: body.discount ?? 0,
+      couponId: body.couponId,
       address: {
         fullName: addr.fullName,
         phone: addr.phone,

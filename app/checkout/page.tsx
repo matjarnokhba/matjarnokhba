@@ -13,6 +13,9 @@ import {
   Phone,
   User,
   Home,
+  Ticket,
+  X,
+  Check,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -68,10 +71,17 @@ export default function CheckoutPage() {
   const [success, setSuccess] = useState<{ orderNumber: string } | null>(null);
   const [search, setSearch] = useState("");
 
+  // ═══════ الكوبون ═══════
+  const [couponCode, setCouponCode] = useState("");
+  const [couponId, setCouponId] = useState<number | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+
   // ═══════ الحسابات ═══════
   const shippingCost =
     subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
-  const total = subtotal + shippingCost;
+  const total = Math.max(0, subtotal + shippingCost - couponDiscount);
 
   // ═══════ إعادة التوجيه إذا السلة فارغة ═══════
   useEffect(() => {
@@ -80,12 +90,56 @@ export default function CheckoutPage() {
     }
   }, [isReady, items.length, success, router]);
 
+  // ═══════ تطبيق الكوبون ═══════
+  async function applyCoupon() {
+    setCouponError("");
+    if (!couponCode.trim()) {
+      setCouponError("أدخل كود الكوبون");
+      return;
+    }
+
+    setCouponLoading(true);
+    try {
+      const res = await fetch("/api/coupons/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: couponCode.trim(),
+          subtotal,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setCouponError(data.message || "كود غير صحيح");
+        setCouponId(null);
+        setCouponDiscount(0);
+        return;
+      }
+
+      setCouponId(data.coupon.id);
+      setCouponDiscount(data.discount);
+      setCouponError("");
+    } catch {
+      setCouponError("فشل الاتصال بالخادم");
+    } finally {
+      setCouponLoading(false);
+    }
+  }
+
+  function removeCoupon() {
+    setCouponCode("");
+    setCouponId(null);
+    setCouponDiscount(0);
+    setCouponError("");
+  }
+
   // ═══════ إرسال الطلب ═══════
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    // تحقق
     if (!fullName.trim() || fullName.trim().length < 2) {
       setError("الاسم يجب أن يكون حرفين على الأقل");
       return;
@@ -114,9 +168,10 @@ export default function CheckoutPage() {
             productId: item.id,
             variantId: item.variantId,
             productName: item.name,
-            variantName: [item.selectedColor, item.selectedSize]
-              .filter(Boolean)
-              .join(" / ") || undefined,
+            variantName:
+              [item.selectedColor, item.selectedSize]
+                .filter(Boolean)
+                .join(" / ") || undefined,
             sku: item.slug,
             imageUrl: item.images[0],
             quantity: item.quantity,
@@ -124,6 +179,8 @@ export default function CheckoutPage() {
           })),
           subtotal,
           shippingCost,
+          discount: couponDiscount,
+          couponId: couponId || undefined,
           total,
           address: {
             fullName: fullName.trim(),
@@ -148,7 +205,6 @@ export default function CheckoutPage() {
         return;
       }
 
-      // نجاح
       setSuccess({ orderNumber: data.order.orderNumber });
       clearCart();
     } catch (err) {
@@ -263,13 +319,13 @@ export default function CheckoutPage() {
                     الاسم الكامل <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rounded -translate-y-1/2 text-gray-400" />
+                    <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <input
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="أحمد محمد"
-                      className="w-full-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
                       required
                     />
                   </div>
@@ -351,6 +407,64 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {/* ═══════ الكوبون ═══════ */}
+            <div className="rounded-2xl bg-white p-5 shadow-sm">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-black">
+                <Ticket className="h-4 w-4 text-[#ff5c00]" />
+                كود الخصم
+              </h2>
+
+              {couponId ? (
+                <div className="flex items-center gap-3 rounded-lg border-2 border-green-500 bg-green-50 p-3">
+                  <Check className="h-5 w-5 text-green-600" />
+                  <div className="flex-1">
+                    <div className="text-sm font-bold text-green-700">
+                      {couponCode.toUpperCase()}
+                    </div>
+                    <div className="text-[11px] text-green-600">
+                      وفّرت {couponDiscount} {CURRENCY}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={removeCoupon}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-red-500 transition hover:bg-red-100"
+                    aria-label="إزالة"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="أدخل الكود"
+                      dir="ltr"
+                      className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyCoupon}
+                      disabled={couponLoading || !couponCode.trim()}
+                      className="rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
+                    >
+                      {couponLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "تطبيق"
+                      )}
+                    </button>
+                  </div>
+                  {couponError && (
+                    <p className="mt-2 text-xs text-red-600">{couponError}</p>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* طريقة الدفع */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-base font-black">طريقة الدفع</h2>
@@ -381,10 +495,7 @@ export default function CheckoutPage() {
               {/* قائمة المنتجات */}
               <div className="max-h-64 space-y-3 overflow-y-auto border-b border-gray-100 pb-4">
                 {items.map((item, idx) => (
-                  <div
-                    key={`${item.id}-${idx}`}
-                    className="flex gap-2"
-                  >
+                  <div key={`${item.id}-${idx}`} className="flex gap-2">
                     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100">
                       <img
                         src={item.images[0]}
@@ -436,6 +547,14 @@ export default function CheckoutPage() {
                       : `${shippingCost} ${CURRENCY}`}
                   </span>
                 </div>
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-[#6b7280]">
+                    <span>الخصم</span>
+                    <span className="font-bold text-green-600">
+                      -{couponDiscount} {CURRENCY}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 text-sm">
                   <span className="font-bold">الإجمالي</span>
                   <span className="text-lg font-black text-[#ff5c00]">

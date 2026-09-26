@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Star,
+  Ticket,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
+  { href: "/admin/coupons", label: "الكوبونات", icon: Ticket, exact: false },
   { href: "/admin/users", label: "المستخدمون", icon: Users, exact: false },
 ];
 

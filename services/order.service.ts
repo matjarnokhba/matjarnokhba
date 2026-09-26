@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { CouponService } from "@/services/coupon.service";
 
 // ═══════════════════════════════════════════
 // الأنواع
@@ -27,6 +28,8 @@ type CreateOrderInput = {
   subtotal: number;
   shippingCost: number;
   total: number;
+  discount: number;
+  couponId?: number;
   address: AddressInput;
   customer: {
     id: number;
@@ -69,7 +72,7 @@ export const OrderService = {
           subtotal: data.subtotal,
           taxAmount: 0,
           shippingCost: data.shippingCost,
-          discount: 0,
+          discount: data.discount,
           total: data.total,
           shippingAddressSnapshot: data.address,
           customerSnapshot: data.customer,
@@ -102,7 +105,18 @@ export const OrderService = {
         },
       });
 
-      // 3. إنشاء إشعار
+      // 3. تطبيق الكوبون (إن وُجد)
+      if (data.couponId) {
+        await CouponService.applyInTransaction(
+          tx,
+          data.couponId,
+          userId,
+          order.id,
+          data.discount
+        );
+      }
+
+      // 4. إنشاء إشعار
       await tx.notification.create({
         data: {
           userId,
