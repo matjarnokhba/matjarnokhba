@@ -8,17 +8,16 @@ import {
   Menu,
   Heart,
   X,
-  Bell,
 } from "lucide-react";
 import BrandLogo from "@/components/ui/Logo";
 import UserMenu from "@/components/UserMenu";
+import NotificationDropdown from "@/components/layout/NotificationDropdown";
 
 type HeaderProps = {
   search: string;
   onSearchChange: (value: string) => void;
   cartCount: number;
   onCartClick: () => void;
-  notifCount?: number;
 };
 
 const SHOW_AT_TOP = 40;
@@ -29,7 +28,6 @@ export default function Header({
   onSearchChange,
   cartCount,
   onCartClick,
-  notifCount = 0,
 }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -119,17 +117,7 @@ export default function Header({
           <UserMenu />
 
           {/* الإشعارات */}
-          <button
-            className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
-            aria-label="الإشعارات"
-          >
-            <Bell className="h-[18px] w-[18px] text-[#111827]" />
-            {notifCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                {notifCount}
-              </span>
-            )}
-          </button>
+          <NotificationDropdown />
 
           {/* السلة */}
           <button
