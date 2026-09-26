@@ -90,6 +90,29 @@ export async function PATCH(
           link: `/orders/${order.id}`,
         },
       });
+
+      // ═══ عند التسليم: زيادة عداد المبيعات ═══
+      if (newStatus === "DELIVERED" && order.status !== "DELIVERED") {
+        const items = await tx.orderItem.findMany({
+          where: { orderId },
+          select: { productId: true, quantity: true },
+        });
+
+        const soldByProduct = new Map<number, number>();
+        for (const item of items) {
+          soldByProduct.set(
+            item.productId,
+            (soldByProduct.get(item.productId) || 0) + item.quantity
+          );
+        }
+
+        for (const [productId, qty] of soldByProduct) {
+          await tx.product.update({
+            where: { id: productId },
+            data: { sold: { increment: qty } },
+          });
+        }
+      }
     });
 
     return NextResponse.json({ success: true });
