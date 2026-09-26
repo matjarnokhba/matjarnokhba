@@ -12,6 +12,8 @@ import {
 import BrandLogo from "@/components/ui/Logo";
 import UserMenu from "@/components/UserMenu";
 import NotificationDropdown from "@/components/layout/NotificationDropdown";
+import { useFavorites } from "@/lib/hooks/useFavorites";
+import Link from "next/link";
 
 type HeaderProps = {
   search: string;
@@ -29,6 +31,7 @@ export default function Header({
   cartCount,
   onCartClick,
 }: HeaderProps) {
+  const { count: favoritesCount } = useFavorites();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(true);
@@ -105,13 +108,19 @@ export default function Header({
             </button>
           )}
 
-          {/* المفضلة (سطح المكتب) */}
-          <button
-            className="hidden h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-100 lg:flex"
+          {/* المفضلة */}
+          <Link
+            href="/favorites"
+            className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
             aria-label="المفضلة"
           >
             <Heart className="h-[18px] w-[18px] text-[#111827]" />
-          </button>
+            {favoritesCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                {favoritesCount}
+              </span>
+            )}
+          </Link>
 
           {/* الحساب — UserMenu */}
           <UserMenu />

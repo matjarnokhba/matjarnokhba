@@ -30,6 +30,7 @@ import {
   type Product,
 } from "@/lib/data/products";
 import { useCart } from "@/lib/hooks/useCart";
+import { useFavorites } from "@/lib/hooks/useFavorites";
 
 export default function ProductPage() {
   const params = useParams();
@@ -46,7 +47,6 @@ export default function ProductPage() {
   const [selectedColor, setSelectedColor] = useState<string | undefined>();
   const [selectedSize, setSelectedSize] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
-  const [isFavorite, setIsFavorite] = useState(false);
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -60,6 +60,8 @@ export default function ProductPage() {
     updateQuantity,
     removeItem,
   } = useCart();
+
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   // ═══════ جلب المنتج من API ═══════
   useEffect(() => {
@@ -265,14 +267,16 @@ export default function ProductPage() {
                 )}
 
                 <button
-                  onClick={() => setIsFavorite(!isFavorite)}
+                  onClick={() => product && toggleFavorite(product)}
                   className={`absolute bottom-3 left-3 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition ${
-                    isFavorite ? "bg-red-500 text-white" : "bg-white text-[#111827]"
+                    isFavorite(product.id)
+                      ? "bg-red-500 text-white"
+                      : "bg-white text-[#111827]"
                   }`}
                   aria-label="المفضلة"
                 >
                   <Heart
-                    className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`}
+                    className={`h-5 w-5 ${isFavorite(product.id) ? "fill-current" : ""}`}
                   />
                 </button>
 
@@ -462,15 +466,17 @@ export default function ProductPage() {
                 أضف إلى السلة
               </button>
               <button
-                onClick={() => setIsFavorite(!isFavorite)}
+                onClick={() => product && toggleFavorite(product)}
                 className={`flex h-11 w-11 items-center justify-center rounded-lg border transition ${
-                  isFavorite
+                  isFavorite(product.id)
                     ? "border-red-500 bg-red-50 text-red-500"
                     : "border-gray-200 text-[#111827] hover:border-gray-300"
                 }`}
                 aria-label="المفضلة"
               >
-                <Heart className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`} />
+                <Heart
+                  className={`h-5 w-5 ${isFavorite(product.id) ? "fill-current" : ""}`}
+                />
               </button>
             </div>
 
