@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { CouponService } from "@/services/coupon.service";
+import { InventoryService } from "@/services/inventory.service";
+
+// ═══════════════════════════════════════════
+// الثوابت
+// ═══════════════════════════════════════════
+const RESERVATION_DURATION_MINUTES = 30;
 
 // ═══════════════════════════════════════════
 // الأنواع
@@ -42,7 +48,7 @@ type CreateOrderInput = {
 // OrderService
 // ═══════════════════════════════════════════
 export const OrderService = {
-  // توليد رقم طلب فريد: ORD-2026-00001
+  // توليد رقم طلب فريد
   async generateOrderNumber(tx: any): Promise<string> {
     const year = new Date().getFullYear();
 
@@ -61,7 +67,7 @@ export const OrderService = {
       // 1. توليد رقم الطلب
       const orderNumber = await this.generateOrderNumber(tx);
 
-      // 2. إنشاء الطلب مع العناصر
+      // 2. إنشاء الطلب
       const order = await tx.order.create({
         data: {
           orderNumber,
@@ -100,12 +106,48 @@ export const OrderService = {
             },
           },
         },
-        include: {
-          items: true,
+        include: { items: true },
+      });
+
+      // 3. حجز المخزون + إنشاء Reservation
+      const expiresAt = new Date(
+        Date.now() + RESERVATION_DURATION_MINUTES * 60 * 1000
+      );
+
+      const reservation = await tx.reservation.create({
+        data: {
+          orderId: order.id,
+          status: "ACTIVE",
+          expiresAt,
         },
       });
 
-      // 3. تطبيق الكوبون (إن وُجد)
+      for (const item of data.items) {
+        if (!item.variantId) {
+          throw new Error(
+            `المنتج "${item.productName}" غير قابل للحجز (variant مفقود)`
+          );
+        }
+
+        // حجز المخزون
+        await InventoryService.reserve(
+          tx,
+          item.variantId,
+          item.quantity,
+          order.id
+        );
+
+        // إنشاء ReservationItem
+        await tx.reservationItem.create({
+          data: {
+            reservationId: reservation.id,
+            variantId: item.variantId,
+            quantity: item.quantity,
+          },
+        });
+      }
+
+      // 4. تطبيق الكوبون
       if (data.couponId) {
         await CouponService.applyInTransaction(
           tx,
@@ -116,13 +158,13 @@ export const OrderService = {
         );
       }
 
-      // 4. إنشاء إشعار
+      // 5. إشعار
       await tx.notification.create({
         data: {
           userId,
           type: "ORDER_CREATED",
           title: "تم استلام طلبك",
-          message: `طلبك ${orderNumber} قيد المراجعة. سنتواصل معك قريباً.`,
+          message: `طلبك ${orderNumber} قيد المراجعة. لديك 30 دقيقة قبل انتهاء الحجز.`,
           link: `/orders/${order.id}`,
         },
       });
