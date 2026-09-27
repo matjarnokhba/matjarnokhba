@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.6
+**Version:** 2.7
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -4871,3 +4871,74 @@ End of Section 76 (v2.5)
 - Feat: category page with sorting
 
 End of Section 76 (v2.6)
+
+## 76.18 نظام الحجز (Reservation) (v2.7)
+
+### الملفات
+* services/inventory.service.ts  ← جديد
+* services/order.service.ts  ← محدّث
+* app/api/admin/orders/[id]/status/route.ts  ← محدّث
+* app/api/cron/expire-reservations/route.ts  ← جديد
+
+### InventoryService — البوابة الوحيدة
+كل تعديل على Inventory يمر عبر هذه الخدمة:
+* lockInventory (SELECT FOR UPDATE)
+* reserve (حجز عند Checkout)
+* unreserve (تحرير)
+* commitSale (خصم عند PROCESSING)
+* returnStock (إرجاع)
+* stockIn (إضافة — Admin)
+* adjust (تعديل يدوي — Admin)
+* getStock (قراءة)
+
+كل دالة:
+* تسجّل InventoryMovement تلقائياً
+* تتحقق من القيود
+* تستخدم Locking لمنع Race Conditions
+
+### دورة حياة Reservation
+```
+
+Checkout → Reservation ACTIVE (30 دقيقة) + reservedQuantity += qty
+↓
+Admin يؤكد (NEW → PROCESSING)
+→ commitSale: quantity -= qty, reservedQuantity -= qty
+→ Reservation = CONFIRMED
+→ Movement = SALE
+
+أو Admin يلغي (NEW → CANCELLED)
+→ unreserve: reservedQuantity -= qty
+→ Reservation = RELEASED
+→ Movement = UNRESERVE
+
+أو Admin يلغي بعد التأكيد (PROCESSING → CANCELLED)
+→ returnStock: quantity += qty
+→ Reservation = RELEASED (CANCELLED_AFTER_CONFIRM)
+→ Movement = RETURN
+
+أو 30 دقيقة تمر بدون تأكيد
+→ Cron Job يحرّر تلقائياً
+→ Reservation = EXPIRED
+→ Order = CANCELLED
+→ إشعار للعميل
+
+```
+
+### Cron Job
+* المسار: /api/cron/expire-reservations
+* يعمل كل 5 دقائق (Vercel Cron)
+* يحمي بـCRON_SECRET
+* معالجة كل 50 حجز منته في الدفعة
+* يستخدم Lock Order → Lock Reservation → Lock Inventory (Lock Ordering)
+
+### Constants
+* RESERVATION_DURATION_MINUTES = 30
+* Cron interval = 5 دقائق
+* Batch size = 50
+
+### اختبارات النجاح
+* reserve/confirm/cancel/release/return/expire كلها تعمل
+* Movement يُسجَّل في كل عملية
+* الإشعارات تُنشأ
+
+## 76.19 Git History (v2.7)
