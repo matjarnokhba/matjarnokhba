@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.9
+**Version:** 2.10
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5062,3 +5062,33 @@ End of Section 76 (v2.8)
 - تفعيل / تعطيل
 
 End of Section 76 (v2.9)
+
+## 76.24 Admin Users & Categories (v2.10)
+
+انظر v2.9 — تم استكمالهما بـ:
+- Admin Users page (قائمة + بحث + فلترة + إحصائيات)
+- Admin Categories page (CRUD + منع حذف تصنيف فيه منتجات)
+
+## 76.25 SEO (v2.10)
+
+### الملفات
+- app/sitemap.ts — Sitemap ديناميكي
+- app/robots.ts — robots.txt
+- app/layout.tsx — Metadata عامة + metadataBase
+- app/product/[slug]/page.tsx — generateMetadata + JSON-LD Product
+- app/category/[slug]/page.tsx — generateMetadata + JSON-LD Breadcrumb
+
+### الميزات
+- Sitemap يضم: كل المنتجات ACTIVE + كل التصنيفات + ثوابت
+- robots.txt يحجب: /admin, /api/, /checkout, /orders, /profile
+- كل منتج له: title, description, og:image, JSON-LD
+- كل تصنيف له: title, description, breadcrumb
+- canonical على كل صفحة
+- env: NEXT_PUBLIC_SITE_URL
+
+### نمط الفصل
+عندما تحتاج صفحة Client Component أن يكون لها metadata:
+1. صفحة `page.tsx` → Server Component (فيها generateMetadata + JSON-LD)
+2. صفحة `XxxClient.tsx` → Client Component (نفس المحتوى مع "use client")
+
+**End of Section 76 (v2.10)**
