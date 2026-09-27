@@ -25,6 +25,7 @@ import TopBar from "@/components/layout/TopBar";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ReviewModal from "@/components/reviews/ReviewModal";
+import ReturnModal from "@/components/returns/ReturnModal";
 
 // ═══════ الأنواع ═══════
 type OrderItem = {
@@ -65,6 +66,20 @@ type Order = {
     toStatus: string;
     note: string | null;
     createdAt: string;
+  }[];
+};
+
+type ReturnRequest = {
+  id: number;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
+  reason: string;
+  adminNote: string | null;
+  requestedAt: string;
+  items: {
+    id: number;
+    quantity: number;
+    refundAmount: string;
+    orderItem: { productName: string };
   }[];
 };
 
@@ -118,6 +133,32 @@ const STATUS_INFO: Record<
   },
 };
 
+const RETURN_STATUS_INFO: Record<
+  string,
+  { label: string; color: string; bg: string }
+> = {
+  PENDING: {
+    label: "قيد المراجعة",
+    color: "text-amber-700",
+    bg: "bg-amber-50",
+  },
+  APPROVED: {
+    label: "تمت الموافقة",
+    color: "text-blue-700",
+    bg: "bg-blue-50",
+  },
+  REJECTED: {
+    label: "مرفوض",
+    color: "text-red-700",
+    bg: "bg-red-50",
+  },
+  COMPLETED: {
+    label: "مكتمل",
+    color: "text-green-700",
+    bg: "bg-green-50",
+  },
+};
+
 const CURRENCY = "د.م";
 
 export default function OrderDetailPage() {
@@ -126,6 +167,7 @@ export default function OrderDetailPage() {
   const orderId = params.id as string;
 
   const [order, setOrder] = useState<Order | null>(null);
+  const [returns, setReturns] = useState<ReturnRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -138,33 +180,48 @@ export default function OrderDetailPage() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnSuccess, setReturnSuccess] = useState(false);
+
+  async function loadOrder() {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/orders/${orderId}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || "الطلب غير موجود");
+        setLoading(false);
+        return;
+      }
+
+      setOrder(data.order);
+    } catch (err) {
+      console.error(err);
+      setError("فشل الاتصال بالخادم");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadReturns() {
+    try {
+      const res = await fetch(`/api/returns?orderId=${orderId}`);
+      const data = await res.json();
+      if (data.success) setReturns(data.returns);
+    } catch {
+      // silent
+    }
+  }
 
   useEffect(() => {
-    async function loadOrder() {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/orders/${orderId}`);
-        const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          setError(data.message || "الطلب غير موجود");
-          setLoading(false);
-          return;
-        }
-
-        setOrder(data.order);
-      } catch (err) {
-        console.error(err);
-        setError("فشل الاتصال بالخادم");
-      } finally {
-        setLoading(false);
-      }
+    if (orderId) {
+      loadOrder();
+      loadReturns();
     }
-
-    if (orderId) loadOrder();
   }, [orderId]);
 
-  // جلب المراجعات الموجودة لهذا الطلب
+  // جلب المراجعات
   useEffect(() => {
     async function loadReviews() {
       try {
@@ -180,7 +237,7 @@ export default function OrderDetailPage() {
     if (orderId) loadReviews();
   }, [orderId]);
 
-  // ═══ العدّاد التنازلي للحجز ═══
+  // ═══ العدّاد التنازلي ═══
   useEffect(() => {
     if (!order || order.status !== "NEW") {
       setTimeLeft(0);
@@ -199,7 +256,7 @@ export default function OrderDetailPage() {
     return () => clearInterval(interval);
   }, [order]);
 
-  // ═══ إلغاء الطلب من العميل ═══
+  // ═══ إلغاء الطلب ═══
   async function handleCancelOrder() {
     setCancelling(true);
     try {
@@ -222,7 +279,6 @@ export default function OrderDetailPage() {
     }
   }
 
-  // تنسيق الوقت
   function formatTime(ms: number) {
     const totalSec = Math.floor(ms / 1000);
     const min = Math.floor(totalSec / 60);
@@ -230,7 +286,7 @@ export default function OrderDetailPage() {
     return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
 
-  // ═══════ حالة التحميل ═══════
+  // ═══ حالة التحميل ═══
   if (loading) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -250,7 +306,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  // ═══════ خطأ ═══════
+  // ═══ خطأ ═══
   if (error || !order) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -287,6 +343,12 @@ export default function OrderDetailPage() {
 
   const address = order.shippingAddressSnapshot;
 
+  // ═══ هل يمكن طلب إرجاع؟ ═══
+  const hasActiveReturn = returns.some(
+    (r) => r.status === "PENDING" || r.status === "APPROVED"
+  );
+  const canRequestReturn = order.status === "DELIVERED" && !hasActiveReturn;
+
   return (
     <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
       <TopBar />
@@ -317,7 +379,7 @@ export default function OrderDetailPage() {
       </div>
 
       <div className="mx-auto max-w-4xl px-4 py-6">
-        {/* ═══════ رأس الصفحة ═══════ */}
+        {/* ═══ رأس الصفحة ═══ */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -347,7 +409,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* ═══════ العدّاد + زر الإلغاء (فقط عند NEW) ═══════ */}
+        {/* ═══ العدّاد + زر الإلغاء ═══ */}
         {order.status === "NEW" && timeLeft > 0 && (
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 shadow-sm ring-1 ring-amber-200">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -380,7 +442,19 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══════ شريط التتبع ═══════ */}
+        {/* ═══ نجاح الإرجاع ═══ */}
+        {returnSuccess && (
+          <div className="mt-4 rounded-2xl bg-green-50 p-4 shadow-sm ring-1 ring-green-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <span className="text-sm font-bold text-green-700">
+                تم استلام طلب الإرجاع بنجاح — سنراجعه قريباً.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ شريط التتبع ═══ */}
         {isTrackingActive && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-5 text-base font-black">حالة الطلب</h2>
@@ -391,9 +465,6 @@ export default function OrderDetailPage() {
                 className="absolute right-0 top-5 h-1 bg-[#ff5c00] transition-all"
                 style={{
                   width: `${(currentStepIndex / (STATUS_FLOW.length - 1)) * 100}%`,
-                  right: 0,
-                  left: "auto",
-                  transform: "scaleX(1)",
                 }}
               />
 
@@ -404,7 +475,10 @@ export default function OrderDetailPage() {
                   const isCurrent = idx === currentStepIndex;
 
                   return (
-                    <div key={step.key} className="flex flex-1 flex-col items-center">
+                    <div
+                      key={step.key}
+                      className="flex flex-1 flex-col items-center"
+                    >
                       <div
                         className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-2 transition ${
                           isDone
@@ -429,7 +503,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══════ المنتجات ═══════ */}
+        {/* ═══ المنتجات ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
             <ShoppingBag className="h-4 w-4 text-[#ff5c00]" />
@@ -515,9 +589,90 @@ export default function OrderDetailPage() {
               );
             })}
           </div>
+
+          {/* ═══ زر طلب الإرجاع ═══ */}
+          {canRequestReturn && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <button
+                onClick={() => setShowReturnModal(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+              >
+                <RotateCcw className="h-4 w-4" />
+                طلب إرجاع منتجات
+              </button>
+              <p className="mt-2 text-center text-[10px] text-gray-400">
+                يمكنك الإرجاع خلال 7 أيام من استلام الطلب
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* ═══════ العنوان ═══════ */}
+        {/* ═══ طلبات الإرجاع السابقة ═══ */}
+        {returns.length > 0 && (
+          <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+            <h2 className="mb-4 flex items-center gap-2 text-base font-black">
+              <RotateCcw className="h-4 w-4 text-[#ff5c00]" />
+              طلبات الإرجاع
+            </h2>
+
+            <div className="space-y-3">
+              {returns.map((ret) => {
+                const info = RETURN_STATUS_INFO[ret.status];
+                return (
+                  <div
+                    key={ret.id}
+                    className="rounded-xl border border-gray-100 bg-gray-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold">
+                        طلب إرجاع #{ret.id}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${info.bg} ${info.color}`}
+                      >
+                        {info.label}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[11px] text-gray-600">
+                      <strong>السبب:</strong> {ret.reason}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {ret.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between text-[10px] text-gray-500"
+                        >
+                          <span className="truncate">
+                            {item.orderItem.productName} (×{item.quantity})
+                          </span>
+                          {Number(item.refundAmount) > 0 && (
+                            <span className="font-bold text-green-600">
+                              {item.refundAmount} {CURRENCY}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {ret.adminNote && (
+                      <div className="mt-2 rounded bg-white px-2 py-1 text-[10px] text-gray-500">
+                        <strong>ملاحظة الإدارة:</strong> {ret.adminNote}
+                      </div>
+                    )}
+                    <div className="mt-2 text-[10px] text-gray-400">
+                      {new Date(ret.requestedAt).toLocaleDateString("ar-MA", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ العنوان ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
             <MapPin className="h-4 w-4 text-[#ff5c00]" />
@@ -543,7 +698,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* ═══════ ملخص الأسعار ═══════ */}
+        {/* ═══ ملخص الأسعار ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-base font-black">ملخص الطلب</h2>
 
@@ -589,7 +744,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* ═══════ سجل الحالة ═══════ */}
+        {/* ═══ سجل الحالة ═══ */}
         {order.statusHistory.length > 0 && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-base font-black">سجل الطلب</h2>
@@ -630,7 +785,6 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* زر العودة */}
         <div className="mt-6">
           <Link
             href="/orders"
@@ -644,7 +798,7 @@ export default function OrderDetailPage() {
 
       <Footer />
 
-      {/* ═══════ Modal المراجعة ═══════ */}
+      {/* ═══ Modal المراجعة ═══ */}
       {reviewModal && (
         <ReviewModal
           isOpen={true}
@@ -659,7 +813,7 @@ export default function OrderDetailPage() {
         />
       )}
 
-      {/* ═══════ Modal تأكيد الإلغاء ═══════ */}
+      {/* ═══ Modal تأكيد الإلغاء ═══ */}
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
@@ -698,6 +852,21 @@ export default function OrderDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══ Modal الإرجاع ═══ */}
+      {showReturnModal && (
+        <ReturnModal
+          orderId={order.id}
+          onClose={() => setShowReturnModal(false)}
+          onSuccess={() => {
+            setShowReturnModal(false);
+            setReturnSuccess(true);
+            loadReturns();
+            loadOrder();
+            setTimeout(() => setReturnSuccess(false), 6000);
+          }}
+        />
       )}
     </main>
   );
