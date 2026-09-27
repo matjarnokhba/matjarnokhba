@@ -18,6 +18,7 @@ import {
   Home,
   ShoppingBag,
   Star,
+  AlertTriangle,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -134,6 +135,9 @@ export default function OrderDetailPage() {
     productName: string;
     productImage: string | null;
   } | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   useEffect(() => {
     async function loadOrder() {
@@ -175,6 +179,56 @@ export default function OrderDetailPage() {
     }
     if (orderId) loadReviews();
   }, [orderId]);
+
+  // ═══ العدّاد التنازلي للحجز ═══
+  useEffect(() => {
+    if (!order || order.status !== "NEW") {
+      setTimeLeft(0);
+      return;
+    }
+
+    const expiresAt = new Date(order.createdAt).getTime() + 30 * 60 * 1000;
+
+    const tick = () => {
+      const remaining = Math.max(0, expiresAt - Date.now());
+      setTimeLeft(remaining);
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [order]);
+
+  // ═══ إلغاء الطلب من العميل ═══
+  async function handleCancelOrder() {
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, {
+        method: "PATCH",
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        alert(data.message || "فشل الإلغاء");
+        setCancelling(false);
+        return;
+      }
+
+      setShowCancelConfirm(false);
+      window.location.reload();
+    } catch {
+      alert("فشل الاتصال بالخادم");
+      setCancelling(false);
+    }
+  }
+
+  // تنسيق الوقت
+  function formatTime(ms: number) {
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
 
   // ═══════ حالة التحميل ═══════
   if (loading) {
@@ -225,12 +279,10 @@ export default function OrderDetailPage() {
   const statusInfo = STATUS_INFO[order.status] || STATUS_INFO.NEW;
   const StatusIcon = statusInfo.icon;
 
-  // هل الطلب في مسار التتبع الطبيعي (لا ملغى/مرتجع)؟
   const isTrackingActive = ["NEW", "PROCESSING", "SHIPPED", "DELIVERED"].includes(
     order.status
   );
 
-  // الفهرس الحالي في مسار التتبع
   const currentStepIndex = STATUS_FLOW.findIndex((s) => s.key === order.status);
 
   const address = order.shippingAddressSnapshot;
@@ -295,13 +347,45 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
+        {/* ═══════ العدّاد + زر الإلغاء (فقط عند NEW) ═══════ */}
+        {order.status === "NEW" && timeLeft > 0 && (
+          <div className="mt-4 rounded-2xl bg-amber-50 p-4 shadow-sm ring-1 ring-amber-200">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                  <Clock className="h-5 w-5 text-amber-700" />
+                </div>
+                <div>
+                  <div className="text-sm font-black text-amber-800">
+                    طلبك قيد الانتظار
+                  </div>
+                  <div className="mt-0.5 text-xs text-amber-700">
+                    سنؤكد الطلب قريباً — إذا لم يتم التأكيد، سيلغى تلقائياً بعد
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white px-3 py-2 font-mono text-lg font-black tabular-nums text-amber-700 shadow-sm">
+                  {formatTime(timeLeft)}
+                </div>
+                <button
+                  onClick={() => setShowCancelConfirm(true)}
+                  className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                >
+                  إلغاء الطلب
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ═══════ شريط التتبع ═══════ */}
         {isTrackingActive && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-5 text-base font-black">حالة الطلب</h2>
 
             <div className="relative">
-              {/* خط أفقي */}
               <div className="absolute left-0 right-0 top-5 h-1 bg-gray-100" />
               <div
                 className="absolute right-0 top-5 h-1 bg-[#ff5c00] transition-all"
@@ -313,7 +397,6 @@ export default function OrderDetailPage() {
                 }}
               />
 
-              {/* النقاط */}
               <div className="relative flex justify-between">
                 {STATUS_FLOW.map((step, idx) => {
                   const StepIcon = step.icon;
@@ -404,7 +487,6 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
 
-                  {/* زر التقييم */}
                   {canReview && (
                     <div className="mt-2 pl-19">
                       {isReviewed ? (
@@ -513,7 +595,7 @@ export default function OrderDetailPage() {
             <h2 className="mb-4 text-base font-black">سجل الطلب</h2>
 
             <div className="space-y-3">
-              {order.statusHistory.map((h, idx) => {
+              {order.statusHistory.map((h) => {
                 const info = STATUS_INFO[h.toStatus] || STATUS_INFO.NEW;
                 const Icon = info.icon;
 
@@ -562,6 +644,7 @@ export default function OrderDetailPage() {
 
       <Footer />
 
+      {/* ═══════ Modal المراجعة ═══════ */}
       {reviewModal && (
         <ReviewModal
           isOpen={true}
@@ -574,6 +657,47 @@ export default function OrderDetailPage() {
           productName={reviewModal.productName}
           productImage={reviewModal.productImage}
         />
+      )}
+
+      {/* ═══════ Modal تأكيد الإلغاء ═══════ */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-7 w-7 text-amber-600" />
+            </div>
+            <h3 className="mt-4 text-lg font-black">تأكيد الإلغاء</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              هل أنت متأكد من إلغاء الطلب؟
+              <br />
+              <span className="text-xs text-gray-400">
+                سيُحرَّر المخزون ولا يمكن التراجع.
+              </span>
+            </p>
+
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={handleCancelOrder}
+                disabled={cancelling}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 py-2.5 text-sm font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
+              >
+                {cancelling ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                نعم، ألغِ
+              </button>
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={cancelling}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+              >
+                تراجع
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );
