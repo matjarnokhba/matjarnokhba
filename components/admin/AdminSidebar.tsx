@@ -15,6 +15,7 @@ import {
   Star,
   Ticket,
   RotateCcw,
+  FolderTree,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -25,6 +26,7 @@ type AdminSidebarProps = {
 const NAV_ITEMS = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
+  { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
   { href: "/admin/returns", label: "الإرجاع", icon: RotateCcw, exact: false },
@@ -109,7 +111,7 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
         </div>
 
         {/* ═══ Navigation ═══ */}
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href, item.exact);
