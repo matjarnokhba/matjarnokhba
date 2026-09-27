@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.8
+**Version:** 2.9
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5032,3 +5032,33 @@ refundRaw = unitPrice × quantity × (1 - discount / subtotal)
 - Feat: admin returns UI (list + detail + actions)
 
 End of Section 76 (v2.8)
+
+## 76.22 Admin Users (v2.9)
+
+### الملفات
+- app/api/admin/users/route.ts
+- app/admin/users/page.tsx
+
+### الميزات
+- قائمة كل المستخدمين (100 كحد أقصى)
+- إحصائيات: الإجمالي / عملاء / مدراء / مدير عام
+- فلترة حسب الدور
+- بحث (name, email, phone)
+- عرض: عدد الطلبات + تاريخ الانضمام
+
+## 76.23 Admin Categories (v2.9)
+
+### الملفات
+- app/api/admin/categories/route.ts
+- app/api/admin/categories/[id]/route.ts
+- app/admin/categories/page.tsx
+
+### الميزات
+- إنشاء / تعديل / Soft Delete
+- slug تلقائي (lowercase + replace spaces)
+- منع slug مكرر
+- منع حذف تصنيف فيه منتجات (يُظهر العدد)
+- عرض عدد المنتجات لكل تصنيف
+- تفعيل / تعطيل
+
+End of Section 76 (v2.9)
