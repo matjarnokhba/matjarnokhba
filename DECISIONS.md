@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.7
+**Version:** 2.8
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -4942,3 +4942,93 @@ Admin يؤكد (NEW → PROCESSING)
 * الإشعارات تُنشأ
 
 ## 76.19 Git History (v2.7)
+
+## 76.20 نظام الإرجاع (Return System) (v2.8)
+
+### الملفات
+- services/return.service.ts  ← جديد
+- app/api/returns/route.ts  ← جديد
+- app/api/orders/[id]/returnable/route.ts  ← جديد
+- app/api/admin/returns/route.ts  ← جديد
+- app/api/admin/returns/[id]/route.ts  ← جديد
+- components/returns/ReturnModal.tsx  ← جديد
+- app/orders/[id]/page.tsx  ← محدّث (زر طلب إرجاع)
+- app/admin/returns/page.tsx  ← جديد
+- app/admin/returns/[id]/page.tsx  ← جديد
+- components/admin/AdminSidebar.tsx  ← محدّث (رابط الإرجاع)
+
+### القواعد
+- الإرجاع فقط بعد DELIVERED
+- نافذة: 7 × 24 ساعة من deliveredAt
+- مرة واحدة لكل OrderItem (تتعدد الطلبات لكن بحد الكمية)
+- لا يمكن أن تتجاوز الكميات الأصلية
+
+### دورة حياة ReturnRequest
+
+PENDING → APPROVED → COMPLETED
+PENDING → REJECTED (نهائي)
+
+- PENDING → لا يمكن COMPLETE
+- REJECTED → لا شيء
+- COMPLETED → لا شيء
+
+### Complete (الأهم)
+داخل Transaction واحدة:
+1. Lock ReturnRequest
+2. تحقق من APPROVED
+3. تحقق Order = DELIVERED
+4. ReturnRequest = COMPLETED
+5. InventoryService.returnStock لكل OrderItem
+6. حساب Refund لكل item
+7. إذا Full Return → reconcileRefunds (Largest Remainder)
+8. تحديث Order.refundedAmount
+9. إذا Full Return → shipping refund مرة واحدة
+10. تحديد PaymentStatus
+11. إذا Full Return → Order = RETURNED (عبر changeOrderStatus)
+12. Movement = RETURN لكل item
+
+### Refund Formula
+
+refundRaw = unitPrice × quantity × (1 - discount / subtotal)
+
+- جميع الحسابات بـDecimal
+- ROUND_HALF_UP
+- Reconciliation يضمن: Σ refunds = subtotal - discount
+
+### Largest Remainder Method
+1. حساب raw لكل item (سنتات)
+2. floor + remainders
+3. shortfall = target - sum(floors)
+4. رتّب حسب أكبر remainder
+5. وزّع shortfall سنتاً بسنت
+6. علّم آخر معدّل بـisLastAdjustment=true
+
+### Shipping Refund
+- جزئي: 0
+- كامل: Order.shippingCost مرة واحدة
+- Guard: Order.shippingRefunded
+
+### APIs
+- POST /api/returns — إنشاء
+- GET /api/returns?orderId=X — قائمة
+- GET /api/orders/[id]/returnable — القابل للإرجاع
+- GET /api/admin/returns?status=X — Admin قائمة
+- GET /api/admin/returns/[id] — Admin تفاصيل
+- PATCH /api/admin/returns/[id] — approve/reject/complete
+
+### UI
+- زر "طلب إرجاع منتجات" في /orders/[id] عند DELIVERED
+- ReturnModal: اختيار المنتجات + الكميات + السبب
+- عرض طلبات الإرجاع السابقة مع الحالة
+- Admin: /admin/returns + /admin/returns/[id]
+
+## 76.21 Git History (v2.8)
+
+بعد v2.7:
+- Feat: add ReturnService with refund reconciliation
+- Feat: returns API (customer create + returnable items)
+- Feat: admin returns APIs (approve/reject/complete)
+- Feat: return request UI for customer
+- Feat: admin returns UI (list + detail + actions)
+
+End of Section 76 (v2.8)
