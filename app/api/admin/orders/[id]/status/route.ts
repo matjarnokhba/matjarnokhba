@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING", "CANCELLED"],
@@ -36,7 +37,18 @@ export async function PATCH(
     const body = await request.json();
     const newStatus = body.status;
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: { select: { variantId: true, quantity: true } },
+        reservation: {
+          include: {
+            items: { select: { variantId: true, quantity: true } },
+          },
+        },
+      },
+    });
+
     if (!order) {
       return NextResponse.json(
         { success: false, message: "الطلب غير موجود" },
@@ -44,43 +56,125 @@ export async function PATCH(
       );
     }
 
+    const oldStatus = order.status;
+
     // التحقق من الانتقال
-    const allowed = ALLOWED_TRANSITIONS[order.status] || [];
+    const allowed = ALLOWED_TRANSITIONS[oldStatus] || [];
     if (!allowed.includes(newStatus)) {
       return NextResponse.json(
         {
           success: false,
-          message: `لا يمكن الانتقال من ${order.status} إلى ${newStatus}`,
+          message: `لا يمكن الانتقال من ${oldStatus} إلى ${newStatus}`,
         },
         { status: 400 }
       );
     }
 
-    // تحديث
+    // ═══════ التحديث ═══════
     await prisma.$transaction(async (tx) => {
+      // 1. تحديث حالة الطلب
       await tx.order.update({
         where: { id: orderId },
         data: {
           status: newStatus,
           ...(newStatus === "DELIVERED"
-            ? {
-                deliveredAt: new Date(),
-                paymentStatus: "PAID",
-              }
+            ? { deliveredAt: new Date(), paymentStatus: "PAID" }
             : {}),
         },
       });
 
+      // 2. OrderStatusHistory
       await tx.orderStatusHistory.create({
         data: {
           orderId,
-          fromStatus: order.status,
+          fromStatus: oldStatus,
           toStatus: newStatus,
           changedById: current.user.id,
-          note: `تغيير من لوحة الإدارة`,
+          note: "تغيير من لوحة الإدارة",
         },
       });
 
+      // ═══════ 3. NEW → PROCESSING: تأكيد الحجز + خصم المخزون ═══════
+      if (oldStatus === "NEW" && newStatus === "PROCESSING") {
+        const reservation = await tx.reservation.findUnique({
+          where: { orderId },
+          include: { items: true },
+        });
+
+        if (reservation && reservation.status === "ACTIVE") {
+          // خصم من المخزون لكل item
+          for (const item of reservation.items) {
+            await InventoryService.commitSale(
+              tx,
+              item.variantId,
+              item.quantity,
+              orderId
+            );
+          }
+
+          // تأكيد الحجز
+          await tx.reservation.update({
+            where: { id: reservation.id },
+            data: { status: "CONFIRMED" },
+          });
+        }
+      }
+
+      // ═══════ 4. CANCELLED: تحرير الحجز ═══════
+      if (newStatus === "CANCELLED") {
+        const reservation = await tx.reservation.findUnique({
+          where: { orderId },
+          include: { items: true },
+        });
+
+        if (reservation) {
+          if (oldStatus === "NEW" && reservation.status === "ACTIVE") {
+            // لم يُخصم بعد → حرّر الحجز فقط
+            for (const item of reservation.items) {
+              await InventoryService.unreserve(
+                tx,
+                item.variantId,
+                item.quantity,
+                orderId,
+                "إلغاء الطلب"
+              );
+            }
+
+            await tx.reservation.update({
+              where: { id: reservation.id },
+              data: {
+                status: "RELEASED",
+                releasedAt: new Date(),
+                releaseReason: "CANCELLED",
+              },
+            });
+          } else if (
+            oldStatus === "PROCESSING" &&
+            reservation.status === "CONFIRMED"
+          ) {
+            // خُصم فعلاً → أعد للمخزون
+            for (const item of reservation.items) {
+              await InventoryService.returnStock(
+                tx,
+                item.variantId,
+                item.quantity,
+                0 // لا يوجد ReturnRequest
+              );
+            }
+
+            await tx.reservation.update({
+              where: { id: reservation.id },
+              data: {
+                status: "RELEASED",
+                releasedAt: new Date(),
+                releaseReason: "CANCELLED_AFTER_CONFIRM",
+              },
+            });
+          }
+        }
+      }
+
+      // ═══════ 5. إشعار ═══════
       await tx.notification.create({
         data: {
           userId: order.userId,
@@ -91,15 +185,14 @@ export async function PATCH(
         },
       });
 
-      // ═══ عند التسليم: زيادة عداد المبيعات ═══
-      if (newStatus === "DELIVERED" && order.status !== "DELIVERED") {
-        const items = await tx.orderItem.findMany({
+      // ═══════ 6. DELIVERED: زيادة المبيعات ═══════
+      if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
+        const soldByProduct = new Map<number, number>();
+        const fullItems = await tx.orderItem.findMany({
           where: { orderId },
           select: { productId: true, quantity: true },
         });
-
-        const soldByProduct = new Map<number, number>();
-        for (const item of items) {
+        for (const item of fullItems) {
           soldByProduct.set(
             item.productId,
             (soldByProduct.get(item.productId) || 0) + item.quantity
