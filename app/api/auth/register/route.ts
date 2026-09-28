@@ -1,13 +1,34 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AuthService } from "@/services/auth.service";
+import { rateLimit, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // ═══════ Rate Limit ═══════
+    const ip = getClientIp(request);
+    const limit = rateLimit(`register:${ip}`, 3, 60 * 60 * 1000); // 3 محاولات/ساعة
+
+    if (!limit.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `محاولات كثيرة. حاول بعد ${formatRetryAfter(limit.retryAfterMs)}.`,
+          retryAfterMs: limit.retryAfterMs,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
+
     // 1. اقرأ البيانات من الطلب
     const body = await request.json();
 
-    // 2. سج​ل المستخدم عبر AuthService
+    // 2. سجّل المستخدم عبر AuthService
     const user = await AuthService.register(body);
 
     // 3. أرجع النتيجة

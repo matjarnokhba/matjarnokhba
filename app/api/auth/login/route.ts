@@ -1,68 +1,104 @@
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { AuthService } from "@/services/auth.service";
-import { SessionService } from "@/services/session.service";
+import {
+  rateLimit,
+  getClientIp,
+  resetRateLimit,
+  formatRetryAfter,
+} from "@/lib/rate-limit";
+
+// ═══════ الحدود ═══════
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000; // 15 دقيقة
 
 export async function POST(request: Request) {
   try {
-    // 1. اقرأ البيانات
-    const body = await request.json();
+    const ip = getClientIp(request);
+    const rateLimitKey = `login:${ip}`;
 
-    // 2. تحقق من المستخدم (كلمة المرور)
-    const user = await AuthService.login(body);
+    // ═══════ فحص Rate Limit ═══════
+    const limit = rateLimit(rateLimitKey, MAX_ATTEMPTS, WINDOW_MS);
 
-    // 3. أنشئ جلسة
-    const userAgent = request.headers.get("user-agent") || undefined;
-    const ipAddress =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("x-real-ip") ||
-      undefined;
-
-    await SessionService.create(user.id, userAgent, ipAddress);
-
-    // 4. أرجع النتيجة
-    return NextResponse.json(
-      {
-        success: true,
-        message: "تم تسجيل الدخول بنجاح",
-        user,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    // أخطاء Zod (التحقق من البيانات)
-    if (error instanceof ZodError) {
+    if (!limit.success) {
       return NextResponse.json(
         {
           success: false,
-          message: "بيانات غير صحيحة",
-          errors: error.issues.map((err) => ({
-            field: err.path.join("."),
-            message: err.message,
-          })),
+          message: `محاولات كثيرة جداً. حاول بعد ${formatRetryAfter(limit.retryAfterMs)}.`,
+          retryAfterMs: limit.retryAfterMs,
         },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
+
+    const body = await request.json();
+    const email = body.email?.trim();
+    const password = body.password;
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { success: false, message: "البريد وكلمة المرور مطلوبان" },
         { status: 400 }
       );
     }
 
-    // أخطاء العمل (كلمة مرور خطأ، بريد غير موجود)
-    if (error instanceof Error) {
+    // ═══════ محاولة الدخول ═══════
+    let user;
+    try {
+      user = await AuthService.login({ email, password });
+    } catch (authError) {
+      // ═══ فشل تسجيل الدخول — نعيد رسالة المنطق ═══
+      const message =
+        authError instanceof Error
+          ? authError.message
+          : "البريد أو كلمة المرور غير صحيحة";
+
       return NextResponse.json(
         {
           success: false,
-          message: error.message,
+          message,
+          attemptsLeft: limit.remaining,
         },
         { status: 401 }
       );
     }
 
-    // خطأ غير متوقع
-    console.error("Unexpected error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "حدث خطأ غير متوقع",
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "البريد أو كلمة المرور غير صحيحة",
+          attemptsLeft: limit.remaining,
+        },
+        { status: 401 }
+      );
+    }
+
+    // ═══════ نجاح → صفّر العدّاد ═══════
+    resetRateLimit(rateLimitKey);
+
+    // ═══════ إنشاء الجلسة ═══════
+    const { SessionService } = await import("@/services/session.service");
+    const userAgent = request.headers.get("user-agent") || undefined;
+    await SessionService.create(user.id, userAgent);
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
       },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    return NextResponse.json(
+      { success: false, message: "حدث خطأ" },
       { status: 500 }
     );
   }

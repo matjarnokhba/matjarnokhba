@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { PasswordResetService } from "@/services/password-reset.service";
+import { rateLimit, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
 
 const schema = z.object({
   email: z.string().trim().email("بريد إلكتروني غير صحيح"),
@@ -8,6 +9,26 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // ═══════ Rate Limit ═══════
+    const ip = getClientIp(request);
+    const limit = rateLimit(`forgot:${ip}`, 3, 30 * 60 * 1000); // 3 محاولات / 30 دقيقة
+
+    if (!limit.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `محاولات كثيرة. حاول بعد ${formatRetryAfter(limit.retryAfterMs)}.`,
+          retryAfterMs: limit.retryAfterMs,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
+
     const body = await request.json();
     const parsed = schema.safeParse(body);
 
