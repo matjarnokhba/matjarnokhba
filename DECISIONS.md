@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.10
+**Version:** 2.11
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5092,3 +5092,54 @@ End of Section 76 (v2.9)
 2. صفحة `XxxClient.tsx` → Client Component (نفس المحتوى مع "use client")
 
 **End of Section 76 (v2.10)**
+
+## 76.26 Password Reset (v2.11)
+
+### الملفات
+- prisma/schema.prisma — PasswordResetToken model
+- services/password-reset.service.ts
+- app/api/auth/forgot-password/route.ts
+- app/api/auth/reset-password/route.ts
+- app/api/auth/verify-reset-token/route.ts
+- app/forgot-password/page.tsx
+- app/reset-password/page.tsx
+- app/login/page.tsx (رابط "نسيت كلمة المرور؟")
+
+### الميزات
+- Token عشوائي 32 bytes + SHA-256 في DB
+- صلاحية ساعة واحدة
+- استخدام مرة واحدة (usedAt)
+- إلغاء كل الجلسات عند التعيين (أمان)
+- التحقق من Token عند فتح الصفحة (verify-reset-token)
+- لا نكشف ما إذا كان البريد موجوداً
+- في التطوير: يعرض الرابط في الرد + Terminal
+- في الإنتاج: يُرسَل عبر البريد (يحتاج مزود — مؤجل)
+
+### الصفحات
+- /forgot-password — إدخال البريد
+- /reset-password?token=X — تعيين كلمة جديدة
+- رسائل واضحة: صالح / مستخدم / منتهي
+
+## 76.27 Rate Limiting (v2.11)
+
+### الملف
+- lib/rate-limit.ts (in-memory)
+
+### الميزات
+- 5 محاولات / 15 دقيقة → /api/auth/login
+- 3 محاولات / ساعة → /api/auth/register
+- 3 محاولات / 30 دقيقة → /api/auth/forgot-password
+- header: Retry-After (بالثواني)
+- resetRateLimit() عند النجاح
+- getClientIp() — x-forwarded-for + x-real-ip
+
+### ملاحظة مهمة
+in-memory = يعمل محلياً. عند Vercel → كل instance له ذاكرته.
+الحل عند النشر: Redis / Vercel KV.
+
+## 76.28 Fix — Login Error Handling (v2.11)
+
+`AuthService.login` يُطلق `throw` (لا يُرجع null).
+تم إضافة `try/catch` مخصص حول الدعوة → يُعيد 401 بدل 500.
+
+**End of Section 76 (v2.11)**
