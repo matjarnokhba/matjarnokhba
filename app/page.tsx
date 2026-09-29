@@ -218,14 +218,14 @@ export default function Home() {
 
       {/* ═══════ منتجات مميزة ═══════ */}
       {!loading && !error && featuredProducts.length > 0 && (
-        <section className="bg-white px-2 py-14 sm:px-5">
+        <section className="bg-white px-2 py-6 sm:px-5 sm:py-10">
           <div className="mx-auto max-w-7xl">
-            <div className="mb-8 flex items-end justify-between">
+            <div className="mb-4 flex items-end justify-between sm:mb-6">
               <div>
-                <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#b17f3f]">
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#b17f3f] sm:text-xs">
                   الأكثر طلباً
                 </span>
-                <h2 className="mt-2 text-2xl font-black sm:text-3xl">
+                <h2 className="mt-1 text-xl font-black sm:mt-2 sm:text-3xl">
                   منتجات مميزة
                 </h2>
               </div>
@@ -240,7 +240,7 @@ export default function Home() {
       )}
 
       {/* ═══════ كل المنتجات ═══════ */}
-      <section id="products" className="bg-[#f7f6f2] px-2 py-16 sm:px-5">
+      <section id="products" className="bg-[#f7f6f2] px-2 py-8 sm:px-5 sm:py-12">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div>
@@ -270,7 +270,7 @@ export default function Home() {
             </select>
           </div>
 
-          <div className="mt-10">
+          <div className="mt-4 sm:mt-8">
             {loading ? (
               <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
                 {[...Array(10)].map((_, i) => (
