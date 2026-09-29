@@ -20,6 +20,7 @@ datasource db {
 /// دور المستخدم
 enum UserRole {
   CUSTOMER
+  SELLER
   ADMIN
   SUPER_ADMIN
 }
@@ -111,6 +112,15 @@ enum NotificationType {
   RETURN_REQUESTED
   RETURN_APPROVED
   RETURN_REJECTED
+  SELLER_ORDER_RECEIVED
+  SELLER_PAYOUT_READY
+  SELLER_PAYOUT_SENT
+  SELLER_PRODUCT_LOW_STOCK
+  SELLER_DOCUMENT_APPROVED
+  SELLER_DOCUMENT_REJECTED
+  SELLER_PERFORMANCE_WARNING
+  SELLER_SUSPENDED
+  SELLER_VERIFIED
 }
 
 /// نوع العملية الم​دقَ​قة
@@ -214,20 +224,55 @@ model PasswordResetToken {
 }
 
 model Seller {
-  id          Int          @id @default(autoincrement())
-  userId      Int          @unique
-  storeName   String
-  slug        String       @unique
-  description String?
-  logo        String?
-  status      SellerStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                     Int          @id @default(autoincrement())
+  userId                 Int          @unique
+  storeName              String
+  slug                   String       @unique
+  description            String?
+  logo                   String?
+  status                 SellerStatus @default(PENDING)
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  products Product[]
+  commissionRateOverride Decimal?     @db.Decimal(5, 4)
+
+  totalOrders            Int          @default(0)
+  totalRevenue           Decimal      @default(0) @db.Decimal(12, 2)
+  totalCommission        Decimal      @default(0) @db.Decimal(12, 2)
+  acceptanceRate         Decimal      @default(0) @db.Decimal(5, 4)
+  cancellationRate       Decimal      @default(0) @db.Decimal(5, 4)
+  codRejectionRate       Decimal      @default(0) @db.Decimal(5, 4)
+  returnRate             Decimal      @default(0) @db.Decimal(5, 4)
+  avgRating              Decimal      @default(0) @db.Decimal(3, 2)
+  avgProcessingHours     Decimal      @default(0) @db.Decimal(6, 2)
+  lastPerformanceUpdate  DateTime?
+
+  isVerified             Boolean      @default(false)
+  verifiedAt             DateTime?
+  verifiedById           Int?
+  isFeatured             Boolean      @default(false)
+
+  city                   String?
+  region                 String?
+
+  notificationPreferences Json?
+  termsAcceptedAt        DateTime?
+  termsVersion           String?
+
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  deletedAt              DateTime?
+
+  user                 User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  products             Product[]
+  orders               Order[]
+  bankAccounts         SellerBankAccount[]
+  documents            SellerDocument[]
+  performanceSnapshots SellerPerformanceSnapshot[]
+  payouts              SellerPayout[]
 
   @@index([status])
+  @@index([deletedAt])
+  @@index([isFeatured])
+  @@index([isVerified])
 }
 
 // ============================================
@@ -239,16 +284,17 @@ model Seller {
 // ============================================
 
 model Category {
-  id        Int       @id @default(autoincrement())
-  name      String
-  slug      String    @unique
-  parentId  Int?
-  image     String?
-  isActive  Boolean   @default(true)
-  order     Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id             Int       @id @default(autoincrement())
+  name           String
+  slug           String    @unique
+  parentId       Int?
+  image          String?
+  isActive       Boolean   @default(true)
+  order          Int       @default(0)
+  commissionRate Decimal?  @db.Decimal(5, 4)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
   parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children Category[] @relation("CategoryHierarchy")
@@ -264,7 +310,7 @@ model Product {
   sellerId    Int
   categoryId  Int
   name        String
-  slug        String        @unique
+  slug        String
   description String?
   brand       String?
   badge       String?
@@ -287,6 +333,8 @@ model Product {
   orderItems OrderItem[]
   reviews  Review[]
 
+  @@unique([sellerId, slug])
+  @@index([slug])
   @@index([sellerId])
   @@index([categoryId])
   @@index([status])
@@ -336,7 +384,8 @@ model ProductOptionValue {
 model ProductVariant {
   id            Int      @id @default(autoincrement())
   productId     Int
-  sku           String   @unique
+  sellerId      Int
+  sku           String
   price         Decimal  @db.Decimal(10, 2)
   discountPrice Decimal? @db.Decimal(10, 2)
   isDefault     Boolean  @default(false)
@@ -353,7 +402,9 @@ model ProductVariant {
   reservationItems ReservationItem[]
 
   @@unique([productId, optionsHash])
+  @@unique([sellerId, sku])
   @@index([productId])
+  @@index([sellerId])
   @@index([sku])
 }
 
@@ -449,6 +500,7 @@ model Order {
   id                      Int           @id @default(autoincrement())
   orderNumber             String        @unique
   userId                  Int
+  sellerId                Int?
   status                  OrderStatus   @default(NEW)
   paymentMethod           PaymentMethod @default(COD)
   paymentStatus           PaymentStatus @default(PENDING)
@@ -457,17 +509,22 @@ model Order {
   shippingCost            Decimal       @db.Decimal(10, 2)
   discount                Decimal       @default(0) @db.Decimal(10, 2)
   total                   Decimal       @db.Decimal(10, 2)
+  commission              Decimal?      @db.Decimal(10, 2)
+  refundedCommission      Decimal       @default(0) @db.Decimal(10, 2)
+  sellerPayout            Decimal?      @db.Decimal(10, 2)
   refundedAmount          Decimal       @default(0) @db.Decimal(10, 2)
   shippingRefunded        Boolean       @default(false)
   shippingAddressSnapshot Json
   customerSnapshot        Json
   shippingZoneId          Int?
   notes                   String?
+  sellerNotes             String?
   deliveredAt             DateTime?
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  seller           Seller?              @relation(fields: [sellerId], references: [id], onDelete: Restrict)
   items            OrderItem[]
   statusHistory    OrderStatusHistory[]
   reservation      Reservation?
@@ -475,11 +532,15 @@ model Order {
   returnRequests   ReturnRequest[]
   reviews          Review[]
   shippingZone     ShippingZone?        @relation(fields: [shippingZoneId], references: [id], onDelete: SetNull)
+  costs            CostRecord[]
 
   @@index([userId])
+  @@index([sellerId])
   @@index([status])
   @@index([orderNumber])
   @@index([createdAt])
+  @@index([sellerId, status])
+  @@index([sellerId, createdAt])
 }
 
 model OrderItem {
@@ -752,4 +813,199 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ============================================
+// SECTION 77 — Multi-Vendor Foundation
+// ============================================
+
+enum DocumentType {
+  CIN
+  PASSPORT
+  ICE
+  RC
+  IF
+  BANK_STATEMENT
+  ADDRESS_PROOF
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum CostType {
+  SHIPPING
+  COD_REFUSAL
+  RETURN_SHIPPING
+  COMMISSION
+  REFUND
+  ADJUSTMENT
+}
+
+enum CostBearer {
+  SELLER
+  PLATFORM
+  CUSTOMER
+  SHARED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model SellerBankAccount {
+  id                  Int      @id @default(autoincrement())
+  sellerId            Int
+  bankName            String
+
+  accountHolderMasked String
+  ibanMasked          String
+  ibanLast4           String
+
+  accountHolderEnc    Bytes
+  ibanEnc             Bytes
+  ribEnc              Bytes?
+
+  ibanHash            String   @unique
+  ribHash             String?
+
+  isDefault           Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([sellerId, isDefault])
+  @@index([sellerId, isActive])
+}
+
+model SellerDocument {
+  id              Int            @id @default(autoincrement())
+  sellerId        Int
+  type            DocumentType
+  status          DocumentStatus @default(PENDING)
+  storageKey      String         @unique
+  mimeType        String
+  sizeBytes       Int
+  checksum        String
+  reviewedAt      DateTime?
+  reviewedById    Int?
+  rejectionReason String?
+  notes           String?
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+model SystemPolicy {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById Int?
+}
+
+model CostRecord {
+  id                  Int          @id @default(autoincrement())
+  orderId             Int?
+  type                CostType
+  amount              Decimal      @db.Decimal(10, 2)
+  currency            String       @default("MAD")
+  bearer              CostBearer
+  policyKey           String?
+  policyValueSnapshot Json?
+  reason              String?
+  createdAt           DateTime     @default(now())
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([type])
+  @@index([bearer])
+  @@index([createdAt])
+}
+
+model SellerPerformanceSnapshot {
+  id                 Int      @id @default(autoincrement())
+  sellerId           Int
+  periodStart        DateTime
+  periodEnd          DateTime
+  ordersTotal        Int
+  ordersAccepted     Int
+  ordersCancelled    Int
+  ordersDelivered    Int
+  ordersRefusedCOD   Int
+  ordersReturned     Int
+  revenue            Decimal  @db.Decimal(12, 2)
+  commission         Decimal  @db.Decimal(12, 2)
+  avgRating          Decimal  @db.Decimal(3, 2)
+  avgProcessingHours Decimal  @db.Decimal(6, 2)
+  createdAt          DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, periodStart, periodEnd])
+  @@index([sellerId, periodEnd])
+}
+
+model SellerPayout {
+  id             Int          @id @default(autoincrement())
+  sellerId       Int
+  amount         Decimal      @db.Decimal(12, 2)
+  currency       String       @default("MAD")
+  status         PayoutStatus @default(PENDING)
+  periodStart    DateTime
+  periodEnd      DateTime
+  orderCount     Int
+  bankAccountId  Int?
+  transactionRef String?
+  notes          String?
+  processedAt    DateTime?
+  processedById  Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+}
+
+model MultiVendorTriggerMetrics {
+  id                   Int      @id @default(autoincrement())
+  periodStart          DateTime
+  periodEnd            DateTime
+  activeSellers        Int
+  multiSellerOrders    Int
+  totalOrders          Int
+  multiSellerRatio     Decimal  @db.Decimal(5, 4)
+  customerComplaints   Int
+  cancelledMultiOrders Int
+  returnMultiOrders    Int
+  totalShippingCost    Decimal  @db.Decimal(12, 2)
+  avgShippingPerOrder  Decimal  @db.Decimal(10, 2)
+  createdAt            DateTime @default(now())
+
+  @@index([periodEnd])
 }
