@@ -19,17 +19,28 @@ export const ourFileRouter = {
       const current = await SessionService.getCurrent();
 
       if (!current) throw new UploadThingError("غير مصرح");
-      if (
-        current.user.role !== "ADMIN" &&
-        current.user.role !== "SUPER_ADMIN"
-      ) {
+
+      const isAdmin =
+        current.user.role === "ADMIN" ||
+        current.user.role === "SUPER_ADMIN";
+
+      const isSeller =
+        current.user.role === "SELLER" && current.user.seller;
+
+      if (!isAdmin && !isSeller) {
         throw new UploadThingError("غير مصرح");
       }
 
-      return { userId: current.user.id };
+      return {
+        userId: current.user.id,
+        sellerId: current.user.seller?.id || null,
+        role: current.user.role,
+      };
     })
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("Upload completed by user:", metadata.userId);
+      console.log("Role:", metadata.role);
+      console.log("Seller ID:", metadata.sellerId);
       console.log("File URL:", file.url);
 
       return { uploadedBy: metadata.userId, url: file.url };

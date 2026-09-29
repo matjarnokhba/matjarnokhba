@@ -6,30 +6,22 @@ import {
   SESSION_DURATION_MS,
 } from "@/lib/validations/auth";
 
-// ═══════════════════════════════════════════
-// توليد توكن عشوائي آمن
-// ═══════════════════════════════════════════
+// ═══════ توليد توكن عشوائي آمن ═══════
 function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// ═══════════════════════════════════════════
-// تشفير التوكن (SHA-256)
-// ═══════════════════════════════════════════
+// ═══════ تشفير التوكن (SHA-256) ═══════
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export const SessionService = {
-  // ═══════════════════════════════════════════
-  // إنشاء جلسة جديدة
-  // ═══════════════════════════════════════════
+  // ═══════ إنشاء جلسة جديدة ═══════
   async create(userId: number, userAgent?: string, ipAddress?: string) {
-    // 1. ول​د توكن عشوائي
     const token = generateToken();
     const tokenHash = hashToken(token);
 
-    // 2. أنشئ الجلسة في قاعدة البيانات
     const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
     const session = await prisma.session.create({
@@ -42,7 +34,6 @@ export const SessionService = {
       },
     });
 
-    // 3. ضع التوكن في Cookie
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
@@ -55,9 +46,7 @@ export const SessionService = {
     return session;
   },
 
-  // ═══════════════════════════════════════════
-  // التحقق من الجلسة الحالية
-  // ═══════════════════════════════════════════
+  // ═══════ التحقق من الجلسة الحالية ═══════
   async getCurrent() {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -76,6 +65,17 @@ export const SessionService = {
             phone: true,
             role: true,
             deletedAt: true,
+            // ═══ معلومات البائع (للـMulti-Vendor) ═══
+            seller: {
+              select: {
+                id: true,
+                storeName: true,
+                slug: true,
+                status: true,
+                isVerified: true,
+                logo: true,
+              },
+            },
           },
         },
       },
@@ -92,9 +92,7 @@ export const SessionService = {
     };
   },
 
-  // ═══════════════════════════════════════════
-  // إلغاء الجلسة الحالية
-  // ═══════════════════════════════════════════
+  // ═══════ إلغاء الجلسة الحالية ═══════
   async destroy() {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
