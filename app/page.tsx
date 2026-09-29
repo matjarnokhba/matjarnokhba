@@ -212,9 +212,9 @@ export default function Home() {
         onCategoryClick={handleCategoryChange}
       />
 
-      <PromoBanners />
-
       <FlashDeals />
+
+      <PromoBanners />
 
       {/* ═══════ منتجات مميزة ═══════ */}
       {!loading && !error && featuredProducts.length > 0 && (
