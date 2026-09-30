@@ -25,6 +25,7 @@ type AdminSidebarProps = {
 
 const NAV_ITEMS = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
+  { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
   { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },

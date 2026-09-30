@@ -8,9 +8,13 @@ async function requireSeller() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  if (current.user.seller.status !== "ACTIVE") {
-    return { error: "متجرك غير مفعّل", status: 403 };
+  if (
+    current.user.seller.status === "SUSPENDED" ||
+    current.user.seller.status === "CLOSED"
+  ) {
+    return { error: "متجرك معطّل", status: 403 };
   }
+  // PENDING و ACTIVE → يمرون
   return { user: current.user, seller: current.user.seller };
 }
 

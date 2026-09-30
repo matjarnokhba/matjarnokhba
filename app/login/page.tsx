@@ -31,8 +31,16 @@ export default function LoginPage() {
         return;
       }
 
-      // نجاح → انتقل إلى الصفحة الرئيسية
-      router.push("/");
+      // ═══ نجاح → redirect حسب role ═══
+      const role = data.user?.role;
+
+      if (role === "SELLER") {
+        router.push("/seller");
+      } else if (role === "ADMIN" || role === "SUPER_ADMIN") {
+        router.push("/admin");
+      } else {
+        router.push("/");
+      }
       router.refresh();
     } catch (err) {
       setError("حدث خطأ في الاتصال");
