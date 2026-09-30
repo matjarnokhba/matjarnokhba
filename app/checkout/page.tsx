@@ -68,7 +68,9 @@ export default function CheckoutPage() {
   // ═══════ UI State ═══════
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<{ orderNumber: string } | null>(null);
+  const [success, setSuccess] = useState<{
+  orders: Array<{ orderNumber: string; sellerId: number }>;
+} | null>(null);
   const [search, setSearch] = useState("");
 
   // ═══════ الكوبون ═══════
@@ -205,7 +207,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      setSuccess({ orderNumber: data.order.orderNumber });
+      setSuccess({ orders: data.orders });
       clearCart();
     } catch (err) {
       console.error(err);
@@ -239,13 +241,25 @@ export default function CheckoutPage() {
           </h1>
 
           <p className="mt-3 text-base text-[#6b7280]">
-            شكراً لثقتك بمتجر نخبة
+            {success.orders.length > 1
+              ? `تم إنشاء ${success.orders.length} طلبات (واحد لكل تاجر)`
+              : "شكراً لثقتك بمتجر نخبة"}
           </p>
 
           <div className="mt-6 w-full rounded-2xl bg-white p-6 shadow-md">
-            <div className="text-xs text-[#6b7280]">رقم الطلب</div>
-            <div className="mt-1 text-2xl font-black text-[#ff5c00]">
-              {success.orderNumber}
+            <div className="text-xs text-[#6b7280]">
+              {success.orders.length > 1 ? "أرقام الطلبات" : "رقم الطلب"}
+            </div>
+
+            <div className="mt-2 space-y-2">
+              {success.orders.map((o) => (
+                <div
+                  key={o.orderNumber}
+                  className="rounded-lg bg-[#fff4ed] px-3 py-2 font-mono text-base font-black text-[#ff5c00]"
+                >
+                  {o.orderNumber}
+                </div>
+              ))}
             </div>
 
             <div className="mt-4 border-t border-dashed border-gray-200 pt-4 text-sm text-[#6b7280]">
@@ -253,12 +267,18 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          <div className="mt-8 flex w-full gap-3">
+          <div className="mt-8 flex w-full flex-col gap-3">
             <Link
-              href="/"
+              href="/orders"
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"
             >
               <ShoppingBag className="h-4 w-4" />
+              عرض طلباتي
+            </Link>
+            <Link
+              href="/"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+            >
               متابعة التسوق
             </Link>
           </div>

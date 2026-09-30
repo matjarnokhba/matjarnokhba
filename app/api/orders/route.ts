@@ -4,7 +4,6 @@ import { OrderService } from "@/services/order.service";
 
 export async function POST(request: Request) {
   try {
-    // ═══════ التحقق من الجلسة ═══════
     const current = await SessionService.getCurrent();
     if (!current) {
       return NextResponse.json(
@@ -15,7 +14,6 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // ═══════ التحقق من البيانات ═══════
     if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
         { success: false, message: "السلة فارغة" },
@@ -36,8 +34,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══════ إنشاء الطلب ═══════
-    const order = await OrderService.createOrder(current.user.id, {
+    const orders = await OrderService.createOrder(current.user.id, {
       items: body.items.map((item: any) => ({
         productId: item.productId,
         variantId: item.variantId,
@@ -68,13 +65,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      { success: true, order: { id: order.id, orderNumber: order.orderNumber } },
+      { success: true, orders },
       { status: 201 }
     );
   } catch (error) {
     console.error("Order API error:", error);
+    const message = error instanceof Error ? error.message : "حدث خطأ أثناء إنشاء الطلب";
     return NextResponse.json(
-      { success: false, message: "حدث خطأ أثناء إنشاء الطلب" },
+      { success: false, message },
       { status: 500 }
     );
   }
