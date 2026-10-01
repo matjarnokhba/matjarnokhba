@@ -36,7 +36,8 @@ export const ReviewService = {
 
     if (existing) throw new Error("لقد قمت بتقييم هذا المنتج مسبقاً");
 
-    return prisma.review.create({
+    // ═══ الإنشاء + جلب بيانات إضافية للإشعار ═══
+    const review = await prisma.review.create({
       data: {
         productId: orderItem.productId,
         userId,
@@ -46,7 +47,59 @@ export const ReviewService = {
         comment: data.comment?.trim() || null,
         isApproved: false,
       },
+      include: {
+        user: { select: { name: true } },
+        product: { select: { name: true, sellerId: true } },
+      },
     });
+
+    // ═══ إشعار للأدمن ═══
+    try {
+      const admins = await prisma.user.findMany({
+        where: {
+          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      const trimmedComment = review.comment
+        ? review.comment.length > 60
+          ? review.comment.slice(0, 60) + "..."
+          : review.comment
+        : null;
+
+      for (const admin of admins) {
+        await prisma.notification.create({
+          data: {
+            userId: admin.id,
+            type: "REVIEW_SUBMITTED",
+            title: "⭐ مراجعة جديدة",
+            message: `${review.user.name} قيّم "${review.product.name}" بـ${data.rating} نجوم${
+              trimmedComment ? ` — "${trimmedComment}"` : ""
+            }`,
+            link: `/admin/reviews`,
+            category: "PRODUCT",
+            severity: "INFO",
+            metadata: {
+              reviewId: review.id,
+              productId: orderItem.productId,
+              productName: review.product.name,
+              sellerId: review.product.sellerId,
+              userId,
+              userName: review.user.name,
+              rating: data.rating,
+              comment: review.comment || null,
+            },
+          },
+        });
+      }
+    } catch (notifError) {
+      // لا نُفشل المراجعة بسبب الإشعار
+      console.error("Review notification error:", notifError);
+    }
+
+    return review;
   },
 
   // ═══════ مراجعات منتج (للعرض العام) ═══════
@@ -109,7 +162,9 @@ export const ReviewService = {
         data: { isApproved: true },
       });
 
-      console.log(`[approve] Review ${reviewId} approved, productId = ${review.productId}`);
+      console.log(
+        `[approve] Review ${reviewId} approved, productId = ${review.productId}`
+      );
 
       await recalcProductStats(tx, review.productId);
 
@@ -125,7 +180,9 @@ export const ReviewService = {
         data: { deletedAt: new Date(), isApproved: false },
       });
 
-      console.log(`[reject] Review ${reviewId} rejected, productId = ${review.productId}`);
+      console.log(
+        `[reject] Review ${reviewId} rejected, productId = ${review.productId}`
+      );
 
       await recalcProductStats(tx, review.productId);
 
@@ -153,7 +210,9 @@ async function recalcProductStats(tx: any, productId: number) {
       ? reviews.reduce((sum: number, r: any) => sum + r.rating, 0) / count
       : 0;
 
-  console.log(`[recalcProductStats] المنتج ${productId}: ${count} مراجعة، متوسط = ${avg}`);
+  console.log(
+    `[recalcProductStats] المنتج ${productId}: ${count} مراجعة، متوسط = ${avg}`
+  );
 
   const updated = await tx.product.update({
     where: { id: productId },

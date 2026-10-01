@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
+// ═══════ Prisma type ═══════
 type PrismaProduct = {
   id: number;
   name: string;
@@ -11,6 +12,7 @@ type PrismaProduct = {
   reviewsCount: number;
   sold: number;
   freeShipping: boolean;
+  seller: { id: number; slug: string; storeName: string } | null;
   category: { slug: string; name: string } | null;
   images: { url: string }[];
   variants: {
@@ -27,6 +29,9 @@ function formatProduct(p: PrismaProduct) {
   return {
     id: p.id,
     variantId: defaultVariant?.id,
+    sellerId: p.seller?.id,
+    sellerSlug: p.seller?.slug,
+    sellerName: p.seller?.storeName,
     name: p.name,
     slug: p.slug,
     description: p.description || "",
@@ -53,13 +58,14 @@ function formatProduct(p: PrismaProduct) {
 const productInclude = {
   images: { orderBy: { order: "asc" as const } },
   category: { select: { slug: true, name: true } },
+  seller: { select: { id: true, slug: true, storeName: true } },
   variants: {
     where: { isDefault: true },
     include: { inventory: { select: { quantity: true } } },
   },
 };
 
-// ═══════ شروط العرض العام (Section 4.3) ═══════
+// ═══════ شروط العرض العام ═══════
 const publicProductWhere = {
   status: "ACTIVE" as const,
   deletedAt: null,
@@ -79,11 +85,28 @@ export const ProductService = {
     return products.map(formatProduct);
   },
 
+  // ⚠️ بحث بـ slug فقط (deprecated — قد يُرجع نتيجة غير دقيقة)
   async getBySlug(slug: string) {
     const product = await prisma.product.findFirst({
+      where: { slug, ...publicProductWhere },
+      include: productInclude,
+    });
+    if (!product) return null;
+    return formatProduct(product);
+  },
+
+  // ✅ الجديدة: بحث دقيق بـ sellerSlug + productSlug
+  async getBySlugAndSeller(productSlug: string, sellerSlug: string) {
+    const product = await prisma.product.findFirst({
       where: {
-        slug,
-        ...publicProductWhere,
+        slug: productSlug,
+        seller: {
+          slug: sellerSlug,
+          status: "ACTIVE",
+          deletedAt: null,
+        },
+        status: "ACTIVE",
+        deletedAt: null,
       },
       include: productInclude,
     });

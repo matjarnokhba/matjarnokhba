@@ -7,6 +7,9 @@ import { getCategoryById } from "./categories";
 export type Product = {
   id: number;
   variantId?: number;
+  sellerId?: number;
+  sellerSlug?: string;
+  sellerName?: string;
   slug: string;
   name: string;
   categoryId: CategoryId | string;

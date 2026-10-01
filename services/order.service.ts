@@ -220,7 +220,7 @@ export const OrderService = {
         // ═══ إشعار التاجر ═══
         const seller = await tx.seller.findUnique({
           where: { id: sellerId },
-          select: { userId: true },
+          select: { userId: true, storeName: true },
         });
         if (seller) {
           await tx.notification.create({
@@ -230,6 +230,44 @@ export const OrderService = {
               title: "طلب جديد 🎉",
               message: `وصلك طلب جديد ${orderNumber}`,
               link: `/seller/orders/${order.id}`,
+              category: "ORDER",
+              severity: "INFO",
+              metadata: {
+                orderId: order.id,
+                orderNumber,
+                sellerId,
+              },
+            },
+          });
+        }
+
+        // ═══ إشعار للأدمن ═══
+        const admins = await tx.user.findMany({
+          where: {
+            role: { in: ["ADMIN", "SUPER_ADMIN"] },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+
+        for (const admin of admins) {
+          await tx.notification.create({
+            data: {
+              userId: admin.id,
+              type: "ORDER_CREATED",
+              title: "🛒 طلب جديد",
+              message: `طلب جديد ${orderNumber} — من "${seller?.storeName || "تاجر"}" بقيمة ${sellerTotal} د.م`,
+              link: `/admin/orders/${order.id}`,
+              category: "ORDER",
+              severity: "INFO",
+              metadata: {
+                orderId: order.id,
+                orderNumber,
+                sellerId,
+                sellerName: seller?.storeName,
+                total: sellerTotal,
+                itemsCount: items.length,
+              },
             },
           });
         }

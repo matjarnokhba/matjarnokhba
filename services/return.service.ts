@@ -135,7 +135,7 @@ export const ReturnService = {
         });
       }
 
-      // 7. إشعار Admin (مبسّط — للعميل)
+      // 7. إشعار العميل
       await tx.notification.create({
         data: {
           userId,
@@ -143,8 +143,43 @@ export const ReturnService = {
           title: "تم استلام طلب الإرجاع",
           message: `طلب الإرجاع للطلب ${order.orderNumber} قيد المراجعة.`,
           link: `/orders/${order.id}`,
+          category: "ORDER",
+          severity: "INFO",
         },
       });
+
+      // 8. إشعار للأدمن
+      const admins = await tx.user.findMany({
+        where: {
+          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      const totalItems = data.items.reduce((s, i) => s + i.quantity, 0);
+
+      for (const admin of admins) {
+        await tx.notification.create({
+          data: {
+            userId: admin.id,
+            type: "RETURN_REQUESTED",
+            title: "↩️ طلب إرجاع جديد",
+            message: `إرجاع للطلب ${order.orderNumber} — ${totalItems} منتج. السبب: "${data.reason.slice(0, 60)}${data.reason.length > 60 ? "..." : ""}"`,
+            link: `/admin/returns/${returnRequest.id}`,
+            category: "ORDER",
+            severity: "WARNING",
+            metadata: {
+              returnId: returnRequest.id,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              totalItems,
+              reason: data.reason,
+              items: data.items,
+            },
+          },
+        });
+      }
 
       return returnRequest;
     });

@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  Store,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -35,9 +36,9 @@ import { useFavorites } from "@/lib/hooks/useFavorites";
 export default function ProductClient() {
   const params = useParams();
   const router = useRouter();
-  const slug = params.slug as string;
+  const sellerSlug = params.sellerSlug as string;
+  const productSlug = params.productSlug as string;
 
-  // ═══════ State ═══════
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,6 @@ export default function ProductClient() {
   const [selectedSize, setSelectedSize] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<any[]>([]);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -63,19 +63,19 @@ export default function ProductClient() {
 
   const { isFavorite, toggleFavorite } = useFavorites();
 
-  // ═══════ جلب المنتج من API ═══════
+  // ═══ جلب المنتج ═══
   useEffect(() => {
     async function loadProduct() {
       setLoading(true);
       setError(null);
-
       try {
-        const res = await fetch(`/api/products/${slug}`);
+        const res = await fetch(
+          `/api/products/${productSlug}?seller=${sellerSlug}`
+        );
         const data = await res.json();
 
         if (!data.success) {
           setError(data.message || "المنتج غير موجود");
-          setLoading(false);
           return;
         }
 
@@ -105,28 +105,24 @@ export default function ProductClient() {
       }
     }
 
-    if (slug) loadProduct();
-  }, [slug]);
+    if (productSlug && sellerSlug) loadProduct();
+  }, [productSlug, sellerSlug]);
 
-  // جلب مراجعات المنتج
+  // ═══ جلب المراجعات ═══
   useEffect(() => {
     async function loadReviews() {
       if (!product) return;
-      setReviewsLoading(true);
       try {
         const res = await fetch(`/api/reviews?productId=${product.id}`);
         const data = await res.json();
         if (data.success) setReviews(data.reviews);
       } catch {
         // silent
-      } finally {
-        setReviewsLoading(false);
       }
     }
     loadReviews();
   }, [product]);
 
-  // ═══════ إضافة للسلة ═══════
   function handleAddToCart() {
     if (!product) return;
     addItem(product, quantity, selectedColor, selectedSize);
@@ -138,7 +134,7 @@ export default function ProductClient() {
     setIsCartOpen(true);
   }
 
-  // ═══════ العرض: التحميل ═══════
+  // ═══ التحميل ═══
   if (loading) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -164,7 +160,7 @@ export default function ProductClient() {
     );
   }
 
-  // ═══════ العرض: خطأ ═══════
+  // ═══ خطأ ═══
   if (error || !product) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -195,7 +191,6 @@ export default function ProductClient() {
     );
   }
 
-  // ═══════ حسابات ═══════
   const discountPercent = product.oldPrice
     ? Math.round(
         ((product.oldPrice - product.price) / product.oldPrice) * 100
@@ -205,14 +200,12 @@ export default function ProductClient() {
   const hasNextImage = selectedImage < product.images.length - 1;
   const hasPrevImage = selectedImage > 0;
 
-  // ═══════ العرض الرئيسي ═══════
   return (
     <main
       dir="rtl"
       className="min-h-screen bg-[#f7f6f2] pb-24 text-[#161616] sm:pb-0"
     >
       <TopBar />
-
       <Header
         search={search}
         onSearchChange={setSearch}
@@ -222,7 +215,7 @@ export default function ProductClient() {
 
       {/* Breadcrumb */}
       <div className="border-b border-gray-100 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-xs text-[#6b7280]">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2 text-xs text-[#6b7280]">
           <button
             onClick={() => router.back()}
             className="flex items-center gap-1 font-bold text-[#ff5c00] hover:underline"
@@ -234,6 +227,17 @@ export default function ProductClient() {
           <Link href="/" className="hover:text-[#ff5c00]">
             الرئيسية
           </Link>
+          {product.sellerSlug && (
+            <>
+              <span>/</span>
+              <Link
+                href={`/store/${product.sellerSlug}`}
+                className="hover:text-[#ff5c00]"
+              >
+                {product.sellerName}
+              </Link>
+            </>
+          )}
           {product.categoryName && (
             <>
               <span>/</span>
@@ -243,7 +247,6 @@ export default function ProductClient() {
         </div>
       </div>
 
-      {/* المحتوى */}
       <div className="mx-auto max-w-7xl px-3 py-3 lg:px-4 lg:py-6">
         <div className="grid gap-4 lg:grid-cols-2 lg:gap-8">
           {/* معرض الصور */}
@@ -317,7 +320,11 @@ export default function ProductClient() {
                           : "border-transparent opacity-60 hover:opacity-100"
                       }`}
                     >
-                      <img src={img} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={img}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
                     </button>
                   ))}
                 </div>
@@ -327,6 +334,21 @@ export default function ProductClient() {
 
           {/* التفاصيل */}
           <div className="flex flex-col gap-3">
+            {/* رابط المتجر */}
+            {product.sellerSlug && (
+              <Link
+                href={`/store/${product.sellerSlug}`}
+                className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-gray-700 transition hover:text-[#ff5c00]"
+              >
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-amber-500">
+                  <Store className="h-3 w-3 text-white" />
+                </div>
+                <span>من متجر</span>
+                <span className="font-black">{product.sellerName}</span>
+                <ChevronLeft className="ml-auto h-3.5 w-3.5" />
+              </Link>
+            )}
+
             <div className="flex flex-wrap items-center gap-2">
               {product.categoryName && (
                 <span className="rounded-full bg-[#fff4ed] px-3 py-1 text-xs font-bold text-[#ff5c00]">
@@ -335,7 +357,8 @@ export default function ProductClient() {
               )}
               {product.brand && (
                 <span className="text-xs text-[#6b7280]">
-                  بواسطة <strong className="text-[#111827]">{product.brand}</strong>
+                  بواسطة{" "}
+                  <strong className="text-[#111827]">{product.brand}</strong>
                 </span>
               )}
             </div>
@@ -353,11 +376,14 @@ export default function ProductClient() {
               <span className="text-[#6b7280]">· {product.sold} مبيع</span>
             </div>
 
+            {/* السعر */}
             <div className="flex flex-wrap items-baseline gap-2 rounded-lg bg-white px-3 py-2">
               <strong className="text-2xl font-black text-[#ff5c00]">
                 {product.price}
               </strong>
-              <span className="text-xs font-bold text-[#6b7280]">{CURRENCY}</span>
+              <span className="text-xs font-bold text-[#6b7280]">
+                {CURRENCY}
+              </span>
               {product.oldPrice && (
                 <del className="text-sm text-gray-400">
                   {product.oldPrice} {CURRENCY}
@@ -370,62 +396,7 @@ export default function ProductClient() {
               )}
             </div>
 
-            {product.colors && product.colors.length > 0 && (
-              <div className="rounded-lg bg-white px-3 py-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-bold">اللون:</span>
-                  <span className="text-[10px] text-[#6b7280]">
-                    {selectedColor ? "مُحدد" : "اختر"}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.colors.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition ${
-                        selectedColor === color
-                          ? "border-[#ff5c00] ring-2 ring-[#ff5c00]/20"
-                          : "border-gray-200"
-                      }`}
-                      style={{ backgroundColor: color }}
-                      aria-label={`لون ${color}`}
-                    >
-                      {selectedColor === color && (
-                        <div className="h-2.5 w-2.5 rounded-full bg-white mix-blend-difference" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {product.sizes && product.sizes.length > 0 && (
-              <div className="rounded-lg bg-white px-3 py-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-bold">المقاس:</span>
-                  <span className="text-[10px] text-[#6b7280]">
-                    {selectedSize ? "مُحدد" : "اختر"}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.sizes.map((size) => (
-                    <button
-                      key={size}
-                      onClick={() => setSelectedSize(size)}
-                      className={`min-w-[2.5rem] rounded-md border px-2 py-1 text-xs font-bold transition ${
-                        selectedSize === size
-                          ? "border-[#ff5c00] bg-[#fff4ed] text-[#ff5c00]"
-                          : "border-gray-200 text-[#111827] hover:border-gray-300"
-                      }`}
-                    >
-                      {size}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
+            {/* الكمية */}
             <div className="flex items-center gap-3 rounded-lg bg-white px-3 py-2.5">
               <span className="text-xs font-bold">الكمية:</span>
               <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
@@ -452,6 +423,7 @@ export default function ProductClient() {
               </span>
             </div>
 
+            {/* زر أضف للسلة */}
             <div className="hidden gap-2 sm:flex">
               <button
                 onClick={handleAddToCart}
@@ -475,12 +447,13 @@ export default function ProductClient() {
               </button>
             </div>
 
+            {/* معلومات */}
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2">
                 <Truck className="h-4 w-4 shrink-0 text-green-600" />
                 <div className="min-w-0">
                   <strong className="block truncate text-[10px] font-bold">
-                    {product.freeShipping ? "شحن مجاني" : `شحن مجاني 300+`}
+                    {product.freeShipping ? "شحن مجاني" : "شحن سريع"}
                   </strong>
                   <span className="block truncate text-[9px] text-[#6b7280]">
                     24-48 ساعة
@@ -527,7 +500,9 @@ export default function ProductClient() {
         {/* الوصف */}
         <section className="mt-5 rounded-lg bg-white p-4">
           <h2 className="mb-2 text-base font-black">الوصف</h2>
-          <p className="text-xs leading-7 text-[#4b5563]">{product.description}</p>
+          <p className="text-xs leading-7 text-[#4b5563]">
+            {product.description}
+          </p>
         </section>
 
         {/* التقييمات */}
@@ -552,7 +527,8 @@ export default function ProductClient() {
                 <div className="text-center">
                   {(() => {
                     const avg =
-                      reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
+                      reviews.reduce((s, r) => s + r.rating, 0) /
+                      reviews.length;
                     return (
                       <>
                         <div className="text-3xl font-black text-[#ff5c00]">
@@ -580,12 +556,17 @@ export default function ProductClient() {
 
                 <div className="flex-1 space-y-1.5">
                   {[5, 4, 3, 2, 1].map((stars) => {
-                    const count = reviews.filter((r) => r.rating === stars).length;
+                    const count = reviews.filter(
+                      (r) => r.rating === stars
+                    ).length;
                     const percent = reviews.length
                       ? Math.round((count / reviews.length) * 100)
                       : 0;
                     return (
-                      <div key={stars} className="flex items-center gap-2 text-xs">
+                      <div
+                        key={stars}
+                        className="flex items-center gap-2 text-xs"
+                      >
                         <span className="flex w-8 items-center gap-0.5 font-bold">
                           {stars}
                           <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
@@ -661,7 +642,9 @@ export default function ProductClient() {
         {related.length > 0 && (
           <section className="mt-5">
             <div className="mb-3 flex items-end justify-between">
-              <h2 className="text-base font-black sm:text-lg">منتجات مشابهة</h2>
+              <h2 className="text-base font-black sm:text-lg">
+                منتجات مشابهة
+              </h2>
             </div>
             <ProductGrid
               products={related}

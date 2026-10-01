@@ -117,6 +117,37 @@ export async function POST(request: Request) {
       return { user, seller };
     });
 
+    // ═══ إشعار للأدمن ═══
+    const admins = await prisma.user.findMany({
+      where: {
+        role: { in: ["ADMIN", "SUPER_ADMIN"] },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    for (const admin of admins) {
+      await prisma.notification.create({
+        data: {
+          userId: admin.id,
+          type: "SELLER_NEW_REGISTRATION",
+          title: "🏪 تاجر جديد سجّل",
+          message: `"${storeName.trim()}" (${name.trim()}) سجّل كتاجر جديد — بانتظار المراجعة.`,
+          link: `/admin/sellers/${result.seller.id}`,
+          category: "SELLER",
+          severity: "INFO",
+          metadata: {
+            sellerId: result.seller.id,
+            storeName: storeName.trim(),
+            userName: name.trim(),
+            userEmail: cleanEmail,
+            city: city?.trim() || null,
+            region: region?.trim() || null,
+          },
+        },
+      });
+    }
+
     // ═══ إنشاء الجلسة تلقائياً ═══
     const userAgent = request.headers.get("user-agent") || undefined;
     await SessionService.create(result.user.id, userAgent);
