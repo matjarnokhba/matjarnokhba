@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
-    "recalc": "tsx scripts/recalc-products.ts"
+    "recalc": "tsx scripts/recalc-products.ts",
+    "recalc-sellers": "tsx scripts/recalc-seller-performance.ts"
   },
   "dependencies": {
     "@prisma/adapter-neon": "^7.10.0",
