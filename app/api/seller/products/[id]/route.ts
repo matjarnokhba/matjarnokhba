@@ -3,22 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
-// ═══════ الحقول الحساسة (تُعيد المنتج لـDRAFT) ═══════
-const SENSITIVE_FIELDS = [
-  "name",
-  "slug",
-  "description",
-  "brand",
-  "badge",
-  "categoryId",
-  "imageUrls",
-] as const;
+// ═══════ حدود السعر — تُقارن ضد السعر الأصلي (originalPrice) ═══════
+const MIN_PRICE_RATIO = 0.5;
+const MAX_PRICE_RATIO = 2.0;
 
-// ═══════ حدود السعر ═══════
-const MIN_PRICE_RATIO = 0.5;  // لا يقل عن 50% من السعر الحالي
-const MAX_PRICE_RATIO = 2.0;  // لا يزيد عن 200% من السعر الحالي
-
-// ═══════ التحقق من صلاحية البائع + الملكية ═══════
 async function requireSellerOwnership(productId: number) {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
@@ -101,6 +89,11 @@ export async function GET(
         badge: product.badge || "",
         categoryId: product.categoryId,
         price: variant ? Number(variant.price) : 0,
+        originalPrice: variant?.originalPrice
+          ? Number(variant.originalPrice)
+          : variant
+            ? Number(variant.price)
+            : 0,
         oldPrice: variant?.discountPrice
           ? Number(variant.discountPrice)
           : null,
@@ -120,7 +113,7 @@ export async function GET(
 }
 
 // ═══════════════════════════════════════════
-// PATCH — تعديل منتج (مع فحص الحقول الحساسة)
+// PATCH — تعديل منتج (مع تسجيل كامل)
 // ═══════════════════════════════════════════
 export async function PATCH(
   request: Request,
@@ -160,8 +153,11 @@ export async function PATCH(
     const data = parsed.data;
     const { product } = auth;
     const variant = product.variants[0];
+    const currentInventory = variant
+      ? await prisma.inventory.findUnique({ where: { variantId: variant.id } })
+      : null;
 
-    // ═══════ التحقق من slug مكرر ═══════
+    // ═══════ التحقق من slug ═══════
     let cleanSlug: string | undefined;
     if (data.slug && data.slug !== product.slug) {
       cleanSlug = data.slug
@@ -187,71 +183,166 @@ export async function PATCH(
     }
 
     // ═══════════════════════════════════════════
-    // 🔍 كشف الحقول الحساسة
+    // 📋 كشف كل التغييرات
     // ═══════════════════════════════════════════
-    const changedSensitiveFields: string[] = [];
+    const changes: Array<{
+      field: string;
+      oldValue: any;
+      newValue: any;
+      sensitive: boolean;
+    }> = [];
 
     if (data.name !== undefined && data.name !== product.name) {
-      changedSensitiveFields.push("الاسم");
+      changes.push({
+        field: "الاسم",
+        oldValue: product.name,
+        newValue: data.name,
+        sensitive: true,
+      });
     }
+
     if (cleanSlug && cleanSlug !== product.slug) {
-      changedSensitiveFields.push("الرابط");
+      changes.push({
+        field: "الرابط",
+        oldValue: product.slug,
+        newValue: cleanSlug,
+        sensitive: true,
+      });
     }
+
     if (
       data.description !== undefined &&
       (data.description || null) !== product.description
     ) {
-      changedSensitiveFields.push("الوصف");
-    }
-    if (
-      data.brand !== undefined &&
-      (data.brand || null) !== product.brand
-    ) {
-      changedSensitiveFields.push("الماركة");
-    }
-    if (
-      data.badge !== undefined &&
-      (data.badge || null) !== product.badge
-    ) {
-      changedSensitiveFields.push("الشارة");
-    }
-    if (data.categoryId && data.categoryId !== product.categoryId) {
-      changedSensitiveFields.push("التصنيف");
+      changes.push({
+        field: "الوصف",
+        oldValue: product.description,
+        newValue: data.description,
+        sensitive: true,
+      });
     }
 
-    // فحص الصور
+    if (data.brand !== undefined && (data.brand || null) !== product.brand) {
+      changes.push({
+        field: "الماركة",
+        oldValue: product.brand,
+        newValue: data.brand,
+        sensitive: true,
+      });
+    }
+
+    if (data.badge !== undefined && (data.badge || null) !== product.badge) {
+      changes.push({
+        field: "الشارة",
+        oldValue: product.badge,
+        newValue: data.badge,
+        sensitive: true,
+      });
+    }
+
+    if (data.categoryId && data.categoryId !== product.categoryId) {
+      changes.push({
+        field: "التصنيف",
+        oldValue: product.categoryId,
+        newValue: data.categoryId,
+        sensitive: true,
+      });
+    }
+
     if (data.imageUrls && data.imageUrls.length > 0) {
       const currentUrls = product.images.map((i) => i.url);
-      const isDifferent =
-        JSON.stringify(currentUrls) !== JSON.stringify(data.imageUrls);
-      if (isDifferent) {
-        changedSensitiveFields.push("الصور");
+      if (JSON.stringify(currentUrls) !== JSON.stringify(data.imageUrls)) {
+        changes.push({
+          field: "الصور",
+          oldValue: currentUrls,
+          newValue: data.imageUrls,
+          sensitive: true,
+        });
       }
     }
 
-    // ═══════ فحص حدود السعر ═══════
+    // ═══════ السعر — يُقارن ضد originalPrice ═══════
     let priceOutOfRange = false;
     let priceWarning: string | null = null;
 
     if (data.price !== undefined && variant) {
       const currentPrice = Number(variant.price);
-      const minPrice = currentPrice * MIN_PRICE_RATIO;
-      const maxPrice = currentPrice * MAX_PRICE_RATIO;
+      const originalPrice = variant.originalPrice
+        ? Number(variant.originalPrice)
+        : currentPrice;
 
-      if (data.price < minPrice) {
-        priceOutOfRange = true;
-        priceWarning = `السعر الجديد (${data.price}) أقل من 50% من السعر الحالي (${currentPrice}) — يحتاج موافقة الإدارة`;
-      } else if (data.price > maxPrice) {
-        priceOutOfRange = true;
-        priceWarning = `السعر الجديد (${data.price}) أكثر من ضعف السعر الحالي (${currentPrice}) — يحتاج موافقة الإدارة`;
+      if (data.price !== currentPrice) {
+        const minPrice = originalPrice * MIN_PRICE_RATIO;
+        const maxPrice = originalPrice * MAX_PRICE_RATIO;
+
+        if (data.price < minPrice) {
+          priceOutOfRange = true;
+          priceWarning = `السعر الجديد (${data.price}) أقل من 50% من السعر الأصلي (${originalPrice})`;
+        } else if (data.price > maxPrice) {
+          priceOutOfRange = true;
+          priceWarning = `السعر الجديد (${data.price}) يتجاوز ضعف السعر الأصلي (${originalPrice})`;
+        }
+
+        changes.push({
+          field: "السعر",
+          oldValue: currentPrice,
+          newValue: data.price,
+          sensitive: priceOutOfRange,
+        });
       }
     }
 
-    // ═══════ قرار: هل يحتاج إعادة موافقة؟ ═══════
-    const requiresReapproval =
-      changedSensitiveFields.length > 0 || priceOutOfRange;
+    if (data.oldPrice !== undefined) {
+      const currentOld = variant?.discountPrice
+        ? Number(variant.discountPrice)
+        : null;
+      const newOld = data.oldPrice || null;
+      if (currentOld !== newOld) {
+        changes.push({
+          field: "السعر القديم",
+          oldValue: currentOld,
+          newValue: newOld,
+          sensitive: false,
+        });
+      }
+    }
 
-    // ═══════ التعديل ═══════
+    if (data.stock !== undefined) {
+      const currentStock = currentInventory?.quantity ?? 0;
+      if (data.stock !== currentStock) {
+        changes.push({
+          field: "المخزون",
+          oldValue: currentStock,
+          newValue: data.stock,
+          sensitive: false,
+        });
+      }
+    }
+
+    if (
+      data.freeShipping !== undefined &&
+      data.freeShipping !== product.freeShipping
+    ) {
+      changes.push({
+        field: "شحن مجاني",
+        oldValue: product.freeShipping,
+        newValue: data.freeShipping,
+        sensitive: false,
+      });
+    }
+
+    // ═══════ هل يحتاج موافقة؟ ═══════
+    const requiresReapproval = changes.some((c) => c.sensitive);
+    const hasAnyChange = changes.length > 0;
+
+    if (!hasAnyChange) {
+      return NextResponse.json({
+        success: true,
+        message: "لا توجد تغييرات",
+      });
+    }
+
+    // ═══════ التعديل + تسجيل ═══════
     await prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id: productId },
@@ -267,12 +358,10 @@ export async function PATCH(
           ...(data.freeShipping !== undefined && {
             freeShipping: data.freeShipping,
           }),
-          // ⚠️ إعادة المنتج لـDRAFT إذا كانت التعديلات حساسة
           ...(requiresReapproval && { status: "DRAFT" }),
         },
       });
 
-      // تعديل الصور
       if (data.imageUrls && data.imageUrls.length > 0) {
         await tx.productImage.deleteMany({ where: { productId } });
         await tx.productImage.createMany({
@@ -285,16 +374,22 @@ export async function PATCH(
         });
       }
 
-      // تعديل Variant + Inventory
       if (variant) {
+        const variantUpdate: any = {
+          ...(data.price !== undefined && { price: data.price }),
+          ...(data.oldPrice !== undefined && {
+            discountPrice: data.oldPrice || null,
+          }),
+        };
+
+        // ⚠️ تعبئة originalPrice إن لم يكن موجوداً (للمنتجات القديمة)
+        if (data.price !== undefined && !variant.originalPrice) {
+          variantUpdate.originalPrice = Number(variant.price);
+        }
+
         await tx.productVariant.update({
           where: { id: variant.id },
-          data: {
-            ...(data.price !== undefined && { price: data.price }),
-            ...(data.oldPrice !== undefined && {
-              discountPrice: data.oldPrice || null,
-            }),
-          },
+          data: variantUpdate,
         });
 
         if (data.stock !== undefined) {
@@ -311,18 +406,34 @@ export async function PATCH(
         }
       }
 
-      // إشعار للتاجر إذا احتاج إعادة موافقة
+      // ═══ سجل التعديل ═══
+      await tx.productEditLog.create({
+        data: {
+          productId,
+          sellerId: auth.seller.id,
+          changedFields: changes.map((c) => c.field),
+          oldValues: Object.fromEntries(
+            changes.map((c) => [c.field, c.oldValue])
+          ),
+          newValues: Object.fromEntries(
+            changes.map((c) => [c.field, c.newValue])
+          ),
+          requiresReapproval,
+          reason: priceWarning || null,
+        },
+      });
+
+      // ═══ إشعار للتاجر ═══
       if (requiresReapproval) {
         await tx.notification.create({
           data: {
             userId: auth.user.id,
-            type: "SELLER_PRODUCT_LOW_STOCK", // ⚠️ مؤقتاً — نُضيف نوعاً مخصصاً لاحقاً
+            type: "SELLER_PRODUCT_LOW_STOCK",
             title: "منتجك بانتظار إعادة الموافقة",
-            message: `تم تعديل "${product.name}". ${
-              changedSensitiveFields.length > 0
-                ? `الحقول المُعدَّلة: ${changedSensitiveFields.join(", ")}`
-                : ""
-            }${priceWarning ? ` · ${priceWarning}` : ""}`,
+            message: `تم تعديل: ${changes
+              .filter((c) => c.sensitive)
+              .map((c) => c.field)
+              .join(", ")}${priceWarning ? ` · ${priceWarning}` : ""}`,
             link: `/seller/products/${productId}`,
           },
         });
@@ -332,7 +443,7 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       requiresReapproval,
-      changedFields: changedSensitiveFields,
+      changedFields: changes.map((c) => c.field),
       priceWarning,
       message: requiresReapproval
         ? "تم الحفظ — المنتج بانتظار موافقة الإدارة"

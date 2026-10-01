@@ -169,6 +169,7 @@ export async function POST(request: Request) {
           sellerId: auth.seller.id,
           sku: `${cleanSlug}-default-${Date.now()}`,
           price: data.price,
+          originalPrice: data.price, // ⚠️ السعر الأصلي - لا يتغير أبداً
           discountPrice: data.oldPrice || null,
           isDefault: true,
           isActive: true,
