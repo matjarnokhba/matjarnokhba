@@ -28,6 +28,7 @@ type SellerSidebarProps = {
 
 const NAV_ITEMS = [
   { href: "/seller", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
+  { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
@@ -36,7 +37,6 @@ const NAV_ITEMS = [
   { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false },
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false },
   { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false },
-  { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false },
 ];
 
 export default function SellerSidebar({
@@ -65,7 +65,7 @@ export default function SellerSidebar({
 
   return (
     <>
-      {/* ═══ Mobile Toggle ═══ */}
+      {/* Mobile Toggle */}
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
@@ -74,7 +74,7 @@ export default function SellerSidebar({
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* ═══ Overlay ═══ */}
+      {/* Overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -82,13 +82,13 @@ export default function SellerSidebar({
         />
       )}
 
-      {/* ═══ Sidebar ═══ */}
+      {/* Sidebar */}
       <aside
-        className={`fixed bottom-0 right-0 top-0 z-50 w-64 transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed bottom-0 right-0 top-0 z-50 flex w-64 flex-col transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* ═══ Header ═══ */}
+        {/* Header */}
         <div className="flex h-16 items-center justify-between border-b border-gray-100 bg-gradient-to-l from-[#fff4ed] to-white px-4">
           <Link href="/seller" className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-sm font-black text-white">
@@ -108,11 +108,11 @@ export default function SellerSidebar({
           </button>
         </div>
 
-        {/* ═══ Store Info ═══ */}
+        {/* Store Info */}
         <div className="border-b border-gray-100 px-4 py-3">
           <div className="text-[10px] text-gray-500">متجرك</div>
           <div className="mt-0.5 flex items-center gap-1.5">
-            <span className="text-sm font-bold text-gray-900 truncate">
+            <span className="truncate text-sm font-bold text-gray-900">
               {storeName}
             </span>
             {isVerified && (
@@ -131,7 +131,7 @@ export default function SellerSidebar({
           </Link>
         </div>
 
-        {/* ═══ Navigation ═══ */}
+        {/* Navigation */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-24">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -155,7 +155,7 @@ export default function SellerSidebar({
           })}
         </nav>
 
-        {/* ═══ Footer ═══ */}
+        {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 border-t border-gray-100 bg-white p-3">
           <button
             onClick={handleLogout}
