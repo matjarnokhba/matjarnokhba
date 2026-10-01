@@ -1,8 +1,5 @@
 import { prisma } from "@/lib/prisma";
 
-// ═══════════════════════════════════════════
-// تحويل صف DB → نوع Product (المستخدم في UI)
-// ═══════════════════════════════════════════
 type PrismaProduct = {
   id: number;
   name: string;
@@ -52,9 +49,7 @@ function formatProduct(p: PrismaProduct) {
   };
 }
 
-// ═══════════════════════════════════════════
-// Include موحّد لكل استعلامات المنتج
-// ═══════════════════════════════════════════
+// ═══════ Include موحّد ═══════
 const productInclude = {
   images: { orderBy: { order: "asc" as const } },
   category: { select: { slug: true, name: true } },
@@ -64,72 +59,68 @@ const productInclude = {
   },
 };
 
-// ═══════════════════════════════════════════
-// ProductService
-// ═══════════════════════════════════════════
+// ═══════ شروط العرض العام (Section 4.3) ═══════
+const publicProductWhere = {
+  status: "ACTIVE" as const,
+  deletedAt: null,
+  seller: {
+    status: "ACTIVE" as const,
+    deletedAt: null,
+  },
+};
+
 export const ProductService = {
-  // كل المنتجات النشطة
   async getAll() {
     const products = await prisma.product.findMany({
-      where: { status: "ACTIVE", deletedAt: null },
+      where: publicProductWhere,
       include: productInclude,
       orderBy: { createdAt: "desc" },
     });
-
     return products.map(formatProduct);
   },
 
-  // منتج واحد بـslug
   async getBySlug(slug: string) {
-    const product = await prisma.product.findUnique({
-      where: { slug },
+    const product = await prisma.product.findFirst({
+      where: {
+        slug,
+        ...publicProductWhere,
+      },
       include: productInclude,
     });
-
-    if (!product || product.deletedAt || product.status !== "ACTIVE") {
-      return null;
-    }
-
+    if (!product) return null;
     return formatProduct(product);
   },
 
-  // المنتجات المميزة (الأكثر مبيعاً)
   async getFeatured(limit = 8) {
     const products = await prisma.product.findMany({
-      where: { status: "ACTIVE", deletedAt: null },
+      where: publicProductWhere,
       include: productInclude,
       orderBy: { sold: "desc" },
       take: limit,
     });
-
     return products.map(formatProduct);
   },
 
-  // منتجات حسب التصنيف (slug)
   async getByCategory(categorySlug: string, limit = 20) {
     const products = await prisma.product.findMany({
       where: {
-        status: "ACTIVE",
-        deletedAt: null,
+        ...publicProductWhere,
         category: { slug: categorySlug },
       },
       include: productInclude,
       orderBy: { createdAt: "desc" },
       take: limit,
     });
-
     return products.map(formatProduct);
   },
 
-  // البحث
   async search(query: string) {
     const q = query.trim();
     if (!q) return this.getAll();
 
     const products = await prisma.product.findMany({
       where: {
-        status: "ACTIVE",
-        deletedAt: null,
+        ...publicProductWhere,
         OR: [
           { name: { contains: q, mode: "insensitive" } },
           { brand: { contains: q, mode: "insensitive" } },
@@ -139,14 +130,10 @@ export const ProductService = {
       orderBy: { sold: "desc" },
       take: 30,
     });
-
     return products.map(formatProduct);
   },
 };
 
-// ═══════════════════════════════════════════
-// CategoryService (مساعد)
-// ═══════════════════════════════════════════
 export const CategoryService = {
   async getAll() {
     const categories = await prisma.category.findMany({
@@ -154,7 +141,6 @@ export const CategoryService = {
       orderBy: { order: "asc" },
       select: { id: true, name: true, slug: true, order: true },
     });
-
     return categories;
   },
 };

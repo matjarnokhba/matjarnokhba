@@ -7,6 +7,7 @@ import {
   TrendingUp,
   ArrowLeft,
   AlertTriangle,
+  Clock,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export default async function AdminDashboard() {
     revenueAgg,
     recentOrders,
     lowStockVariants,
+    pendingProductsCount,
+    pendingSellersCount,
   ] = await Promise.all([
     prisma.product.count({ where: { deletedAt: null, status: "ACTIVE" } }),
     prisma.order.count(),
@@ -47,6 +50,14 @@ export default async function AdminDashboard() {
           },
         },
       },
+    }),
+    // ═══ عدد المنتجات المعلّقة ═══
+    prisma.product.count({
+      where: { status: "DRAFT", deletedAt: null },
+    }),
+    // ═══ عدد التجار بانتظار الموافقة ═══
+    prisma.seller.count({
+      where: { status: "PENDING", deletedAt: null },
     }),
   ]);
 
@@ -111,6 +122,65 @@ export default async function AdminDashboard() {
         </p>
       </div>
 
+      {/* ═══════ تنبيهات عاجلة ═══════ */}
+      {(pendingProductsCount > 0 || pendingSellersCount > 0) && (
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
+          {pendingProductsCount > 0 && (
+            <Link
+              href="/admin/products/pending"
+              className="flex items-center justify-between rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 p-4 text-white shadow-lg transition hover:scale-[1.02] hover:shadow-xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 backdrop-blur">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black">
+                    منتجات بانتظار الموافقة
+                  </div>
+                  <div className="text-[11px] opacity-90">
+                    اضغط للمراجعة
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white/20 px-3 py-1 text-lg font-black backdrop-blur">
+                  {pendingProductsCount}
+                </span>
+                <ArrowLeft className="h-4 w-4" />
+              </div>
+            </Link>
+          )}
+
+          {pendingSellersCount > 0 && (
+            <Link
+              href="/admin/sellers"
+              className="flex items-center justify-between rounded-xl bg-gradient-to-l from-blue-600 to-indigo-600 p-4 text-white shadow-lg transition hover:scale-[1.02] hover:shadow-xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 backdrop-blur">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black">
+                    تجار بانتظار الموافقة
+                  </div>
+                  <div className="text-[11px] opacity-90">
+                    اضغط للمراجعة
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white/20 px-3 py-1 text-lg font-black backdrop-blur">
+                  {pendingSellersCount}
+                </span>
+                <ArrowLeft className="h-4 w-4" />
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* ═══════ بطاقات الإحصائيات ═══════ */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {stats.map((stat) => {
@@ -136,7 +206,7 @@ export default async function AdminDashboard() {
         })}
       </div>
 
-      {/* ═══════ الطلبات الأخيرة ═══════ */}
+      {/* ═══════ الطلبات الأخيرة + تحذير المخزون ═══════ */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl bg-white p-4 shadow-sm lg:p-5">
           <div className="mb-4 flex items-center justify-between">
