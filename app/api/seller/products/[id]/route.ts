@@ -3,6 +3,21 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
+// ═══════ الحقول الحساسة (تُعيد المنتج لـDRAFT) ═══════
+const SENSITIVE_FIELDS = [
+  "name",
+  "slug",
+  "description",
+  "brand",
+  "badge",
+  "categoryId",
+  "imageUrls",
+] as const;
+
+// ═══════ حدود السعر ═══════
+const MIN_PRICE_RATIO = 0.5;  // لا يقل عن 50% من السعر الحالي
+const MAX_PRICE_RATIO = 2.0;  // لا يزيد عن 200% من السعر الحالي
+
 // ═══════ التحقق من صلاحية البائع + الملكية ═══════
 async function requireSellerOwnership(productId: number) {
   const current = await SessionService.getCurrent();
@@ -13,6 +28,7 @@ async function requireSellerOwnership(productId: number) {
     where: { id: productId },
     include: {
       variants: { where: { isDefault: true } },
+      images: { orderBy: { order: "asc" } },
     },
   });
 
@@ -20,7 +36,6 @@ async function requireSellerOwnership(productId: number) {
     return { error: "المنتج غير موجود", status: 404 };
   }
 
-  // ═══ التحقق من الملكية ═══
   if (product.sellerId !== current.user.seller.id) {
     return { error: "غير مصرح", status: 403 };
   }
@@ -43,7 +58,7 @@ const updateSchema = z.object({
 });
 
 // ═══════════════════════════════════════════
-// GET — تفاصيل منتج واحد (للتعديل)
+// GET — تفاصيل منتج واحد
 // ═══════════════════════════════════════════
 export async function GET(
   request: Request,
@@ -68,14 +83,6 @@ export async function GET(
     }
 
     const { product } = auth;
-
-    // جلب الصور
-    const images = await prisma.productImage.findMany({
-      where: { productId },
-      orderBy: { order: "asc" },
-      select: { url: true },
-    });
-
     const variant = product.variants[0];
     const inventory = variant
       ? await prisma.inventory.findUnique({
@@ -94,10 +101,12 @@ export async function GET(
         badge: product.badge || "",
         categoryId: product.categoryId,
         price: variant ? Number(variant.price) : 0,
-        oldPrice: variant?.discountPrice ? Number(variant.discountPrice) : null,
+        oldPrice: variant?.discountPrice
+          ? Number(variant.discountPrice)
+          : null,
         stock: inventory?.quantity || 0,
         freeShipping: product.freeShipping,
-        imageUrls: images.map((i) => i.url),
+        imageUrls: product.images.map((i) => i.url),
         status: product.status,
       },
     });
@@ -111,7 +120,7 @@ export async function GET(
 }
 
 // ═══════════════════════════════════════════
-// PATCH — تعديل منتج
+// PATCH — تعديل منتج (مع فحص الحقول الحساسة)
 // ═══════════════════════════════════════════
 export async function PATCH(
   request: Request,
@@ -150,8 +159,9 @@ export async function PATCH(
 
     const data = parsed.data;
     const { product } = auth;
+    const variant = product.variants[0];
 
-    // ═══ التحقق من slug مكرر (ضمن منتجات البائع) ═══
+    // ═══════ التحقق من slug مكرر ═══════
     let cleanSlug: string | undefined;
     if (data.slug && data.slug !== product.slug) {
       cleanSlug = data.slug
@@ -176,9 +186,73 @@ export async function PATCH(
       }
     }
 
-    // ═══ تعديل في transaction ═══
+    // ═══════════════════════════════════════════
+    // 🔍 كشف الحقول الحساسة
+    // ═══════════════════════════════════════════
+    const changedSensitiveFields: string[] = [];
+
+    if (data.name !== undefined && data.name !== product.name) {
+      changedSensitiveFields.push("الاسم");
+    }
+    if (cleanSlug && cleanSlug !== product.slug) {
+      changedSensitiveFields.push("الرابط");
+    }
+    if (
+      data.description !== undefined &&
+      (data.description || null) !== product.description
+    ) {
+      changedSensitiveFields.push("الوصف");
+    }
+    if (
+      data.brand !== undefined &&
+      (data.brand || null) !== product.brand
+    ) {
+      changedSensitiveFields.push("الماركة");
+    }
+    if (
+      data.badge !== undefined &&
+      (data.badge || null) !== product.badge
+    ) {
+      changedSensitiveFields.push("الشارة");
+    }
+    if (data.categoryId && data.categoryId !== product.categoryId) {
+      changedSensitiveFields.push("التصنيف");
+    }
+
+    // فحص الصور
+    if (data.imageUrls && data.imageUrls.length > 0) {
+      const currentUrls = product.images.map((i) => i.url);
+      const isDifferent =
+        JSON.stringify(currentUrls) !== JSON.stringify(data.imageUrls);
+      if (isDifferent) {
+        changedSensitiveFields.push("الصور");
+      }
+    }
+
+    // ═══════ فحص حدود السعر ═══════
+    let priceOutOfRange = false;
+    let priceWarning: string | null = null;
+
+    if (data.price !== undefined && variant) {
+      const currentPrice = Number(variant.price);
+      const minPrice = currentPrice * MIN_PRICE_RATIO;
+      const maxPrice = currentPrice * MAX_PRICE_RATIO;
+
+      if (data.price < minPrice) {
+        priceOutOfRange = true;
+        priceWarning = `السعر الجديد (${data.price}) أقل من 50% من السعر الحالي (${currentPrice}) — يحتاج موافقة الإدارة`;
+      } else if (data.price > maxPrice) {
+        priceOutOfRange = true;
+        priceWarning = `السعر الجديد (${data.price}) أكثر من ضعف السعر الحالي (${currentPrice}) — يحتاج موافقة الإدارة`;
+      }
+    }
+
+    // ═══════ قرار: هل يحتاج إعادة موافقة؟ ═══════
+    const requiresReapproval =
+      changedSensitiveFields.length > 0 || priceOutOfRange;
+
+    // ═══════ التعديل ═══════
     await prisma.$transaction(async (tx) => {
-      // 1. تعديل Product
       await tx.product.update({
         where: { id: productId },
         data: {
@@ -193,10 +267,12 @@ export async function PATCH(
           ...(data.freeShipping !== undefined && {
             freeShipping: data.freeShipping,
           }),
+          // ⚠️ إعادة المنتج لـDRAFT إذا كانت التعديلات حساسة
+          ...(requiresReapproval && { status: "DRAFT" }),
         },
       });
 
-      // 2. تعديل الصور (استبدال كامل)
+      // تعديل الصور
       if (data.imageUrls && data.imageUrls.length > 0) {
         await tx.productImage.deleteMany({ where: { productId } });
         await tx.productImage.createMany({
@@ -209,8 +285,7 @@ export async function PATCH(
         });
       }
 
-      // 3. تعديل Variant + Inventory
-      const variant = product.variants[0];
+      // تعديل Variant + Inventory
       if (variant) {
         await tx.productVariant.update({
           where: { id: variant.id },
@@ -235,9 +310,34 @@ export async function PATCH(
           });
         }
       }
+
+      // إشعار للتاجر إذا احتاج إعادة موافقة
+      if (requiresReapproval) {
+        await tx.notification.create({
+          data: {
+            userId: auth.user.id,
+            type: "SELLER_PRODUCT_LOW_STOCK", // ⚠️ مؤقتاً — نُضيف نوعاً مخصصاً لاحقاً
+            title: "منتجك بانتظار إعادة الموافقة",
+            message: `تم تعديل "${product.name}". ${
+              changedSensitiveFields.length > 0
+                ? `الحقول المُعدَّلة: ${changedSensitiveFields.join(", ")}`
+                : ""
+            }${priceWarning ? ` · ${priceWarning}` : ""}`,
+            link: `/seller/products/${productId}`,
+          },
+        });
+      }
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      requiresReapproval,
+      changedFields: changedSensitiveFields,
+      priceWarning,
+      message: requiresReapproval
+        ? "تم الحفظ — المنتج بانتظار موافقة الإدارة"
+        : "تم الحفظ بنجاح",
+    });
   } catch (error) {
     console.error("Seller product PATCH error:", error);
     return NextResponse.json(
@@ -248,7 +348,7 @@ export async function PATCH(
 }
 
 // ═══════════════════════════════════════════
-// DELETE — Soft Delete (من البائع)
+// DELETE — Soft Delete
 // ═══════════════════════════════════════════
 export async function DELETE(
   request: Request,

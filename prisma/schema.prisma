@@ -268,6 +268,7 @@ model Seller {
   documents            SellerDocument[]
   performanceSnapshots SellerPerformanceSnapshot[]
   payouts              SellerPayout[]
+  editLogs             ProductEditLog[]
 
   @@index([status])
   @@index([deletedAt])
@@ -332,6 +333,7 @@ model Product {
   variants ProductVariant[]
   orderItems OrderItem[]
   reviews  Review[]
+  editLogs ProductEditLog[]
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -387,6 +389,7 @@ model ProductVariant {
   sellerId      Int
   sku           String
   price         Decimal  @db.Decimal(10, 2)
+  originalPrice Decimal? @db.Decimal(10, 2)
   discountPrice Decimal? @db.Decimal(10, 2)
   isDefault     Boolean  @default(false)
   isActive      Boolean  @default(true)
@@ -1008,4 +1011,31 @@ model MultiVendorTriggerMetrics {
   createdAt            DateTime @default(now())
 
   @@index([periodEnd])
+}
+
+// ═══════════════════════════════════════════
+// Product Edit Log — سجل تعديلات المنتجات
+// ═══════════════════════════════════════════
+model ProductEditLog {
+  id                 Int      @id @default(autoincrement())
+  productId          Int
+  sellerId           Int
+  changedFields      Json     // ["الاسم", "الصور", "السعر"]
+  oldValues          Json     // { name: "x", price: 100 }
+  newValues          Json     // { name: "y", price: 50 }
+  requiresReapproval Boolean  @default(false)
+  reason             String?  // "تعديل حساس" / "تعديل سعر تجاوز الحد"
+  reviewedAt         DateTime?
+  reviewedById       Int?
+  reviewAction       String?  // "approved" / "rejected"
+  createdAt          DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  seller  Seller  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sellerId])
+  @@index([createdAt])
+  @@index([requiresReapproval])
+  @@index([reviewedAt])
 }

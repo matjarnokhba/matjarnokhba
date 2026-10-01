@@ -11,6 +11,12 @@ import {
   Trash2,
   AlertTriangle,
   AlertCircle,
+  Info,
+  Eye,
+  Image as ImageIcon,
+  FileText,
+  Tag,
+  DollarSign,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
 
@@ -40,9 +46,10 @@ export default function EditSellerProductPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
   const [showDelete, setShowDelete] = useState(false);
 
-  // ═══ جلب البيانات ═══
   useEffect(() => {
     async function load() {
       try {
@@ -95,6 +102,8 @@ export default function EditSellerProductPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccessMsg("");
+    setWarningMsg("");
 
     if (!name.trim() || name.trim().length < 2) {
       setError("اسم المنتج مطلوب (حرفين على الأقل)");
@@ -144,8 +153,27 @@ export default function EditSellerProductPage() {
         return;
       }
 
-      router.push("/seller/products");
-      router.refresh();
+      if (data.requiresReapproval) {
+        setWarningMsg(
+          `تم الحفظ — المنتج بانتظار موافقة الإدارة${
+            data.changedFields?.length
+              ? ` · الحقول المُعدَّلة: ${data.changedFields.join(", ")}`
+              : ""
+          }`
+        );
+        setStatus("DRAFT");
+        // لا نُعيد التوجيه فوراً — نُظهر الرسالة
+        setTimeout(() => {
+          router.push("/seller/products");
+          router.refresh();
+        }, 3000);
+      } else {
+        setSuccessMsg("تم الحفظ بنجاح");
+        setTimeout(() => {
+          router.push("/seller/products");
+          router.refresh();
+        }, 1500);
+      }
     } catch {
       setError("فشل الاتصال بالخادم");
     } finally {
@@ -183,7 +211,7 @@ export default function EditSellerProductPage() {
     );
   }
 
-  if (error) {
+  if (error && !name) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <AlertTriangle className="h-12 w-12 text-red-500" />
@@ -197,6 +225,8 @@ export default function EditSellerProductPage() {
       </div>
     );
   }
+
+  const isActive = status === "ACTIVE";
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
@@ -221,6 +251,39 @@ export default function EditSellerProductPage() {
           حذف المنتج
         </button>
       </div>
+
+      {/* ═══ شارة الحالة الحالية ═══ */}
+      {isActive && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="flex-1 text-sm">
+            <div className="font-black text-amber-900">
+              ⚠️ تعديل بعض الحقول سيحتاج موافقة الإدارة مجدداً
+            </div>
+            <div className="mt-2 grid gap-1 text-xs text-amber-800 sm:grid-cols-2">
+              <div className="flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5" />
+                <span>تغيير <strong>الصور</strong> أو <strong>الاسم</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                <span>تغيير <strong>الوصف</strong> أو <strong>الفئة</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Tag className="h-3.5 w-3.5" />
+                <span>تغيير <strong>الماركة</strong> أو <strong>الشارة</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5" />
+                <span>تغيير <strong>السعر</strong> بأكثر من ±50%</span>
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] text-amber-700">
+              💡 يمكنك تعديل <strong>المخزون</strong> و<strong>السعر البسيط</strong> بدون مراجعة.
+            </div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="max-w-3xl">
         <div className="grid gap-4 lg:grid-cols-3">
@@ -384,10 +447,26 @@ export default function EditSellerProductPage() {
           </div>
         </div>
 
+        {/* ═══ خطأ ═══ */}
         {error && (
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* ═══ تحذير إعادة الموافقة ═══ */}
+        {warningMsg && (
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{warningMsg}</span>
+          </div>
+        )}
+
+        {/* ═══ نجاح ═══ */}
+        {successMsg && (
+          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            ✓ {successMsg}
           </div>
         )}
 
