@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 2.11
+**Version:** 3.0
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5143,3 +5143,188 @@ in-memory = يعمل محلياً. عند Vercel → كل instance له ذاكر
 تم إضافة `try/catch` مخصص حول الدعوة → يُعيد 401 بدل 500.
 
 **End of Section 76 (v2.11)**
+
+# Section 77 — Multi-Vendor Architecture (v3.0)
+
+## 77.1 Overview
+
+انتقال المشروع من **Single-Seller** إلى **Multi-Vendor Marketplace**.
+- كل منتج مرتبط بـ`sellerId` إجباري
+- كل طلب يرتبط بـ`sellerId` (Per-Seller Orders)
+- كل تاجر له لوحة تحكم مستقلة
+- الأدمن يدير كل شيء مركزيّاً
+
+## 77.2 Models الجديدة
+
+| الجدول | الوصف |
+|--------|-------|
+| `SellerBankAccount` | حسابات بنكية للتاجر (AES-256-GCM) |
+| `SellerDocument` | وثائق التاجر (storageKey آمن) |
+| `SystemPolicy` | سياسات النظام (قابلة للتغيير) |
+| `CostRecord` | سجل التكاليف (شحن، COD، إرجاع) |
+| `SellerPerformanceSnapshot` | لقطة شهرية للأداء |
+| `SellerPayout` | المدفوعات اليدوية الشهرية |
+| `MultiVendorTriggerMetrics` | مؤشرات التحول لـSubOrder |
+| `ProductEditLog` | سجل كل تعديل على المنتجات |
+
+## 77.3 التعديلات على Models موجودة
+
+**UserRole:**
+
+CUSTOMER, SELLER, ADMIN, SUPER_ADMIN
+
+**Seller:**
+- `commissionRateOverride Decimal?` (5,4)
+- 9 حقول Performance (totalOrders, acceptanceRate, ...)
+- isVerified, verifiedAt, verifiedById, isFeatured
+- city, region, notificationPreferences
+- termsAcceptedAt, termsVersion, deletedAt
+
+**Product:**
+- `@@unique([sellerId, slug])` — slug فريد لكل تاجر
+
+**ProductVariant:**
+- `sellerId Int` (denormalized من Product)
+- `originalPrice Decimal?` — Anchor لا يتغير
+- `@@unique([sellerId, sku])`
+
+**Category:**
+- `commissionRate Decimal?` (5,4)
+
+**Order:**
+- `sellerId Int?` (nullable)
+- `commission Decimal?`
+- `refundedCommission Decimal @default(0)`
+- `sellerPayout Decimal?`
+- `sellerNotes String?`
+- @@index([sellerId, status]), @@index([sellerId, createdAt])
+
+**Notification:**
+- `metadata Json?`
+- `category String?`
+- `severity String?` (INFO / WARNING / CRITICAL)
+- `readAt DateTime?`
+
+**NotificationType enum:**
+- 8 أنواع جديدة للتجار (SELLER_*)
+- SELLER_PRODUCT_EDITED
+- SELLER_PRODUCT_NEEDS_REVIEW
+
+## 77.4 قواعد الأمان الجديدة
+
+### Product.sellerId — Immutable
+لا يمكن تغيير `sellerId` بعد أول OrderItem.
+
+### ProductVariant.sellerId — لا يختلف عن Product
+يُفرض في Service Layer + Cron دوري.
+
+### Sales Flow — Per-Seller Orders
+- كل طلب منفصل لكل تاجر في السلة
+- Reservation منفصل لكل Order
+- إشعار للعميل + إشعار للتاجر + إشعار للأدمن
+
+### Slug Resolution
+- قديماً: `/product/[slug]` — فريد عالمياً
+- الآن: `@@unique([sellerId, slug])` — فريد لكل تاجر
+- **التخطيط:** `/product/[sellerSlug]/[productSlug]` (قيد الإنشاء)
+
+## 77.5 سياسة تعديل المنتج (Smart Edit Policy)
+
+### الحقول الحساسة (تُعيد المنتج لـDRAFT)
+- الاسم
+- الرابط (slug)
+- الوصف
+- الماركة
+- الشارة
+- التصنيف
+- الصور
+
+### الحقول الآمنة (لا تُعيد)
+- المخزون
+- السعر القديم
+- شحن مجاني
+
+### السعر — Anchor ضد originalPrice
+- `originalPrice` يُعبَّأ أول مرة عند الإنشاء
+- لا يتغير أبداً
+- حد أدنى: `originalPrice × 0.5`
+- حد أقصى: `originalPrice × 2.0`
+- أي تعديل خارج النطاق → DRAFT
+
+### ProductEditLog — تسجيل كامل
+كل تعديل (حتى الآمن) يُسجَّل:
+- changedFields
+- oldValues / newValues
+- requiresReapproval
+- reason (نصي)
+
+## 77.6 Admin Notifications Center
+
+### الميزات
+- صفحة `/admin/notifications`
+- 4 تصنيفات: PRODUCT, SELLER, ORDER, SYSTEM
+- 3 مستويات: INFO, WARNING, CRITICAL
+- Metadata كامل في كل إشعار
+- Modal تفاصيل مع جدول التغييرات
+- فلاتر: category, severity, unread/read
+- بحث نصي
+- "تحديد الكل كمقروء"
+
+### إشعارات الأدمن التلقائية
+- تعديل منتج (آمن) → SELLER_PRODUCT_EDITED
+- تعديل منتج (حساس) → SELLER_PRODUCT_NEEDS_REVIEW
+- تسجيل تاجر جديد → (قيد الإنشاء)
+- طلب جديد → (قيد الإنشاء)
+
+## 77.7 مسار التحول لـSubOrder
+
+**لم نطبّقه بعد.** القرار عند تحقيق 5 مؤشرات:
+1. 8-10 تجار فعّالين
+2. 15%+ طلبات متعددة التجار
+3. 5+ شكاوى عملاء شهرياً
+4. تكلفة شحن عبء حقيقي
+5. 3%+ إلغاءات بسبب تعدد الشحنات
+
+**عند 4 من 5** → نبدأ التخطيط.
+
+## 77.8 الـMigration Path (من Per-Seller إلى SubOrder)
+
+**الإضافات المطلوبة:**
+- جدول `SubOrder` جديد
+- حقل `OrderItem.subOrderId Int?` (nullable)
+
+**لا يوجد rework:**
+- Order, Payment, Returns, Inventory تبقى كما هي
+- فقط إضافة، لا تعديل كاسر
+
+## 77.9 الحماية الإضافية
+
+### SellerBankAccount
+- AES-256-GCM encryption (SELLER_DATA_KEY في .env)
+- ibanHash + ribHash للتحقق من التكرار
+- لا يُعرض إلا في Admin
+- AuditLog لكل قراءة
+
+### SellerDocument
+- storageKey وليس fileUrl عام
+- signed URLs 15 دقيقة
+- checksum (SHA-256)
+
+### SystemPolicy
+- قيم JSON قابلة للتغيير
+- updatedById + updatedAt للتتبع
+
+## 77.10 Git History (v3.0)
+
+docs: DECISIONS v3.0 Multi-Vendor architecture
+feat: multi-vendor foundation schema + migration
+feat: seller registration flow + become-seller page
+feat: seller dashboard + sidebar + layout
+feat: seller products CRUD
+feat: public store page with SEO
+feat: admin sellers list + detail + actions
+feat: admin product approval workflow
+fix: original price anchor + product edit log
+feat: admin notifications center with full
+
+End of Section 77 (v3.0)
