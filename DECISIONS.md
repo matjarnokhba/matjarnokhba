@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 3.0
+**Version:** 3.1
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5328,3 +5328,299 @@ fix: original price anchor + product edit log
 feat: admin notifications center with full
 
 End of Section 77 (v3.0)
+
+# Section 78 — Seller System (v3.1)
+
+## 78.1 Overview
+
+نظام كامل للبائع يغطي:
+- التسجيل الذاتي (`/become-seller`)
+- لوحة تحكم مستقلة (`/seller/*`)
+- إدارة المنتجات والطلبات
+- مركز إشعارات
+- أداء + مدفوعات
+
+## 78.2 Seller Registration Flow
+
+### `/become-seller`
+- صفحة تسويقية + نموذج مزدوج (بيانات شخصية + متجر)
+- Rate Limit: 3 محاولات / ساعة / IP
+- Slug تلقائي من اسم المتجر (lowercase + hyphens)
+
+### `POST /api/seller/register`
+داخل transaction واحدة:
+1. إنشاء `User` بـ `role = SELLER`
+2. إنشاء `Seller` بـ `status = PENDING`
+3. إشعار للأدمن: `SELLER_NEW_REGISTRATION`
+4. إنشاء `Session` تلقائياً (تسجيل دخول فوري)
+
+### Authorization
+- التاجر PENDING يستطيع: إعداد منتجاته، تعديل ملفه
+- التاجر PENDING لا يستطيع: بيع (يحتاج ACTIVE)
+
+## 78.3 Seller Dashboard Structure
+
+├── layout.tsx              ← حماية + Sidebar
+├── page.tsx                ← Dashboard
+├── products/               ← CRUD
+├── orders/                 ← قائمة + تفاصيل
+├── notifications/          ← إشعارات
+├── reviews/                ← تقييمات
+├── performance/            ← أداء
+├── payouts/                ← أرباح
+├── profile/                ← ملف المتجر
+├── bank-accounts/          ← (قيد الإنشاء)
+└── documents/              ← (قيد الإنشاء)
+
+### Authorization (SellerLayout)
+1. لا جلسة → `/login`
+2. ليس SELLER/ADMIN → `/`
+3. لا Seller record → `/seller-onboarding`
+4. Seller SUSPENDED/CLOSED → صفحة "حسابك معطّل"
+5. ✅ يمر
+
+## 78.4 Seller Products CRUD
+
+### الحقول
+- name, slug, description, brand, badge
+- categoryId, price, oldPrice, stock
+- freeShipping, imageUrls[]
+
+### القواعد
+- slug فريد لكل تاجر (`@@unique([sellerId, slug])`)
+- عند الإنشاء: `status = DRAFT`
+- عند الإنشاء: `originalPrice = price` (لا يتغير)
+- الصور: `ProductImage[]` مع `order` + `isMain`
+
+### Smart Edit Policy
+انظر Section 77.5 — الحقول الحساسة تحتاج موافقة.
+
+## 78.5 Seller Orders
+
+### `GET /api/seller/orders`
+- فلترة: `status`, `q` (orderNumber)
+- إحصائيات: groupBy status
+- يُرجع: 100 طلب + `_count.items`
+
+### `GET /api/seller/orders/[id]`
+- يتحقق من `sellerId === current.seller.id`
+- يُرجع: order + items + statusHistory
+
+### `PATCH /api/seller/orders/[id]/status`
+
+**الانتقالات المسموحة للتاجر:**
+
+NEW → PROCESSING   (commit sale + reservation CONFIRMED)
+PROCESSING → SHIPPED
+SHIPPED → DELIVERED (sold increment)
+
+**لا يستطيع التاجر:**
+- إلغاء طلب (فقط الأدمن)
+- تحويل إلى RETURNED (فقط من ReturnService)
+- تخطي مراحل
+
+**داخل كل تغيير:**
+- Lock Order
+- تحديث status + StatusHistory
+- NEW→PROCESSING: `InventoryService.commitSale`
+- DELIVERED: `Product.sold += quantity`
+- إشعار للعميل: `ORDER_STATUS_CHANGED`
+- إشعار للأدمن: `ORDER_STATUS_CHANGED`
+
+## 78.6 Seller Notifications Center
+
+### `/seller/notifications`
+- فلاتر: ALL / UNREAD / READ
+- بحث نصي
+- Modal تفاصيل
+- "تحديد الكل كمقروء"
+
+### APIs
+- `GET /api/seller/notifications`
+- `PATCH /api/seller/notifications/[id]`
+- `POST /api/seller/notifications/read-all`
+
+## 78.7 Seller Reviews
+
+### `/seller/reviews`
+- فلاتر: ALL / APPROVED / PENDING
+- فلتر بالنجوم (1-5)
+- إحصائيات: متوسط + رسم بياني
+- عرض: المستخدم، المنتج، التقييم، التعليق
+
+### API
+- `GET /api/seller/reviews` — يفلتر بـ`sellerId` (عبر Product)
+
+## 78.8 Seller Performance
+
+### المؤشرات
+- `totalOrders`, `totalRevenue`, `totalCommission`
+- `acceptanceRate` = (NEW→PROCESSING) / total
+- `cancellationRate` = CANCELLED / total
+- `codRejectionRate` = CANCELLED بعد SHIPPED
+- `returnRate` = COMPLETED returns / DELIVERED
+- `avgRating` من Reviews معتمدة
+- `avgProcessingHours` = (NEW→PROCESSING) متوسط بالوقت
+
+### Script `recalc-sellers`
+- `npm run recalc-sellers`
+- يحسب كل المؤشرات من البيانات الفعلية
+- يستخدم: `OrderStatusHistory` للأوقات
+
+### Quality Score
+
+qualityScore =
+acceptance × 0.3 +
+(100 - cancellation) × 0.2 +
+(avgRating/5 × 100) × 0.3 +
+(100 - returnRate) × 0.2
+
+## 78.9 Seller Payouts
+
+### `/seller/payouts`
+- الرصيد المتاح = totalEarnings - totalPaidOut - pendingPayouts
+- هذا الشهر + آخر 30 يوم
+- سجل التحويلات (`SellerPayout`)
+- الأرباح حسب الطلب
+
+### مصادر الأرباح
+- `Order.sellerPayout` (snapshot عند الإنشاء)
+- إذا NULL → `Order.total` (للطلبات القديمة قبل Multi-Vendor)
+
+### Payout Cycle (MVP)
+- يدوي شهرياً
+- الأدمن يُنشئ `SellerPayout` عند التحويل
+- `status`: PENDING → PROCESSING → COMPLETED / FAILED
+
+## 78.10 Seller Profile
+
+### `/seller/profile`
+- تعديل: storeName, description, logo, city, region
+- **slug محمي** — لا يُعدَّل (يؤثر على روابط المنتجات)
+- ImageUploader للشعار (صورة واحدة فقط)
+
+### API
+- `GET /api/seller/profile`
+- `PATCH /api/seller/profile`
+
+## 78.11 Seller Sidebar
+
+10 روابط:
+1. لوحة التحكم
+2. الإشعارات
+3. منتجاتي
+4. طلباتي
+5. التقييمات
+6. أدائي
+7. المدفوعات
+8. حساباتي البنكية (قيد الإنشاء)
+9. وثائقي (قيد الإنشاء)
+10. ملف المتجر
+
++ عرض المتجر (رابط خارجي) + تسجيل الخروج
+
+## 78.12 Admin Side
+
+### `/admin/sellers`
+- فلاتر: PENDING / ACTIVE / SUSPENDED / CLOSED / ALL
+- بحث
+- إحصائيات
+
+### `/admin/sellers/[id]`
+- معلومات كاملة
+- Actions: approve, suspend, activate, close, verify
+- إشعارات تلقائية للتاجر
+
+### `/admin/products/pending`
+- منتجات DRAFT جديدة ومعدّلة
+- عرض الفروقات (جدول التغييرات)
+- Approve / Reject
+
+### `/admin/notifications`
+- فلاتر: category (PRODUCT/SELLER/ORDER/SYSTEM)
+- severity (INFO/WARNING/CRITICAL)
+- Modal تفاصيل + جدول تغييرات
+
+### `/admin/products`
+- 3 شارات: 🆕 جديد / ✏️ مُعدَّل / ⚠️ سعر!
+- عمود "التاجر"
+- زر "المراجعة (N)"
+
+## 78.13 Admin Notifications (Auto)
+
+يُولَّد تلقائياً عند:
+- تعديل منتج (أمن) → `SELLER_PRODUCT_EDITED`
+- تعديل منتج (حساس) → `SELLER_PRODUCT_NEEDS_REVIEW`
+- تسجيل تاجر → `SELLER_NEW_REGISTRATION`
+- طلب جديد → `ORDER_CREATED`
+- مراجعة جديدة → `REVIEW_SUBMITTED`
+- إرجاع جديد → `RETURN_REQUESTED`
+- تحديث حالة طلب (من التاجر) → `ORDER_STATUS_CHANGED`
+
+كل إشعار يحمل `metadata` كامل + `category` + `severity`.
+
+## 78.14 Public URLs Update
+
+### قبل Multi-Vendor
+
+/product/[slug]           ← عالمي
+/store/[slug]             ← جديد
+
+### بعد Multi-Vendor
+
+/product/[sellerSlug]/[productSlug]   ← الجديد
+/store/[sellerSlug]                    ← قائم
+
+### Redirect Policy
+- ❌ لا redirect حالياً (الموقع لم يُنشر)
+- ✅ عند النشر: `middleware.ts` لتحويل الروابط القديمة
+- ✅ 308 Permanent Redirect (يحفظ SEO)
+
+## 78.15 Product Service — Public Query
+
+Product.status = ACTIVE
+Product.deletedAt = null
+Seller.status = ACTIVE
+Seller.deletedAt = null
+
+**`getBySlugAndSeller(productSlug, sellerSlug)`** — الدالة الأساسية.
+
+## 78.16 Git History (v3.1)
+
+feat: seller registration + become-seller
+feat: seller layout + sidebar
+feat: seller products CRUD
+feat: seller orders list + detail
+feat: seller order status management
+feat: seller notifications center
+feat: seller reviews page
+feat: seller performance dashboard
+feat: seller payouts dashboard
+feat: seller profile page
+feat: admin sellers management
+feat: admin product approval workflow
+feat: admin notifications center
+feat: new product URLs (Multi-Vendor)
+feat: redirect policy documented
+
+## 78.17 القادم (TODO)
+
+### قيد البناء
+- `/seller/bank-accounts` — تشفير AES-256-GCM
+- `/seller/documents` — Signed URLs
+- `middleware.ts` — Redirect
+
+### مؤجل
+- Cron: تحديث `SellerPerformanceSnapshot` شهرياً
+- Cron: انتهاء Reservations
+- Rate Limiting على `/seller/register` (موجود، لكن شدد النافذة)
+- Seller Payouts Automation
+- Rate Limits على Action متعددة
+
+### Admin Pages ناقصة
+- `/admin/audit-log`
+- `/admin/system-policies`
+- `/admin/cost-records`
+- `/admin/trigger-metrics`
+
+End of Section 78 (v3.1)
