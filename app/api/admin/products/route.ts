@@ -2,7 +2,88 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
-// ═══════ إنشاء منتج ═══════
+// ═══════ GET — قائمة المنتجات (للأدمن) ═══════
+export async function GET(request: Request) {
+  try {
+    const current = await SessionService.getCurrent();
+    if (!current) {
+      return NextResponse.json(
+        { success: false, message: "غير مصرح" },
+        { status: 401 }
+      );
+    }
+    if (current.user.role !== "ADMIN" && current.user.role !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        { success: false, message: "غير مصرح" },
+        { status: 403 }
+      );
+    }
+
+    const products = await prisma.product.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      include: {
+        seller: { select: { storeName: true, slug: true } },
+        category: { select: { name: true } },
+        images: { where: { isMain: true }, take: 1 },
+        variants: {
+          where: { isDefault: true },
+          include: { inventory: { select: { quantity: true } } },
+        },
+        editLogs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    const formatted = products.map((p) => {
+      const variant = p.variants[0];
+      const lastEdit = p.editLogs[0];
+
+      // ═══ تحديد النوع ═══
+      let type: "NEW" | "EDITED" | "ACTIVE" | "INACTIVE" = "ACTIVE";
+
+      if (p.status === "DRAFT") {
+        type = lastEdit ? "EDITED" : "NEW";
+      } else if (p.status === "INACTIVE") {
+        type = "INACTIVE";
+      }
+
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        image: p.images[0]?.url || null,
+        brand: p.brand,
+        categoryName: p.category?.name || "",
+        price: variant ? Number(variant.price) : 0,
+        stock: variant?.inventory?.quantity ?? 0,
+        status: p.status,
+        type,
+        seller: p.seller?.storeName || "",
+        lastEdit: lastEdit
+          ? {
+              changedFields: lastEdit.changedFields,
+              reason: lastEdit.reason,
+              requiresReapproval: lastEdit.requiresReapproval,
+              createdAt: lastEdit.createdAt,
+            }
+          : null,
+      };
+    });
+
+    return NextResponse.json({ success: true, products: formatted });
+  } catch (error) {
+    console.error("Admin products GET error:", error);
+    return NextResponse.json(
+      { success: false, message: "حدث خطأ" },
+      { status: 500 }
+    );
+  }
+}
+
+// ═══════ POST — إنشاء منتج (من الأدمن) ═══════
 export async function POST(request: Request) {
   try {
     const current = await SessionService.getCurrent();
@@ -21,7 +102,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // ═══ التحقق من البيانات ═══
+    // ═══ التحقق ═══
     if (!body.name?.trim() || body.name.length < 2) {
       return NextResponse.json(
         { success: false, message: "اسم المنتج مطلوب (حرفان على الأقل)" },
@@ -46,16 +127,36 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (!body.imageUrls || !Array.isArray(body.imageUrls) || body.imageUrls.length === 0) {
+    if (
+      !body.imageUrls ||
+      !Array.isArray(body.imageUrls) ||
+      body.imageUrls.length === 0
+    ) {
       return NextResponse.json(
         { success: false, message: "صورة واحدة على الأقل مطلوبة" },
         { status: 400 }
       );
     }
 
-    // ═══ التحقق من عدم تكرار slug ═══
-    const existing = await prisma.product.findUnique({
-      where: { slug: body.slug },
+    // ═══ جلب البائع الأساسي (متجر نخبة) ═══
+    const seller = await prisma.seller.findFirst({
+      where: { deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    if (!seller) {
+      return NextResponse.json(
+        { success: false, message: "لا يوجد بائع أساسي" },
+        { status: 500 }
+      );
+    }
+
+    // ═══ تحقق من slug ضمن منتجات نفس البائع ═══
+    const existing = await prisma.product.findFirst({
+      where: {
+        sellerId: seller.id,
+        slug: body.slug.trim(),
+        deletedAt: null,
+      },
     });
     if (existing) {
       return NextResponse.json(
@@ -64,18 +165,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ جلب البائع ═══
-    const seller = await prisma.seller.findFirst();
-    if (!seller) {
-      return NextResponse.json(
-        { success: false, message: "لا يوجد بائع" },
-        { status: 500 }
-      );
-    }
-
-    // ═══ إنشاء المنتج (Transaction) ═══
+    // ═══ الإنشاء ═══
     const product = await prisma.$transaction(async (tx) => {
-      // 1. المنتج
       const newProduct = await tx.product.create({
         data: {
           sellerId: seller.id,
@@ -90,7 +181,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // 2. الصور
       await tx.productImage.createMany({
         data: body.imageUrls.map((url: string, i: number) => ({
           productId: newProduct.id,
@@ -100,12 +190,14 @@ export async function POST(request: Request) {
         })),
       });
 
-      // 3. الـVariant
+      // ⚠️ sellerId + originalPrice إجباريان
       const variant = await tx.productVariant.create({
         data: {
           productId: newProduct.id,
+          sellerId: seller.id,
           sku: `${body.slug}-default`,
           price: body.price,
+          originalPrice: body.price,
           discountPrice: body.oldPrice || null,
           isDefault: true,
           isActive: true,
@@ -113,7 +205,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // 4. Inventory
       await tx.inventory.create({
         data: {
           variantId: variant.id,

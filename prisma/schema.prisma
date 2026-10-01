@@ -121,6 +121,8 @@ enum NotificationType {
   SELLER_PERFORMANCE_WARNING
   SELLER_SUSPENDED
   SELLER_VERIFIED
+  SELLER_PRODUCT_EDITED
+  SELLER_PRODUCT_NEEDS_REVIEW
 }
 
 /// نوع العملية الم​دقَ​قة
@@ -788,7 +790,11 @@ model Notification {
   title     String
   message   String
   link      String?
+  metadata  Json?
+  category  String?
+  severity  String?          @default("INFO")
   isRead    Boolean          @default(false)
+  readAt    DateTime?
   createdAt DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -796,6 +802,9 @@ model Notification {
   @@index([userId])
   @@index([userId, isRead])
   @@index([createdAt])
+  @@index([category])
+  @@index([severity])
+  @@index([userId, category, isRead])
 }
 
 model AuditLog {

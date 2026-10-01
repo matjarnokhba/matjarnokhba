@@ -428,13 +428,56 @@ export async function PATCH(
         await tx.notification.create({
           data: {
             userId: auth.user.id,
-            type: "SELLER_PRODUCT_LOW_STOCK",
+            type: "SELLER_PRODUCT_NEEDS_REVIEW",
             title: "منتجك بانتظار إعادة الموافقة",
             message: `تم تعديل: ${changes
               .filter((c) => c.sensitive)
               .map((c) => c.field)
               .join(", ")}${priceWarning ? ` · ${priceWarning}` : ""}`,
             link: `/seller/products/${productId}`,
+          },
+        });
+      }
+
+      // ═══ إشعار للأدمن (دائماً) ═══
+      const admins = await tx.user.findMany({
+        where: {
+          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      const changedFieldNames = changes.map((c) => c.field).join(", ");
+
+      for (const admin of admins) {
+        await tx.notification.create({
+          data: {
+            userId: admin.id,
+            type: requiresReapproval
+              ? "SELLER_PRODUCT_NEEDS_REVIEW"
+              : "SELLER_PRODUCT_EDITED",
+            title: requiresReapproval
+              ? "⚠️ منتج يحتاج مراجعة"
+              : "✏️ منتج تم تعديله",
+            message: `بائع "${auth.seller.storeName}" عدّل "${product.name}": ${changedFieldNames}${
+              priceWarning ? ` · ${priceWarning}` : ""
+            }`,
+            link: requiresReapproval
+              ? `/admin/products/pending`
+              : `/admin/products/${productId}`,
+            category: "PRODUCT",
+            severity: requiresReapproval ? "WARNING" : "INFO",
+            metadata: {
+              productId,
+              productName: product.name,
+              sellerId: auth.seller.id,
+              sellerName: auth.seller.storeName,
+              changedFields: changes.map((c) => c.field),
+              changes: changes,
+              priceWarning: priceWarning,
+              requiresReapproval: requiresReapproval,
+            },
           },
         });
       }

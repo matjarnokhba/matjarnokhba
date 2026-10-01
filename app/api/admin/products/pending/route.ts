@@ -34,26 +34,52 @@ export async function GET() {
           where: { isDefault: true },
           include: { inventory: { select: { quantity: true } } },
         },
+        // ═══ آخر تعديل ═══
+        editLogs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
 
-    const formatted = products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      image: p.images[0]?.url || null,
-      categoryName: p.category.name,
-      price: p.variants[0] ? Number(p.variants[0].price) : 0,
-      stock: p.variants[0]?.inventory?.quantity || 0,
-      createdAt: p.createdAt,
-      seller: {
-        id: p.seller.id,
-        storeName: p.seller.storeName,
-        slug: p.seller.slug,
-      },
-    }));
+    const formatted = products.map((p) => {
+      const lastEdit = p.editLogs[0];
+      const isNew =
+        !lastEdit ||
+        p.createdAt.getTime() === p.updatedAt.getTime() ||
+        lastEdit.changedFields === null;
+
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        image: p.images[0]?.url || null,
+        categoryName: p.category.name,
+        price: p.variants[0] ? Number(p.variants[0].price) : 0,
+        stock: p.variants[0]?.inventory?.quantity || 0,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        isNew, // 🆕 منتج جديد vs ✏️ مُعدَّل
+        seller: {
+          id: p.seller.id,
+          storeName: p.seller.storeName,
+          slug: p.seller.slug,
+        },
+        lastEdit: lastEdit
+          ? {
+              id: lastEdit.id,
+              changedFields: lastEdit.changedFields,
+              oldValues: lastEdit.oldValues,
+              newValues: lastEdit.newValues,
+              requiresReapproval: lastEdit.requiresReapproval,
+              reason: lastEdit.reason,
+              createdAt: lastEdit.createdAt,
+            }
+          : null,
+      };
+    });
 
     return NextResponse.json({ success: true, products: formatted });
   } catch (error) {

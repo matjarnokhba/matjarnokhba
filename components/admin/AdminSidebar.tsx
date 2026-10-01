@@ -16,6 +16,7 @@ import {
   Ticket,
   RotateCcw,
   FolderTree,
+  Bell,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -25,6 +26,7 @@ type AdminSidebarProps = {
 
 const NAV_ITEMS = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
+  { href: "/admin/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
   { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
@@ -76,7 +78,7 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
 
       {/* ═══════ Sidebar ═══════ */}
       <aside
-        className={`fixed bottom-0 right-0 top-0 z-50 w-64 transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed bottom-0 right-0 top-0 z-50 flex w-64 flex-col transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
