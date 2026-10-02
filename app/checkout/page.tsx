@@ -166,24 +166,14 @@ export default function CheckoutPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          // ⚠️ Client يُرسل فقط: productId + variantId + quantity
+          // Server يحسب كل الأسعار
           items: items.map((item) => ({
             productId: item.id,
             variantId: item.variantId,
-            productName: item.name,
-            variantName:
-              [item.selectedColor, item.selectedSize]
-                .filter(Boolean)
-                .join(" / ") || undefined,
-            sku: item.slug,
-            imageUrl: item.images[0],
             quantity: item.quantity,
-            unitPrice: item.price,
           })),
-          subtotal,
-          shippingCost,
-          discount: couponDiscount,
-          couponId: couponId || undefined,
-          total,
+          couponCode: couponCode?.trim() || undefined,
           address: {
             fullName: fullName.trim(),
             phone: phone.trim(),

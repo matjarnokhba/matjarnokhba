@@ -4,15 +4,15 @@ import { InventoryService } from "@/services/inventory.service";
 
 const RESERVATION_DURATION_MINUTES = 30;
 
+// ═══════ ثوابت الشحن (نفس قيم lib/data/products.ts) ═══════
+const SHIPPING_FEE = 30;
+const FREE_SHIPPING_THRESHOLD = 300;
+
+// ═══════ الأنواع ═══════
 type OrderItemInput = {
   productId: number;
-  variantId?: number;
-  productName: string;
-  variantName?: string;
-  sku: string;
-  imageUrl?: string;
+  variantId: number;
   quantity: number;
-  unitPrice: number;
 };
 
 type AddressInput = {
@@ -25,11 +25,7 @@ type AddressInput = {
 
 type CreateOrderInput = {
   items: OrderItemInput[];
-  subtotal: number;
-  shippingCost: number;
-  total: number;
-  discount: number;
-  couponId?: number;
+  couponCode?: string;
   address: AddressInput;
   customer: {
     id: number;
@@ -50,34 +46,150 @@ export const OrderService = {
     return `ORD-${year}-${String(seq.lastNumber).padStart(5, "0")}`;
   },
 
-  // ═══════ إنشاء طلبات (تُقسَّم حسب البائع) ═══════
+  // ═══════ إنشاء طلبات (Server-Side Calculation) ═══════
   async createOrder(userId: number, data: CreateOrderInput) {
-    // 1. جلب sellerId لكل منتج
-    const productIds = [...new Set(data.items.map((i) => i.productId))];
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, sellerId: true },
-    });
-    const sellerMap = new Map(products.map((p) => [p.id, p.sellerId]));
-
-    // 2. تجميع العناصر حسب البائع
-    const itemsBySeller = new Map<number, OrderItemInput[]>();
-    for (const item of data.items) {
-      const sellerId = sellerMap.get(item.productId);
-      if (!sellerId) {
-        throw new Error(`المنتج "${item.productName}" غير موجود`);
-      }
-      if (!itemsBySeller.has(sellerId)) itemsBySeller.set(sellerId, []);
-      itemsBySeller.get(sellerId)!.push(item);
+    // ═══ 1. التحقق من المدخلات ═══
+    if (!data.items || data.items.length === 0) {
+      throw new Error("السلة فارغة");
     }
 
-    // 3. تحديد الطلب الذي يحمل الكوبون (الأكبر)
+    if (data.items.some((i) => i.quantity <= 0 || i.quantity > 100)) {
+      throw new Error("كمية غير صحيحة");
+    }
+
+    // ═══ 2. جلب الـVariants من DB (المصدر الوحيد للحقيقة) ═══
+    const variantIds = data.items.map((i) => i.variantId);
+    const variants = await prisma.productVariant.findMany({
+      where: {
+        id: { in: variantIds },
+        isActive: true,
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sellerId: true,
+            status: true,
+            deletedAt: true,
+            seller: {
+              select: { status: true, deletedAt: true },
+            },
+          },
+        },
+        inventory: { select: { quantity: true, reservedQuantity: true } },
+      },
+    });
+
+    if (variants.length !== variantIds.length) {
+      throw new Error("بعض المنتجات غير متوفرة");
+    }
+
+    // ═══ 3. التحقق من حالة المنتجات والتجار ═══
+    for (const variant of variants) {
+      if (
+        !variant.product ||
+        variant.product.deletedAt ||
+        variant.product.status !== "ACTIVE"
+      ) {
+        throw new Error(`المنتج غير متوفر`);
+      }
+      if (
+        !variant.product.seller ||
+        variant.product.seller.deletedAt ||
+        variant.product.seller.status !== "ACTIVE"
+      ) {
+        throw new Error(`بائع غير متوفر`);
+      }
+    }
+
+    // ═══ 4. بناء خريطة للوصول السريع ═══
+    const variantMap = new Map(variants.map((v) => [v.id, v]));
+
+    // ═══ 5. التحقق من المخزون ═══
+    for (const item of data.items) {
+      const variant = variantMap.get(item.variantId);
+      if (!variant) throw new Error("منتج غير موجود");
+
+      const available =
+        (variant.inventory?.quantity ?? 0) -
+        (variant.inventory?.reservedQuantity ?? 0);
+
+      if (available < item.quantity) {
+        throw new Error(
+          `الكمية غير متوفرة للمنتج "${variant.product.name}"`
+        );
+      }
+    }
+
+    // ═══ 6. حساب السعر الحقيقي (من DB — ليس من العميل) ═══
+    const itemsWithPrice = data.items.map((item) => {
+      const variant = variantMap.get(item.variantId)!;
+      const unitPrice = Number(variant.discountPrice ?? variant.price);
+      const lineTotal = unitPrice * item.quantity;
+
+      return {
+        productId: variant.product.id,
+        variantId: variant.id,
+        sellerId: variant.product.sellerId,
+        productName: variant.product.name,
+        sku: variant.sku,
+        quantity: item.quantity,
+        unitPrice,
+        lineTotal,
+      };
+    });
+
+    const serverSubtotal = itemsWithPrice.reduce(
+      (s, i) => s + i.lineTotal,
+      0
+    );
+
+    // ═══ 7. حساب الشحن ═══
+    const serverShipping =
+      serverSubtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+
+    // ═══ 8. تحقق من الكوبون + حساب الخصم (Server-Side) ═══
+    let couponId: number | undefined;
+    let serverDiscount = 0;
+
+    if (data.couponCode?.trim()) {
+      const couponResult = await CouponService.validate(
+        data.couponCode,
+        userId,
+        serverSubtotal
+      );
+
+      if (!couponResult.valid) {
+        throw new Error(couponResult.message || "كوبون غير صحيح");
+      }
+
+      couponId = couponResult.coupon?.id;
+      serverDiscount = couponResult.discount || 0;
+    }
+
+    // ═══ 9. حساب الإجمالي الحقيقي ═══
+    const serverTotal = Math.max(
+      0,
+      serverSubtotal + serverShipping - serverDiscount
+    );
+
+    // ═══ 10. تجميع العناصر حسب البائع ═══
+    const itemsBySeller = new Map<number, typeof itemsWithPrice>();
+    for (const item of itemsWithPrice) {
+      if (!itemsBySeller.has(item.sellerId)) {
+        itemsBySeller.set(item.sellerId, []);
+      }
+      itemsBySeller.get(item.sellerId)!.push(item);
+    }
+
+    // ═══ 11. تحديد الطلب الذي يحمل الكوبون (الأكبر) ═══
     let couponOrderSellerId: number | null = null;
-    if (data.couponId) {
+    if (couponId) {
       let maxSubtotal = 0;
       for (const [sellerId, items] of itemsBySeller) {
         const sellerSubtotal = items.reduce(
-          (s, i) => s + i.unitPrice * i.quantity,
+          (s, i) => s + i.lineTotal,
           0
         );
         if (sellerSubtotal > maxSubtotal) {
@@ -87,7 +199,7 @@ export const OrderService = {
       }
     }
 
-    // 4. إنشاء الطلبات في transaction واحدة
+    // ═══ 12. الإنشاء في Transaction ═══
     return prisma.$transaction(async (tx) => {
       const createdOrders: Array<{
         id: number;
@@ -99,20 +211,18 @@ export const OrderService = {
       }> = [];
 
       for (const [sellerId, items] of itemsBySeller) {
-        const sellerSubtotal = items.reduce(
-          (s, i) => s + i.unitPrice * i.quantity,
-          0
-        );
+        const sellerSubtotal = items.reduce((s, i) => s + i.lineTotal, 0);
 
-        // نسبة هذا البائع من الإجمالي
-        const ratio = data.subtotal > 0 ? sellerSubtotal / data.subtotal : 1;
-
-        // توزيع الشحن والخصم
+        // توزيع الشحن والخصم بنسبة كل بائع
+        const ratio = serverSubtotal > 0 ? sellerSubtotal / serverSubtotal : 1;
         const sellerShipping =
-          Math.round(data.shippingCost * ratio * 100) / 100;
+          Math.round(serverShipping * ratio * 100) / 100;
         const isCouponOrder = sellerId === couponOrderSellerId;
-        const sellerDiscount = isCouponOrder ? data.discount : 0;
-        const sellerTotal = sellerSubtotal + sellerShipping - sellerDiscount;
+        const sellerDiscount = isCouponOrder ? serverDiscount : 0;
+        const sellerTotal =
+          Math.round(
+            (sellerSubtotal + sellerShipping - sellerDiscount) * 100
+          ) / 100;
 
         const orderNumber = await this.generateOrderNumber(tx);
 
@@ -137,12 +247,10 @@ export const OrderService = {
                 productId: item.productId,
                 variantId: item.variantId,
                 productName: item.productName,
-                variantName: item.variantName,
                 sku: item.sku,
-                imageUrl: item.imageUrl,
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
-                total: item.unitPrice * item.quantity,
+                total: item.lineTotal,
                 taxRate: 0,
                 taxAmount: 0,
               })),
@@ -173,12 +281,6 @@ export const OrderService = {
         });
 
         for (const item of items) {
-          if (!item.variantId) {
-            throw new Error(
-              `المنتج "${item.productName}" غير قابل للحجز (variant مفقود)`
-            );
-          }
-
           await InventoryService.reserve(
             tx,
             item.variantId,
@@ -195,14 +297,14 @@ export const OrderService = {
           });
         }
 
-        // ═══ الكوبون (على الطلب الأكبر فقط) ═══
-        if (isCouponOrder && data.couponId) {
+        // ═══ تطبيق الكوبون (على الطلب الأكبر فقط) ═══
+        if (isCouponOrder && couponId) {
           await CouponService.applyInTransaction(
             tx,
-            data.couponId,
+            couponId,
             userId,
             order.id,
-            data.discount
+            sellerDiscount
           );
         }
 
@@ -222,6 +324,7 @@ export const OrderService = {
           where: { id: sellerId },
           select: { userId: true, storeName: true },
         });
+
         if (seller) {
           await tx.notification.create({
             data: {
@@ -241,7 +344,7 @@ export const OrderService = {
           });
         }
 
-        // ═══ إشعار للأدمن ═══
+        // ═══ إشعار الأدمن ═══
         const admins = await tx.user.findMany({
           where: {
             role: { in: ["ADMIN", "SUPER_ADMIN"] },
@@ -286,7 +389,6 @@ export const OrderService = {
     });
   },
 
-  // ═══════ طلبات المستخدم ═══════
   async getByUser(userId: number) {
     return prisma.order.findMany({
       where: { userId },
@@ -298,7 +400,6 @@ export const OrderService = {
     });
   },
 
-  // ═══════ تفاصيل طلب ═══════
   async getById(orderId: number, userId: number) {
     return prisma.order.findFirst({
       where: { id: orderId, userId },
