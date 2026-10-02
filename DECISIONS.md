@@ -2,7 +2,7 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 3.1
+**Version:** 3.2
 **Status:** Final Architecture Reference + Implementation Status
 **Last Updated:** 2026-09-25
 **Currency:** MAD
@@ -5624,3 +5624,245 @@ feat: redirect policy documented
 - `/admin/trigger-metrics`
 
 End of Section 78 (v3.1)
+
+# Section 79 — Bank Accounts & Verification (v3.2)
+
+## 79.1 Overview
+
+نظام كامل لإدارة الحسابات البنكية للتجار:
+- إضافة حساب مع تشفير AES-256-GCM
+- مراجعة وتوثيق من الأدمن
+- ربط مع المدفوعات (Payouts)
+
+## 79.2 Encryption System
+
+### الملف
+`lib/encryption.ts`
+
+### الخوارزمية
+- **AES-256-GCM** (Authenticated Encryption)
+- IV: 12 bytes (96 bits — GCM standard)
+- AuthTag: 16 bytes (128 bits)
+- Key: 32 bytes (256 bits) من `SELLER_DATA_KEY`
+
+### تنسيق البيانات المشفّرة
+
+[IV (12)][AuthTag (16)][Encrypted (variable)]
+
+
+### المتغير البيئي
+
+SELLER_DATA_KEY=<64 hex chars أو 44 base64 chars>
+
+- يُولَّد بـ: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+- **مفتاح منفصل للإنتاج** (لا يُستخدم نفسه في التطوير)
+- **لا يُشارك أبداً** ولا يُرفع لـGitHub
+
+### الدوال المتاحة
+| الدالة | الوظيفة |
+|--------|---------|
+| `encrypt(plaintext)` | تشفير → `Uint8Array<ArrayBuffer>` |
+| `decrypt(data)` | فك التشفير |
+| `hashForLookup(value)` | SHA-256 للتحقق من التكرار |
+| `maskIBAN(iban)` | `MA** **** **** 1234` |
+| `maskRIB(rib)` | `**** **** **** 1234` |
+| `maskName(name)` | `محمد ع.` |
+
+### ملاحظة TypeScript 5.7+
+Prisma 7 يطلب `Uint8Array<ArrayBuffer>` (ليس `Buffer<ArrayBufferLike>`).
+الحل: `new ArrayBuffer(n)` + `new Uint8Array(arrayBuffer)`.
+
+## 79.3 SellerBankAccount Model
+
+### الحقول الكاملة
+```prisma
+model SellerBankAccount {
+  id                  Int                     @id
+  sellerId            Int
+  bankName            String
+  
+  // ═══ مقنّعة للعرض ═══
+  accountHolderMasked String
+  ibanMasked          String
+  ibanLast4           String
+  ribMasked           String?
+  
+  // ═══ مشفّرة (AES-256-GCM) ═══
+  accountHolderEnc    Bytes
+  ibanEnc             Bytes
+  ribEnc              Bytes?
+  
+  // ═══ للتحقق من التكرار ═══
+  ibanHash            String   @unique
+  ribHash             String?
+  
+  // ═══ الحقول الجديدة ═══
+  businessName        String?
+  accountType         BankAccountType         @default(PERSONAL)
+  currency            String                  @default("MAD")
+  
+  // ═══ حالة التحقق ═══
+  verificationStatus  BankAccountVerification @default(PENDING)
+  verifiedAt          DateTime?
+  verifiedById        Int?
+  rejectionReason     String?
+  
+  // ═══ الحالة ═══
+  isDefault           Boolean                 @default(false)
+  isActive            Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  deletedAt           DateTime?
+  
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  @@index([sellerId])
+  @@index([sellerId, isDefault])
+  @@index([sellerId, isActive])
+  @@index([verificationStatus])
+}
+
+Enums الجديدة
+
+enum BankAccountType {
+  PERSONAL
+  BUSINESS
+}
+
+enum BankAccountVerification {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+القواعد
+• IBAN Hash فريد عالمياً — يمنع تكرار نفس الحساب
+• الحساب الأول افتراضي تلقائياً
+• لا يمكن حذف الحساب الافتراضي — يُعيَّن بديل أولاً
+• Soft Delete (deletedAt)
+• بالتعطيل: إذا كان افتراضياً → يُعيَّن بديل تلقائياً 
+79.4 BankAccountService
+ 
+الملف
+ 
+services/bank-account.service.ts
+ 
+الدوال
+
+الدالة الوصف
+list(sellerId) قائمة الحسابات (بدون تشفير)
+create(sellerId, data) إضافة حساب (يُشفّر + hash + mask)
+setDefault(sellerId, id) تعيين كافتراضي (Transaction)
+deactivate(sellerId, id) تعطيل (مع بديل تلقائي)
+remove(sellerId, id) Soft Delete
+
+التحققات
+• اسم البنك: 2-80 حرف
+• صاحب الحساب: 3-120 حرف
+• IBAN: 15-34 حرف، ^[A-Z0-9]+$
+• RIB: 20-24 رقم، ^[0-9]+$ (اختياري) 
+79.5 Seller APIs
+ 
+/api/seller/bank-accounts
+• GET — قائمة الحسابات
+• POST — إضافة حساب جديد 
+/api/seller/bank-accounts/[id]
+• PATCH — set_default / deactivate
+• DELETE — Soft Delete 
+حماية
+• ✅ Seller authentication
+• ✅ Ownership check (لا يعدّل حساب تاجر آخر)
+• ✅ Zod validation 
+79.6 Admin APIs
+ 
+/api/admin/bank-accounts
+• GET — قائمة كل الحسابات (فلترة + إحصائيات)
+• يُرجع stats: { PENDING, VERIFIED, REJECTED, total } 
+/api/admin/bank-accounts/[id]
+• GET — تفاصيل كاملة مع فك التشفير (IBAN + RIB + صاحب الحساب)
+• PATCH — approve / reject (مع سبب الرفض) 
+Approve Flow
+ 
+داخل Transaction:
+.1 تحديث verificationStatus = VERIFIED
+.2 حفظ verifiedAt + verifiedById
+.3 إشعار التاجر: SELLER_PAYOUT_READY 
+Reject Flow
+ 
+داخل Transaction:
+.1 تحديث verificationStatus = REJECTED
+.2 حفظ rejectionReason (إلزامي)
+.3 إشعار التاجر: SELLER_PAYOUT_READY (بسبب الرفض) 
+79.7 Pages
+ 
+/seller/bank-accounts
+• عرض بطاقات الحسابات
+• إضافة حساب (Modal)
+• تعيين افتراضي / تعطيل / حذف
+• عرض حالة التحقق بألوان 
+/admin/bank-accounts
+• 4 بطاقات إحصائيات (PENDING / VERIFIED / REJECTED / ALL)
+• قائمة الحسابات
+• Modal "مراجعة" يعرض:
+	• معلومات المتجر
+	• IBAN الكامل (مفكوك)
+	• RIB الكامل (مفكوك)
+	• صاحب الحساب الكامل
+	• أزرار نسخ
+• Approve / Reject 
+79.8 Security Rules
+
+القاعدة التطبيق
+تشفير البيانات الحساسة AES-256-GCM
+فك التشفير للأدمن فقط في /api/admin/* فقط
+لا تُسجَّل القيم في Console ❌ لا console.log للبيانات الكاملة
+Mask في القوائم ibanMasked فقط
+فك التشفير في Modal Admin + AuditLog
+مفتاح الإنتاج منفصل مفتاح مختلف لكل بيئة
+Hash للتحقق ibanHash @unique
+
+79.9 Seller Complete System — Status
+ 
+✅ مكتمل
+• تسجيل تاجر (become-seller)
+• Onboarding
+• لوحة البائع (Dashboard)
+• إدارة المنتجات (CRUD)
+• إدارة الطلبات (List + Detail + Status)
+• الإشعارات
+• التقييمات
+• الأداء (Performance)
+• المدفوعات (Payouts)
+• ملف المتجر (Profile)
+• الحسابات البنكية (Bank Accounts) ⭐ v3.2
+• Admin: إدارة التجار
+• Admin: موافقة المنتجات
+• Admin: مركز الإشعارات
+• Admin: مراجعة الحسابات البنكية ⭐ v3.2 
+🟡 قيد البناء
+• /seller/documents — رفع الوثائق (CIN, ICE, RC, IF) 
+❌ مؤجل
+• Cron: تحديث SellerPerformanceSnapshot شهرياً
+• Cron: انتهاء Reservations
+• Seller Payouts Automation
+• Admin Audit Log Viewer
+• Admin System Policies 
+79.10 Environment Variables
+
+المتغير الوصف البيئة
+DATABASE_URL Neon connection كل البيئات
+NEXT_PUBLIC_SITE_URL URL الأساسي كل البيئات
+SELLER_DATA_KEY تشفير الحسابات البنكية (32 bytes) منفصل لكل بيئة
+UPLOADTHING_TOKEN رفع الصور كل البيئات
+CRON_SECRET حماية Cron إنتاج فقط
+
+79.11 Git History (v3.2)
+
+feat: bank accounts encryption (AES-256-GCM)
+feat: seller bank accounts API + page
+feat: admin bank accounts verification
+feat: bank account status notifications
+fix: Buffer vs Uint8Array for TypeScript 5.7+
+docs: DECISIONS v3.2 bank accounts + verification
+
+End of Section 79 (v3.2)
