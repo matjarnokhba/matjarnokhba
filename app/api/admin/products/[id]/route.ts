@@ -45,8 +45,8 @@ export async function PATCH(
     }
 
     if (body.slug && body.slug !== existing.slug) {
-      const duplicate = await prisma.product.findUnique({
-        where: { slug: body.slug },
+      const duplicate = await prisma.product.findFirst({
+        where: { slug: body.slug, deletedAt: null },
       });
       if (duplicate) {
         return NextResponse.json(
@@ -124,8 +124,10 @@ export async function PATCH(
         const newVariant = await tx.productVariant.create({
           data: {
             productId,
+            sellerId: existing.sellerId, // ⚠️ إجباري
             sku: `${body.slug}-default-${Date.now()}`,
             price: body.price,
+            originalPrice: body.price, // ⚠️ anchor
             discountPrice: body.oldPrice || null,
             isDefault: true,
             isActive: true,

@@ -876,32 +876,60 @@ enum PayoutStatus {
 }
 
 model SellerBankAccount {
-  id                  Int      @id @default(autoincrement())
+  id                  Int                    @id @default(autoincrement())
   sellerId            Int
   bankName            String
-
+  
+  // ═══ مقنّعة للعرض ═══
   accountHolderMasked String
   ibanMasked          String
   ibanLast4           String
-
+  ribMasked           String?
+  
+  // ═══ مشفّرة (AES-256-GCM) ═══
   accountHolderEnc    Bytes
   ibanEnc             Bytes
   ribEnc              Bytes?
-
+  
+  // ═══ للتحقق من التكرار ═══
   ibanHash            String   @unique
   ribHash             String?
-
-  isDefault           Boolean  @default(false)
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  
+  // ═══ الحقول الجديدة ═══
+  businessName        String?
+  accountType         BankAccountType         @default(PERSONAL)
+  currency            String                 @default("MAD")
+  
+  // ═══ حالة التحقق ═══
+  verificationStatus  BankAccountVerification @default(PENDING)
+  verifiedAt          DateTime?
+  verifiedById        Int?
+  rejectionReason     String?
+  
+  // ═══ الحالة ═══
+  isDefault           Boolean                @default(false)
+  isActive            Boolean                @default(true)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
   deletedAt           DateTime?
-
+  
   seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
+  
   @@index([sellerId])
   @@index([sellerId, isDefault])
   @@index([sellerId, isActive])
+  @@index([verificationStatus])
+}
+
+enum BankAccountType {
+  PERSONAL
+  BUSINESS
+}
+
+enum BankAccountVerification {
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 model SellerDocument {

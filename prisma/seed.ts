@@ -231,7 +231,12 @@ async function main() {
     try {
       // 3.1 — المنتج: Upsert بـ slug
       const product = await prisma.product.upsert({
-        where: { slug: p.slug },
+        where: {
+          sellerId_slug: {
+            sellerId: seller.id,
+            slug: p.slug,
+          },
+        },
         update: {
           name: p.name,
           description: p.description,
@@ -286,8 +291,10 @@ async function main() {
         variant = await prisma.productVariant.create({
           data: {
             productId: product.id,
+            sellerId: seller.id, // ⚠️ إجباري
             sku: `${p.slug}-default-${Date.now()}`,
             price: p.price,
+            originalPrice: p.price, // ⚠️ anchor
             discountPrice: p.oldPrice ?? null,
             isDefault: true,
             isActive: true,

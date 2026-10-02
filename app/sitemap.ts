@@ -1,10 +1,11 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://matjarnokhba.com";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://matjarnokhba.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // الصفحات الثابتة
+  // ═══ الصفحات الثابتة ═══
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
@@ -24,29 +25,43 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.3,
     },
+    {
+      url: `${BASE_URL}/become-seller`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
   ];
 
   try {
-    // المنتجات
+    // ═══ المنتجات (المسار الجديد) ═══
     const products = await prisma.product.findMany({
       where: {
         status: "ACTIVE",
         deletedAt: null,
+        seller: {
+          status: "ACTIVE",
+          deletedAt: null,
+        },
       },
       select: {
         slug: true,
         updatedAt: true,
+        seller: { select: { slug: true } },
       },
     });
 
-    const productPages: MetadataRoute.Sitemap = products.map((p) => ({
-      url: `${BASE_URL}/product/${p.slug}`,
-      lastModified: p.updatedAt,
-      changeFrequency: "weekly" as const,
-      priority: 0.8,
-    }));
+    const productPages: MetadataRoute.Sitemap = products
+      .filter((p) => p.seller?.slug)
+      .map((p) => ({
+        // ⚠️ المسار الجديد: /product/[sellerSlug]/[productSlug]
+        url: `${BASE_URL}/product/${p.seller!.slug}/${p.slug}`,
+        lastModified: p.updatedAt,
+        changeFrequency: "weekly" as const,
+        priority: 0.8,
+      }));
 
-    // التصنيفات
+    // ═══ التصنيفات ═══
     const categories = await prisma.category.findMany({
       where: {
         isActive: true,
@@ -65,7 +80,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    return [...staticPages, ...productPages, ...categoryPages];
+    // ═══ المتاجر ═══
+    const sellers = await prisma.seller.findMany({
+      where: {
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+      select: {
+        slug: true,
+        updatedAt: true,
+      },
+    });
+
+    const sellerPages: MetadataRoute.Sitemap = sellers.map((s) => ({
+      url: `${BASE_URL}/store/${s.slug}`,
+      lastModified: s.updatedAt,
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
+    return [
+      ...staticPages,
+      ...productPages,
+      ...categoryPages,
+      ...sellerPages,
+    ];
   } catch (error) {
     console.error("Sitemap error:", error);
     return staticPages;
