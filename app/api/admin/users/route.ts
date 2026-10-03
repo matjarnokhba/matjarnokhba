@@ -60,7 +60,13 @@ export async function GET(request: Request) {
       _count: true,
     });
 
-    const statsMap: any = { CUSTOMER: 0, ADMIN: 0, SUPER_ADMIN: 0, total: 0 };
+    const statsMap: any = {
+      CUSTOMER: 0,
+      SELLER: 0,
+      ADMIN: 0,
+      SUPER_ADMIN: 0,
+      total: 0,
+    };
     for (const s of stats) {
       statsMap[s.role] = s._count;
       statsMap.total += s._count;

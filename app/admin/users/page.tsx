@@ -11,6 +11,7 @@ import {
   Phone,
   ShoppingBag,
   Crown,
+  Store,
 } from "lucide-react";
 
 type User = {
@@ -25,12 +26,13 @@ type User = {
 
 type Stats = {
   CUSTOMER: number;
+  SELLER: number;
   ADMIN: number;
   SUPER_ADMIN: number;
   total: number;
 };
 
-type RoleFilter = "ALL" | "CUSTOMER" | "ADMIN" | "SUPER_ADMIN";
+type RoleFilter = "ALL" | "CUSTOMER" | "SELLER" | "ADMIN" | "SUPER_ADMIN";
 
 const ROLE_INFO: Record<
   string,
@@ -41,6 +43,12 @@ const ROLE_INFO: Record<
     color: "text-blue-700",
     bg: "bg-blue-100",
     icon: UserIcon,
+  },
+  SELLER: {
+    label: "تاجر",
+    color: "text-orange-700",
+    bg: "bg-orange-100",
+    icon: Store,
   },
   ADMIN: {
     label: "مدير",
@@ -56,10 +64,19 @@ const ROLE_INFO: Record<
   },
 };
 
+// ═══ Fallback آمن ═══
+const DEFAULT_ROLE_INFO = {
+  label: "مستخدم",
+  color: "text-gray-700",
+  bg: "bg-gray-100",
+  icon: UserIcon,
+};
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<Stats>({
     CUSTOMER: 0,
+    SELLER: 0,
     ADMIN: 0,
     SUPER_ADMIN: 0,
     total: 0,
@@ -112,7 +129,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* ═══ الإحصائيات ═══ */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <div className="text-2xl font-black text-gray-900">
             {stats.total}
@@ -124,6 +141,12 @@ export default function AdminUsersPage() {
             {stats.CUSTOMER}
           </div>
           <div className="mt-1 text-xs text-gray-500">عملاء</div>
+        </div>
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="text-2xl font-black text-orange-700">
+            {stats.SELLER}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">تجار</div>
         </div>
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <div className="text-2xl font-black text-purple-700">
@@ -155,24 +178,25 @@ export default function AdminUsersPage() {
 
       {/* ═══ الفلاتر ═══ */}
       <div className="mb-4 flex flex-wrap gap-2">
-        {(["ALL", "CUSTOMER", "ADMIN", "SUPER_ADMIN"] as RoleFilter[]).map(
-          (f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                filter === f
-                  ? "bg-[#ff5c00] text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {f === "ALL" && "الكل"}
-              {f === "CUSTOMER" && "العملاء"}
-              {f === "ADMIN" && "المدراء"}
-              {f === "SUPER_ADMIN" && "المدير العام"}
-            </button>
-          )
-        )}
+        {(
+          ["ALL", "CUSTOMER", "SELLER", "ADMIN", "SUPER_ADMIN"] as RoleFilter[]
+        ).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+              filter === f
+                ? "bg-[#ff5c00] text-white"
+                : "bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {f === "ALL" && "الكل"}
+            {f === "CUSTOMER" && "العملاء"}
+            {f === "SELLER" && "التجار"}
+            {f === "ADMIN" && "المدراء"}
+            {f === "SUPER_ADMIN" && "المدير العام"}
+          </button>
+        ))}
       </div>
 
       {/* ═══ القائمة ═══ */}
@@ -191,7 +215,7 @@ export default function AdminUsersPage() {
       ) : (
         <div className="space-y-2">
           {users.map((user) => {
-            const info = ROLE_INFO[user.role];
+            const info = ROLE_INFO[user.role] || DEFAULT_ROLE_INFO;
             const Icon = info.icon;
 
             return (

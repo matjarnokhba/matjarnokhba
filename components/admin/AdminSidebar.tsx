@@ -18,6 +18,7 @@ import {
   FolderTree,
   Bell,
   Building2,
+  FileText,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -26,6 +27,7 @@ type AdminSidebarProps = {
 };
 
 const NAV_ITEMS = [
+  { href: "/admin/documents", label: "وثائق التجار", icon: FileText, exact: false },
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/admin/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
