@@ -12,13 +12,13 @@ import {
   AlertTriangle,
   AlertCircle,
   Info,
-  Eye,
   Image as ImageIcon,
   FileText,
   Tag,
   DollarSign,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
+import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 
 type Category = { id: number; name: string };
 
@@ -41,6 +41,13 @@ export default function EditSellerProductPage() {
   const [freeShipping, setFreeShipping] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [status, setStatus] = useState("");
+
+  const [selectedValues, setSelectedValues] = useState<
+    Record<number, number[]>
+  >({});
+  const [variantData, setVariantData] = useState<
+    Record<string, { price: number; stock: number }>
+  >({});
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,6 +86,8 @@ export default function EditSellerProductPage() {
         setFreeShipping(p.freeShipping);
         setImageUrls(p.imageUrls);
         setStatus(p.status);
+        setSelectedValues(p.selectedValues || {});
+        setVariantData(p.variantData || {});
 
         if (catData.success) setCategories(catData.categories);
       } catch {
@@ -97,6 +106,31 @@ export default function EditSellerProductPage() {
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "")
       .slice(0, 100);
+  }
+
+  function handleValuesChange(attributeId: number, valueIds: number[]) {
+    setSelectedValues((prev) => ({ ...prev, [attributeId]: valueIds }));
+  }
+
+  function handleVariantChange(
+    key: string,
+    field: "price" | "stock",
+    value: number
+  ) {
+    setVariantData((prev) => ({
+      ...prev,
+      [key]: {
+        price: prev[key]?.price ?? 0,
+        stock: prev[key]?.stock ?? 0,
+        [field]: value,
+      },
+    }));
+  }
+
+  function handleCategoryChange(newId: string) {
+    setCategoryId(newId);
+    setSelectedValues({});
+    setVariantData({});
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -143,6 +177,8 @@ export default function EditSellerProductPage() {
           stock: Number(stock) || 0,
           freeShipping,
           imageUrls,
+          selectedValues,
+          variantData,
         }),
       });
 
@@ -162,7 +198,6 @@ export default function EditSellerProductPage() {
           }`
         );
         setStatus("DRAFT");
-        // لا نُعيد التوجيه فوراً — نُظهر الرسالة
         setTimeout(() => {
           router.push("/seller/products");
           router.refresh();
@@ -252,7 +287,6 @@ export default function EditSellerProductPage() {
         </button>
       </div>
 
-      {/* ═══ شارة الحالة الحالية ═══ */}
       {isActive && (
         <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
@@ -263,23 +297,32 @@ export default function EditSellerProductPage() {
             <div className="mt-2 grid gap-1 text-xs text-amber-800 sm:grid-cols-2">
               <div className="flex items-center gap-1.5">
                 <ImageIcon className="h-3.5 w-3.5" />
-                <span>تغيير <strong>الصور</strong> أو <strong>الاسم</strong></span>
+                <span>
+                  تغيير <strong>الصور</strong> أو <strong>الاسم</strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
-                <span>تغيير <strong>الوصف</strong> أو <strong>الفئة</strong></span>
+                <span>
+                  تغيير <strong>الوصف</strong> أو <strong>الفئة</strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Tag className="h-3.5 w-3.5" />
-                <span>تغيير <strong>الماركة</strong> أو <strong>الشارة</strong></span>
+                <span>
+                  تغيير <strong>الماركة</strong> أو <strong>الشارة</strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5" />
-                <span>تغيير <strong>السعر</strong> بأكثر من ±50%</span>
+                <span>
+                  تغيير <strong>السعر</strong> بأكثر من ±50%
+                </span>
               </div>
             </div>
             <div className="mt-2 text-[11px] text-amber-700">
-              💡 يمكنك تعديل <strong>المخزون</strong> و<strong>السعر البسيط</strong> بدون مراجعة.
+              💡 يمكنك تعديل <strong>المخزون</strong> و
+              <strong>السعر البسيط</strong> بدون مراجعة.
             </div>
           </div>
         </div>
@@ -361,8 +404,22 @@ export default function EditSellerProductPage() {
               </div>
             </div>
 
+            <ProductOptionsEditor
+              apiBase="/api/seller"
+              categoryId={Number(categoryId) || null}
+              selectedValues={selectedValues}
+              variantData={variantData}
+              defaultPrice={Number(price) || 0}
+              defaultStock={Number(stock) || 0}
+              onValuesChange={handleValuesChange}
+              onVariantChange={handleVariantChange}
+            />
+
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-black">السعر والمخزون</h2>
+              <p className="mb-3 text-[11px] text-gray-500">
+                قيم افتراضية للتركيبات التي لم تحدد لها سعراً/مخزوناً.
+              </p>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -425,7 +482,7 @@ export default function EditSellerProductPage() {
               <h2 className="mb-3 text-sm font-black">التصنيف</h2>
               <select
                 value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
                 required
               >
@@ -447,7 +504,6 @@ export default function EditSellerProductPage() {
           </div>
         </div>
 
-        {/* ═══ خطأ ═══ */}
         {error && (
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -455,7 +511,6 @@ export default function EditSellerProductPage() {
           </div>
         )}
 
-        {/* ═══ تحذير إعادة الموافقة ═══ */}
         {warningMsg && (
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -463,7 +518,6 @@ export default function EditSellerProductPage() {
           </div>
         )}
 
-        {/* ═══ نجاح ═══ */}
         {successMsg && (
           <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             ✓ {successMsg}
@@ -492,7 +546,6 @@ export default function EditSellerProductPage() {
         </div>
       </form>
 
-      {/* ═══ Modal الحذف ═══ */}
       {showDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">

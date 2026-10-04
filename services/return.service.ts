@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { InventoryService } from "@/services/inventory.service";
+import { LoyaltyService } from "@/services/loyalty.service";
 
 // ═══════════════════════════════════════════
 // الثوابت
@@ -321,7 +322,6 @@ export const ReturnService = {
 
       // 4. إرجاع المخزون + حساب Refund لكل item
       for (const item of ret.items) {
-        // إرجاع للمخزون
         if (item.orderItem.variantId) {
           await InventoryService.returnStock(
             tx,
@@ -331,7 +331,6 @@ export const ReturnService = {
           );
         }
 
-        // حساب Refund (تقريب فردي)
         const raw = calcRawRefund(
           Number(item.orderItem.unitPrice),
           item.quantity,
@@ -346,15 +345,15 @@ export const ReturnService = {
         });
       }
 
-      // 5. تحقق هل كل OrderItems مكتملة الإرجاع
+      // 5. هل الإرجاع الكامل؟
       const isFull = await isFullReturn(tx, ret.orderId);
 
-      // 6. Reconciliation (Largest Remainder) — عند الإرجاع الكامل
+      // 6. Reconciliation عند الإرجاع الكامل
       if (isFull) {
         await reconcileRefunds(tx, ret.orderId);
       }
 
-      // 7. اجمع refunds لهذا الطلب (بعد التعديلات)
+      // 7. اجمع refunds هذا الـreturn
       const thisReturnItems = await tx.returnItem.findMany({
         where: { returnId },
         select: { refundAmount: true },
@@ -364,7 +363,7 @@ export const ReturnService = {
         0
       );
 
-      // 8. أضف shipping refund إذا إرجاع كامل + لأول مرة
+      // 8. أضف shipping refund إذا full
       let addShipping = 0;
       if (isFull && !ret.order.shippingRefunded) {
         addShipping = Number(ret.order.shippingCost);
@@ -373,7 +372,7 @@ export const ReturnService = {
       const newRefundedAmount =
         Number(ret.order.refundedAmount) + thisReturnSum + addShipping;
 
-      // 9. حدّد PaymentStatus الجديد
+      // 9. PaymentStatus الجديد
       let newPaymentStatus = ret.order.paymentStatus;
       if (newRefundedAmount >= Number(ret.order.total)) {
         newPaymentStatus = "REFUNDED";
@@ -405,6 +404,51 @@ export const ReturnService = {
             note: "اكتمال الإرجاع الكامل",
           },
         });
+      }
+
+      // ═══ 12. سحب نقاط الولاء المقابلة للمبلغ المسترد ═══
+      try {
+        const totalRefundThisTime = thisReturnSum + addShipping;
+
+        const revokeResult = await LoyaltyService.revokeForReturn(tx, {
+          userId: ret.userId,
+          orderId: ret.orderId,
+          refundedAmount: totalRefundThisTime,
+        });
+
+        if (revokeResult.pointsRevoked > 0) {
+          // تحديث Order بحقول الولاء
+          await tx.order.update({
+            where: { id: ret.orderId },
+            data: {
+              loyaltyPointsRevoked: {
+                increment: revokeResult.pointsRevoked,
+              },
+            },
+          });
+
+          // إشعار للعميل
+          await tx.notification.create({
+            data: {
+              userId: ret.userId,
+              type: "RETURN_APPROVED",
+              title: "تم سحب نقاط الولاء",
+              message: `تم سحب ${revokeResult.pointsRevoked} نقطة بسبب الإرجاع. رصيدك الآن: ${revokeResult.balanceAfter} نقطة.`,
+              link: `/loyalty`,
+              category: "ORDER",
+              severity: "WARNING",
+              metadata: {
+                orderId: ret.orderId,
+                returnId,
+                pointsRevoked: revokeResult.pointsRevoked,
+                balanceAfter: revokeResult.balanceAfter,
+              },
+            },
+          });
+        }
+      } catch (loyaltyErr) {
+        // لا نُفشل الإرجاع إن فشل الولاء
+        console.error("Loyalty revoke failed during return:", loyaltyErr);
       }
 
       return { success: true, isFullReturn: isFull };

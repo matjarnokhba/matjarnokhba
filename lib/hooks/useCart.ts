@@ -5,18 +5,38 @@ import type { Product, CartItem } from "@/lib/data/products";
 
 const STORAGE_KEY = "nokhba-cart";
 
+// ═══ نوع موسّع (variantId + label) ═══
+export type CartItemV2 = CartItem & {
+  variantId: number;
+  variantLabel?: string;
+  stockSnapshot?: number;
+};
+
+export type AddItemOptions = {
+  variantId: number;
+  variantLabel: string;
+  quantity?: number;
+  stockSnapshot?: number;
+  selectedColor?: string;
+  selectedSize?: string;
+};
+
 export function useCart() {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItemV2[]>([]);
   const [isReady, setIsReady] = useState(false);
 
-  // ═══════ تحميل من localStorage ═══════
+  // ═══ تحميل ═══
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        setItems(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // تنظيف العناصر القديمة بدون variantId
+        const cleaned: CartItemV2[] = (parsed || []).filter(
+          (x: any) => typeof x?.variantId === "number"
+        );
+        setItems(cleaned);
       }
     } catch (err) {
       console.error("Failed to load cart:", err);
@@ -24,7 +44,7 @@ export function useCart() {
     setIsReady(true);
   }, []);
 
-  // ═══════ حفظ في localStorage ═══════
+  // ═══ حفظ ═══
   useEffect(() => {
     if (!isReady || typeof window === "undefined") return;
     try {
@@ -34,24 +54,30 @@ export function useCart() {
     }
   }, [items, isReady]);
 
-  // ═══════ إضافة منتج ═══════
+  // ═══ إضافة (opts اختياري) ═══
   const addItem = useCallback(
-    (product: Product, quantity = 1, color?: string, size?: string) => {
+    (product: Product, opts?: AddItemOptions) => {
+      const variantId = opts?.variantId ?? product.variantId;
+
+      if (!variantId) {
+        console.error("addItem: variantId مطلوب");
+        return;
+      }
+
+      const variantLabel = opts?.variantLabel ?? "";
+      const quantity = opts?.quantity ?? 1;
+      const stockSnapshot = opts?.stockSnapshot ?? product.stock;
+      const selectedColor = opts?.selectedColor;
+      const selectedSize = opts?.selectedSize;
+
       setItems((current) => {
-        const existing = current.find(
-          (item) =>
-            item.id === product.id &&
-            item.selectedColor === color &&
-            item.selectedSize === size
-        );
+        const existing = current.find((item) => item.variantId === variantId);
 
         if (existing) {
+          const maxQty = stockSnapshot ?? existing.stockSnapshot ?? 99;
+          const newQty = Math.min(existing.quantity + quantity, maxQty);
           return current.map((item) =>
-            item.id === product.id &&
-            item.selectedColor === color &&
-            item.selectedSize === size
-              ? { ...item, quantity: item.quantity + quantity }
-              : item
+            item.variantId === variantId ? { ...item, quantity: newQty } : item
           );
         }
 
@@ -59,9 +85,12 @@ export function useCart() {
           ...current,
           {
             ...product,
+            variantId,
+            variantLabel,
             quantity,
-            selectedColor: color,
-            selectedSize: size,
+            stockSnapshot,
+            selectedColor,
+            selectedSize,
           },
         ];
       });
@@ -69,53 +98,33 @@ export function useCart() {
     []
   );
 
-  // ═══════ تحديث الكمية ═══════
+  // ═══ تحديث كمية (variantId فقط) ═══
   const updateQuantity = useCallback(
-    (id: number, color: string | undefined, size: string | undefined, delta: number) => {
+    (variantId: number, delta: number) => {
       setItems((current) =>
         current.flatMap((item) => {
-          const matches =
-            item.id === id &&
-            item.selectedColor === color &&
-            item.selectedSize === size;
-
-          if (!matches) return [item];
-
+          if (item.variantId !== variantId) return [item];
           const newQty = item.quantity + delta;
           if (newQty <= 0) return [];
-          return [{ ...item, quantity: newQty }];
+          const maxQty = item.stockSnapshot ?? 99;
+          return [{ ...item, quantity: Math.min(newQty, maxQty) }];
         })
       );
     },
     []
   );
 
-  // ═══════ حذف منتج ═══════
-  const removeItem = useCallback(
-    (id: number, color: string | undefined, size: string | undefined) => {
-      setItems((current) =>
-        current.filter(
-          (item) =>
-            !(
-              item.id === id &&
-              item.selectedColor === color &&
-              item.selectedSize === size
-            )
-        )
-      );
-    },
-    []
-  );
-
-  // ═══════ إفراغ السلة ═══════
-  const clearCart = useCallback(() => {
-    setItems([]);
+  // ═══ حذف ═══
+  const removeItem = useCallback((variantId: number) => {
+    setItems((current) =>
+      current.filter((item) => item.variantId !== variantId)
+    );
   }, []);
 
-  // ═══════ عدد المنتجات ═══════
+  const clearCart = useCallback(() => setItems([]), []);
+
   const totalCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  // ═══════ المجموع الفرعي ═══════
   const subtotal = items.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0

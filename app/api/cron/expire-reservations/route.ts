@@ -2,21 +2,24 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { InventoryService } from "@/services/inventory.service";
 
-// ═══════ الحماية ═══════
 function isAuthorized(request: Request): boolean {
   const authHeader = request.headers.get("authorization");
   const secret = process.env.CRON_SECRET;
 
-  // في التطوير: اسمح بدون secret
   if (process.env.NODE_ENV !== "production") return true;
 
-  // في الإنتاج: يجب أن يطابق CRON_SECRET
   if (!secret) {
     console.error("CRON_SECRET غير معرّف في متغيرات البيئة");
     return false;
   }
   return authHeader === `Bearer ${secret}`;
 }
+
+type OrderResult = {
+  orderId: number;
+  orderNumber: string;
+  userId: number;
+} | null;
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
@@ -29,7 +32,6 @@ export async function GET(request: Request) {
   try {
     const now = new Date();
 
-    // ═══════ جلب الحجوزات المنتهية ═══════
     const expiredReservations = await prisma.reservation.findMany({
       where: {
         status: "ACTIVE",
@@ -38,9 +40,16 @@ export async function GET(request: Request) {
       },
       include: {
         items: true,
-        order: { select: { id: true, orderNumber: true, userId: true } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            userId: true,
+            couponUsage: { select: { id: true, couponId: true } },
+          },
+        },
       },
-      take: 50, // دفعة واحدة كل مرة
+      take: 50,
     });
 
     if (expiredReservations.length === 0) {
@@ -51,34 +60,45 @@ export async function GET(request: Request) {
       });
     }
 
+    const notifications: any[] = [];
     let processed = 0;
     let failed = 0;
 
     for (const reservation of expiredReservations) {
       try {
-        await prisma.$transaction(async (tx) => {
-          // ═══════ Lock Order ═══════
-          const order = await tx.order.findUnique({
-            where: { id: reservation.orderId },
-            select: { id: true, status: true, userId: true, orderNumber: true },
-          });
+        const result = await prisma.$transaction(async (tx) => {
+          // ═══ Lock Reservation (FOR UPDATE) ═══
+          const lockRows: any[] = await tx.$queryRaw`
+            SELECT id, status
+            FROM "Reservation"
+            WHERE id = ${reservation.id}
+            FOR UPDATE
+          `;
 
-          if (!order || order.status !== "NEW") {
-            // لم يعد NEW → تجاهل
-            return;
+          if (!lockRows[0] || lockRows[0].status !== "ACTIVE") {
+            return null; // عُولج من مكان آخر
           }
 
-          // ═══════ Lock Reservation ═══════
-          const freshReservation = await tx.reservation.findUnique({
-            where: { id: reservation.id },
-          });
+          // ═══ Lock Order ═══
+          const orderLock: any[] = await tx.$queryRaw`
+            SELECT id, status
+            FROM "Order"
+            WHERE id = ${reservation.orderId}
+            FOR UPDATE
+          `;
 
-          if (!freshReservation || freshReservation.status !== "ACTIVE") {
-            return;
+          if (!orderLock[0] || orderLock[0].status !== "NEW") {
+            return null; // لم يعد NEW
           }
 
-          // ═══════ تحرير المخزون ═══════
-          for (const item of reservation.items) {
+          const order = reservation.order;
+
+          // ═══ تحرير المخزون ═══
+          const sortedItems = [...reservation.items].sort(
+            (a, b) => a.variantId - b.variantId
+          );
+
+          for (const item of sortedItems) {
             await InventoryService.unreserve(
               tx,
               item.variantId,
@@ -88,7 +108,7 @@ export async function GET(request: Request) {
             );
           }
 
-          // ═══════ Reservation = EXPIRED ═══════
+          // ═══ Reservation = EXPIRED ═══
           await tx.reservation.update({
             where: { id: reservation.id },
             data: {
@@ -98,39 +118,64 @@ export async function GET(request: Request) {
             },
           });
 
-          // ═══════ Order = CANCELLED ═══════
+          // ═══ Order = CANCELLED ═══
           await tx.order.update({
             where: { id: order.id },
             data: { status: "CANCELLED" },
           });
 
-          // ═══════ StatusHistory ═══════
+          // ═══ StatusHistory ═══
           await tx.orderStatusHistory.create({
             data: {
               orderId: order.id,
               fromStatus: "NEW",
               toStatus: "CANCELLED",
-              changedById: order.userId, // النظام نيابة عن المستخدم
+              changedById: order.userId,
               note: "انتهت مدة الحجز (30 دقيقة) — إلغاء تلقائي",
             },
           });
 
-          // ═══════ إشعار ═══════
-          await tx.notification.create({
-            data: {
-              userId: order.userId,
-              type: "ORDER_STATUS_CHANGED",
-              title: "انتهت مدة الحجز",
-              message: `طلبك ${order.orderNumber} أُلغي تلقائياً لعدم التأكيد خلال 30 دقيقة.`,
-              link: `/orders/${order.id}`,
-            },
-          });
+          // ═══ 🔴 تحرير الكوبون ═══
+          if (order.couponUsage) {
+            await tx.coupon.update({
+              where: { id: order.couponUsage.couponId },
+              data: { usedCount: { decrement: 1 } },
+            });
+
+            await tx.couponUsage.delete({
+              where: { id: order.couponUsage.id },
+            });
+          }
+
+          return {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            userId: order.userId,
+          };
         });
 
-        processed++;
+        if (result) {
+          processed++;
+          notifications.push({
+            userId: result.userId,
+            type: "ORDER_STATUS_CHANGED",
+            title: "انتهت مدة الحجز",
+            message: `طلبك ${result.orderNumber} أُلغي تلقائياً لعدم التأكيد خلال 30 دقيقة.`,
+            link: `/orders/${result.orderId}`,
+          });
+        }
       } catch (err) {
         console.error(`فشل معالجة Reservation ${reservation.id}:`, err);
         failed++;
+      }
+    }
+
+    // ═══ الإشعارات (خارج Transactions) ═══
+    if (notifications.length > 0) {
+      try {
+        await prisma.notification.createMany({ data: notifications });
+      } catch (notifErr) {
+        console.error("Notifications failed:", notifErr);
       }
     }
 

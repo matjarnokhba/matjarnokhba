@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User, LogOut, LayoutDashboard, ChevronDown, Package } from "lucide-react";
+import {
+  User,
+  LogOut,
+  LayoutDashboard,
+  ChevronDown,
+  Package,
+  Gift,
+} from "lucide-react";
 
 type UserData = {
   id: number;
@@ -20,7 +27,6 @@ export default function UserMenu() {
   const [loggingOut, setLoggingOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // ═══════ تحميل الجلسة ═══════
   useEffect(() => {
     async function checkSession() {
       try {
@@ -36,10 +42,12 @@ export default function UserMenu() {
     checkSession();
   }, []);
 
-  // ═══════ إغلاق عند النقر خارج القائمة ═══════
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -47,7 +55,6 @@ export default function UserMenu() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ═══════ تسجيل الخروج ═══════
   async function handleLogout() {
     setLoggingOut(true);
     try {
@@ -63,7 +70,6 @@ export default function UserMenu() {
     }
   }
 
-  // ═══════ تحميل ═══════
   if (loading) {
     return (
       <div className="flex h-8 w-8 items-center justify-center rounded-full sm:h-9 sm:w-9">
@@ -72,7 +78,6 @@ export default function UserMenu() {
     );
   }
 
-  // ═══════ زائر ═══════
   if (!user) {
     return (
       <Link
@@ -84,13 +89,11 @@ export default function UserMenu() {
     );
   }
 
-  // ═══════ مستخدم مسجل ═══════
   const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
   const firstName = user.name.split(" ")[0];
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* ═══ زر الحساب ═══ */}
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-2 py-1.5 transition hover:border-[#ff5c00] sm:px-2.5"
@@ -109,10 +112,8 @@ export default function UserMenu() {
         />
       </button>
 
-      {/* ═══ القائمة المنسدلة ═══ */}
       {open && (
         <div className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
-          {/* معلومات المستخدم */}
           <div className="border-b border-gray-100 bg-gray-50 px-3 py-2.5">
             <div className="text-xs font-bold text-gray-900">{user.name}</div>
             <div className="mt-0.5 truncate text-[10px] text-gray-500">
@@ -125,7 +126,6 @@ export default function UserMenu() {
             )}
           </div>
 
-          {/* خيارات */}
           <div className="p-1">
             <Link
               href="/orders"
@@ -134,6 +134,18 @@ export default function UserMenu() {
             >
               <Package className="h-3.5 w-3.5" />
               طلباتي
+            </Link>
+
+            <Link
+              href="/loyalty"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+            >
+              <Gift className="h-3.5 w-3.5 text-[#ff5c00]" />
+              <span>نقاط الولاء</span>
+              <span className="mr-auto rounded-full bg-[#fff4ed] px-1.5 py-0.5 text-[9px] font-black text-[#ff5c00]">
+                🎁
+              </span>
             </Link>
 
             <Link

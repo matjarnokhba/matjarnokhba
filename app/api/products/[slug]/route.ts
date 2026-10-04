@@ -9,8 +9,21 @@ export async function GET(
     const { slug } = await params;
     const { searchParams } = new URL(request.url);
     const sellerSlug = searchParams.get("seller");
+    const full = searchParams.get("full") === "1";
 
-    // ═══ مع sellerSlug → بحث دقيق ═══
+    // ═══ مع sellerSlug + full=1 → تفاصيل كاملة مع variants ═══
+    if (sellerSlug && full) {
+      const product = await ProductService.getFullDetail(slug, sellerSlug);
+      if (!product) {
+        return NextResponse.json(
+          { success: false, message: "المنتج غير موجود" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, product });
+    }
+
+    // ═══ مع sellerSlug (بدون full) → بحث دقيق ═══
     if (sellerSlug) {
       const product = await ProductService.getBySlugAndSeller(
         slug,
@@ -25,7 +38,7 @@ export async function GET(
       return NextResponse.json({ success: true, product });
     }
 
-    // ═══ بدون sellerSlug → بحث عام (deprecated) ═══
+    // ═══ بدون sellerSlug → بحث عام ═══
     const product = await ProductService.getBySlug(slug);
     if (!product) {
       return NextResponse.json(

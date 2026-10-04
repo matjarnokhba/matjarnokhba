@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
+import { LoyaltyService } from "@/services/loyalty.service";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING", "CANCELLED"],
@@ -10,6 +11,15 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   DELIVERED: ["RETURNED"],
   CANCELLED: [],
   RETURNED: [],
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  NEW: "جديد",
+  PROCESSING: "قيد التجهيز",
+  SHIPPED: "تم الشحن",
+  DELIVERED: "تم التسليم",
+  CANCELLED: "ملغى",
+  RETURNED: "مُرتجع",
 };
 
 export async function PATCH(
@@ -58,7 +68,6 @@ export async function PATCH(
 
     const oldStatus = order.status;
 
-    // التحقق من الانتقال
     const allowed = ALLOWED_TRANSITIONS[oldStatus] || [];
     if (!allowed.includes(newStatus)) {
       return NextResponse.json(
@@ -69,6 +78,18 @@ export async function PATCH(
         { status: 400 }
       );
     }
+
+    // ═══ نتيجة الولاء (نُعيدها للخارج) ═══
+    let loyaltyResult: {
+      pointsAwarded: number;
+      balanceAfter: number;
+      unlockedTiers: Array<{
+        tierId: number;
+        name: string;
+        icon: string | null;
+        rewardId: number;
+      }>;
+    } | null = null;
 
     // ═══════ التحديث ═══════
     await prisma.$transaction(async (tx) => {
@@ -94,7 +115,7 @@ export async function PATCH(
         },
       });
 
-      // ═══════ 3. NEW → PROCESSING: تأكيد الحجز + خصم المخزون ═══════
+      // ═══ 3. NEW → PROCESSING: تأكيد الحجز + خصم المخزون ═══
       if (oldStatus === "NEW" && newStatus === "PROCESSING") {
         const reservation = await tx.reservation.findUnique({
           where: { orderId },
@@ -102,7 +123,6 @@ export async function PATCH(
         });
 
         if (reservation && reservation.status === "ACTIVE") {
-          // خصم من المخزون لكل item
           for (const item of reservation.items) {
             await InventoryService.commitSale(
               tx,
@@ -112,7 +132,6 @@ export async function PATCH(
             );
           }
 
-          // تأكيد الحجز
           await tx.reservation.update({
             where: { id: reservation.id },
             data: { status: "CONFIRMED" },
@@ -120,7 +139,7 @@ export async function PATCH(
         }
       }
 
-      // ═══════ 4. CANCELLED: تحرير الحجز ═══════
+      // ═══ 4. CANCELLED: تحرير الحجز ═══
       if (newStatus === "CANCELLED") {
         const reservation = await tx.reservation.findUnique({
           where: { orderId },
@@ -129,7 +148,6 @@ export async function PATCH(
 
         if (reservation) {
           if (oldStatus === "NEW" && reservation.status === "ACTIVE") {
-            // لم يُخصم بعد → حرّر الحجز فقط
             for (const item of reservation.items) {
               await InventoryService.unreserve(
                 tx,
@@ -152,13 +170,12 @@ export async function PATCH(
             oldStatus === "PROCESSING" &&
             reservation.status === "CONFIRMED"
           ) {
-            // خُصم فعلاً → أعد للمخزون
             for (const item of reservation.items) {
               await InventoryService.returnStock(
                 tx,
                 item.variantId,
                 item.quantity,
-                0 // لا يوجد ReturnRequest
+                0
               );
             }
 
@@ -174,19 +191,9 @@ export async function PATCH(
         }
       }
 
-      // ═══════ 5. إشعار ═══════
-      await tx.notification.create({
-        data: {
-          userId: order.userId,
-          type: "ORDER_STATUS_CHANGED",
-          title: "تحديث حالة الطلب",
-          message: `طلبك ${order.orderNumber} أصبح: ${newStatus}`,
-          link: `/orders/${order.id}`,
-        },
-      });
-
-      // ═══════ 6. DELIVERED: زيادة المبيعات ═══════
+      // ═══ 5. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
+        // 5a. زيادة sold
         const soldByProduct = new Map<number, number>();
         const fullItems = await tx.orderItem.findMany({
           where: { orderId },
@@ -205,10 +212,84 @@ export async function PATCH(
             data: { sold: { increment: qty } },
           });
         }
+
+        // 5b. منح نقاط الولاء
+        try {
+          const award = await LoyaltyService.awardForOrder(tx, {
+            userId: order.userId,
+            orderId: order.id,
+            orderTotal: Number(order.total),
+          });
+
+          loyaltyResult = award;
+
+          // تحديث Order بحقول الولاء
+          if (award.pointsAwarded > 0) {
+            await tx.order.update({
+              where: { id: orderId },
+              data: {
+                loyaltyPointsAwarded: award.pointsAwarded,
+                loyaltyAwardedAt: new Date(),
+              },
+            });
+
+            // إشعار بالنقاط
+            await tx.notification.create({
+              data: {
+                userId: order.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: "🎁 ربحت نقاط ولاء!",
+                message: `حصلت على ${award.pointsAwarded} نقطة من الطلب ${order.orderNumber}. رصيدك الآن: ${award.balanceAfter} نقطة.`,
+                link: `/loyalty`,
+                category: "ORDER",
+                severity: "INFO",
+                metadata: {
+                  orderId: order.id,
+                  pointsAwarded: award.pointsAwarded,
+                  balanceAfter: award.balanceAfter,
+                },
+              },
+            });
+          }
+
+          // إشعارات المستويات المفتوحة
+          for (const tier of award.unlockedTiers) {
+            await tx.notification.create({
+              data: {
+                userId: order.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: `${tier.icon || "🎁"} مبروك! فتحت ${tier.name}`,
+                message: `وصلت إلى مستوى "${tier.name}". اختر فئة الهدية المفضلة لديك!`,
+                link: `/loyalty`,
+                category: "ORDER",
+                severity: "INFO",
+                metadata: {
+                  tierId: tier.tierId,
+                  rewardId: tier.rewardId,
+                  tierName: tier.name,
+                },
+              },
+            });
+          }
+        } catch (loyaltyErr) {
+          // لا نُفشل الطلب إن فشل الولاء
+          console.error("Loyalty award failed:", loyaltyErr);
+        }
       }
+
+      // ═══ 6. إشعار الحالة (عام) ═══
+      await tx.notification.create({
+        data: {
+          userId: order.userId,
+          type: "ORDER_STATUS_CHANGED",
+          title: "تحديث حالة الطلب",
+          message: `طلبك ${order.orderNumber} أصبح: ${STATUS_LABELS[newStatus] || newStatus}`,
+          link: `/orders/${order.id}`,
+        },
+      });
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, loyalty: loyaltyResult });
   } catch (error) {
     console.error("Status update error:", error);
     return NextResponse.json(

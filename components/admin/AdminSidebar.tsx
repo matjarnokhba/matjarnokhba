@@ -19,6 +19,8 @@ import {
   Bell,
   Building2,
   FileText,
+  Palette,
+  Gift,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -27,12 +29,14 @@ type AdminSidebarProps = {
 };
 
 const NAV_ITEMS = [
-  { href: "/admin/documents", label: "وثائق التجار", icon: FileText, exact: false },
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/admin/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
+  { href: "/admin/documents", label: "وثائق التجار", icon: FileText, exact: false },
   { href: "/admin/bank-accounts", label: "الحسابات البنكية", icon: Building2, exact: false },
   { href: "/admin/products", label: "المنتجات", icon: Package, exact: false },
+  { href: "/admin/attribute-values", label: "قيم الخصائص", icon: Palette, exact: false },
+  { href: "/admin/loyalty", label: "نظام الولاء", icon: Gift, exact: false },
   { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
@@ -63,7 +67,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
 
   return (
     <>
-      {/* Mobile Toggle Button */}
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
@@ -72,7 +75,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* Overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -80,13 +82,11 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed bottom-0 right-0 top-0 z-50 flex w-64 flex-col transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header */}
         <div className="flex h-16 items-center justify-between border-b border-gray-100 px-4">
           <Link href="/admin" className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-purple-600 to-orange-500 text-sm font-black text-white">
@@ -106,7 +106,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
           </button>
         </div>
 
-        {/* User Info */}
         <div className="border-b border-gray-100 px-4 py-3">
           <div className="text-xs text-gray-500">مرحباً</div>
           <div className="mt-0.5 text-sm font-bold text-gray-900">
@@ -117,7 +116,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
           </span>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -141,7 +139,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
           })}
         </nav>
 
-        {/* Footer Actions */}
         <div className="border-t border-gray-100 p-3">
           <Link
             href="/"

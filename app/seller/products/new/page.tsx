@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
+import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 
 type Category = { id: number; name: string };
 
@@ -32,10 +33,14 @@ export default function NewSellerProductPage() {
   const [freeShipping, setFreeShipping] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
 
+  const [selectedValues, setSelectedValues] = useState<Record<number, number[]>>({});
+  const [variantData, setVariantData] = useState<
+    Record<string, { price: number; stock: number }>
+  >({});
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ═══ جلب التصنيفات ═══
   useEffect(() => {
     async function loadCategories() {
       try {
@@ -56,7 +61,6 @@ export default function NewSellerProductPage() {
     loadCategories();
   }, []);
 
-  // ═══ توليد slug من الاسم ═══
   function handleNameChange(value: string) {
     setName(value);
     if (!slug || slug === generateSlug(name)) {
@@ -73,7 +77,31 @@ export default function NewSellerProductPage() {
       .slice(0, 100);
   }
 
-  // ═══ الإرسال ═══
+  function handleValuesChange(attributeId: number, valueIds: number[]) {
+    setSelectedValues((prev) => ({ ...prev, [attributeId]: valueIds }));
+  }
+
+  function handleVariantChange(
+    key: string,
+    field: "price" | "stock",
+    value: number
+  ) {
+    setVariantData((prev) => ({
+      ...prev,
+      [key]: {
+        price: prev[key]?.price ?? 0,
+        stock: prev[key]?.stock ?? 0,
+        [field]: value,
+      },
+    }));
+  }
+
+  function handleCategoryChange(newId: string) {
+    setCategoryId(newId);
+    setSelectedValues({});
+    setVariantData({});
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -116,6 +144,8 @@ export default function NewSellerProductPage() {
           stock: Number(stock) || 0,
           freeShipping,
           imageUrls,
+          selectedValues,
+          variantData,
         }),
       });
 
@@ -137,7 +167,6 @@ export default function NewSellerProductPage() {
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      {/* ═══ Header ═══ */}
       <Link
         href="/seller/products"
         className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-[#ff5c00]"
@@ -155,9 +184,7 @@ export default function NewSellerProductPage() {
 
       <form onSubmit={handleSubmit} className="max-w-3xl">
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* ═══ اليسار (2/3) ═══ */}
           <div className="space-y-4 lg:col-span-2">
-            {/* معلومات المنتج */}
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
                 <Package className="h-4 w-4 text-[#ff5c00]" />
@@ -240,9 +267,22 @@ export default function NewSellerProductPage() {
               </div>
             </div>
 
-            {/* السعر والمخزون */}
+            <ProductOptionsEditor
+              apiBase="/api/seller"
+              categoryId={Number(categoryId) || null}
+              selectedValues={selectedValues}
+              variantData={variantData}
+              defaultPrice={Number(price) || 0}
+              defaultStock={Number(stock) || 0}
+              onValuesChange={handleValuesChange}
+              onVariantChange={handleVariantChange}
+            />
+
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-black">السعر والمخزون</h2>
+              <p className="mb-3 text-[11px] text-gray-500">
+                قيم افتراضية للتركيبات التي لم تحدد لها سعراً/مخزوناً.
+              </p>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -303,9 +343,7 @@ export default function NewSellerProductPage() {
             </div>
           </div>
 
-          {/* ═══ اليمين (1/3) ═══ */}
           <div className="space-y-4 lg:col-span-1">
-            {/* التصنيف */}
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
                 التصنيف <span className="text-red-500">*</span>
@@ -318,7 +356,7 @@ export default function NewSellerProductPage() {
               ) : (
                 <select
                   value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
                   required
                 >
@@ -331,7 +369,6 @@ export default function NewSellerProductPage() {
               )}
             </div>
 
-            {/* الصور */}
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
                 صور المنتج <span className="text-red-500">*</span>
@@ -347,7 +384,6 @@ export default function NewSellerProductPage() {
           </div>
         </div>
 
-        {/* ═══ Error ═══ */}
         {error && (
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -355,7 +391,6 @@ export default function NewSellerProductPage() {
           </div>
         )}
 
-        {/* ═══ Buttons ═══ */}
         <div className="mt-6 flex gap-3">
           <button
             type="submit"

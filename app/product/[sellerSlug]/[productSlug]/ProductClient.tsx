@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -25,13 +25,58 @@ import ProductActionBar from "@/components/products/ProductActionBar";
 import ProductGrid from "@/components/products/ProductGrid";
 import CartDrawer from "@/components/cart/CartDrawer";
 
-import {
-  CURRENCY,
-  FREE_SHIPPING_THRESHOLD,
-  type Product,
-} from "@/lib/data/products";
+import { CURRENCY, type Product } from "@/lib/data/products";
 import { useCart } from "@/lib/hooks/useCart";
 import { useFavorites } from "@/lib/hooks/useFavorites";
+
+// ═══════ الأنواع ═══════
+type FullOption = {
+  id: number;
+  categoryAttributeId: number | null;
+  name: string;
+  type: string;
+  order: number;
+  values: Array<{
+    id: number;
+    value: string;
+    colorHex: string | null;
+    order: number;
+  }>;
+};
+
+type FullVariant = {
+  id: number;
+  sku: string;
+  price: number;
+  oldPrice: number | null;
+  stock: number;
+  available: number;
+  isDefault: boolean;
+  optionsHash: string;
+  optionValueIds: number[];
+  optionValueLabels: string[];
+};
+
+type FullProduct = {
+  id: number;
+  sellerId: number;
+  sellerSlug: string;
+  sellerName: string;
+  name: string;
+  slug: string;
+  description: string;
+  brand?: string;
+  badge?: string;
+  rating: number;
+  reviews: number;
+  sold: number;
+  freeShipping: boolean;
+  categoryId: string;
+  categoryName: string;
+  images: string[];
+  options: FullOption[];
+  variants: FullVariant[];
+};
 
 export default function ProductClient() {
   const params = useParams();
@@ -39,18 +84,21 @@ export default function ProductClient() {
   const sellerSlug = params.sellerSlug as string;
   const productSlug = params.productSlug as string;
 
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<FullProduct | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedImage, setSelectedImage] = useState(0);
-  const [selectedColor, setSelectedColor] = useState<string | undefined>();
-  const [selectedSize, setSelectedSize] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
+
+  // خريطة: optionId → valueId
+  const [selectedOptions, setSelectedOptions] = useState<
+    Record<number, number>
+  >({});
 
   const {
     items: cartItems,
@@ -63,14 +111,14 @@ export default function ProductClient() {
 
   const { isFavorite, toggleFavorite } = useFavorites();
 
-  // ═══ جلب المنتج ═══
+  // ═══ جلب المنتج (full=1) ═══
   useEffect(() => {
     async function loadProduct() {
       setLoading(true);
       setError(null);
       try {
         const res = await fetch(
-          `/api/products/${productSlug}?seller=${sellerSlug}`
+          `/api/products/${productSlug}?seller=${sellerSlug}&full=1`
         );
         const data = await res.json();
 
@@ -79,21 +127,30 @@ export default function ProductClient() {
           return;
         }
 
-        const p: Product = data.product;
+        const p: FullProduct = data.product;
         setProduct(p);
-        setSelectedColor(p.colors?.[0]);
-        setSelectedSize(p.sizes?.[0]);
 
+        // ═══ تهيئة القيم المختارة من defaultVariant ═══
+        const dv = p.variants.find((v) => v.isDefault) || p.variants[0];
+        if (dv && p.options.length > 0) {
+          const init: Record<number, number> = {};
+          // اربط كل option بقيمته في defaultVariant
+          for (const opt of p.options) {
+            const match = opt.values.find((v) =>
+              dv.optionValueIds.includes(v.id)
+            );
+            if (match) init[opt.id] = match.id;
+          }
+          setSelectedOptions(init);
+        }
+
+        // ═══ منتجات مشابهة ═══
         if (p.categoryId) {
-          const relatedRes = await fetch(
-            `/api/products?category=${p.categoryId}`
-          );
-          const relatedData = await relatedRes.json();
-          if (relatedData.success) {
+          const rRes = await fetch(`/api/products?category=${p.categoryId}`);
+          const rData = await rRes.json();
+          if (rData.success) {
             setRelated(
-              relatedData.products
-                .filter((rp: Product) => rp.id !== p.id)
-                .slice(0, 8)
+              rData.products.filter((rp: Product) => rp.id !== p.id).slice(0, 8)
             );
           }
         }
@@ -108,7 +165,7 @@ export default function ProductClient() {
     if (productSlug && sellerSlug) loadProduct();
   }, [productSlug, sellerSlug]);
 
-  // ═══ جلب المراجعات ═══
+  // ═══ المراجعات ═══
   useEffect(() => {
     async function loadReviews() {
       if (!product) return;
@@ -123,14 +180,146 @@ export default function ProductClient() {
     loadReviews();
   }, [product]);
 
+  // ═══ الـvariant النشط ═══
+  const activeVariant = useMemo(() => {
+    if (!product) return null;
+    if (product.options.length === 0) {
+      return product.variants[0] || null;
+    }
+    // هل كل options مختارة؟
+    const allSelected = product.options.every(
+      (o) => selectedOptions[o.id] !== undefined
+    );
+    if (!allSelected) return null;
+
+    const selectedIds = product.options
+      .map((o) => selectedOptions[o.id])
+      .sort((a, b) => a - b);
+
+    return (
+      product.variants.find((v) => {
+        const vIds = [...v.optionValueIds].sort((a, b) => a - b);
+        if (vIds.length !== selectedIds.length) return false;
+        return vIds.every((id, i) => id === selectedIds[i]);
+      }) || null
+    );
+  }, [product, selectedOptions]);
+
+  // ═══ السعر المعروض ═══
+  const displayPrice = activeVariant?.price ?? product?.variants[0]?.price ?? 0;
+  const displayOldPrice =
+    activeVariant?.oldPrice ?? product?.variants[0]?.oldPrice ?? null;
+  const displayStock = activeVariant?.available ?? 0;
+
+  const discountPercent =
+    displayOldPrice && displayOldPrice > displayPrice
+      ? Math.round(
+          ((displayOldPrice - displayPrice) / displayOldPrice) * 100
+        )
+      : 0;
+
+  // ═══ اختيار قيمة ═══
+  function selectOptionValue(optionId: number, valueId: number) {
+    setSelectedOptions((prev) => ({ ...prev, [optionId]: valueId }));
+    setQuantity(1);
+  }
+
+  // ═══ هل قيمة معينة متاحة؟ (لها variant بمخزون) ═══
+  function isValueAvailable(optionId: number, valueId: number): boolean {
+    if (!product) return false;
+    // نبني خريطة كاملة للاختيار مع هذه القيمة
+    const tentative = { ...selectedOptions, [optionId]: valueId };
+    const allSelected = product.options.every(
+      (o) => tentative[o.id] !== undefined
+    );
+    if (!allSelected) {
+      // حتى لو ناقص، افحص لو هناك variant بهذه القيمة بمخزون
+      return product.variants.some(
+        (v) =>
+          v.available > 0 &&
+          v.optionValueIds.includes(valueId) &&
+          product.options
+            .filter((o) => o.id !== optionId)
+            .every(
+              (o) =>
+                tentative[o.id] === undefined ||
+                v.optionValueIds.includes(tentative[o.id])
+            )
+      );
+    }
+    const selectedIds = product.options
+      .map((o) => tentative[o.id])
+      .sort((a, b) => a - b);
+    const variant = product.variants.find((v) => {
+      const vIds = [...v.optionValueIds].sort((a, b) => a - b);
+      if (vIds.length !== selectedIds.length) return false;
+      return vIds.every((id, i) => id === selectedIds[i]);
+    });
+    return !!variant && variant.available > 0;
+  }
+
+  // ═══ إضافة للسلة ═══
   function handleAddToCart() {
-    if (!product) return;
-    addItem(product, quantity, selectedColor, selectedSize);
+    if (!product || !activeVariant) return;
+    if (activeVariant.available < quantity) return;
+
+    const variantLabel = activeVariant.optionValueLabels.join(" / ");
+
+    // ابحث عن selectedColor/selectedSize للعرض
+    let selectedColor: string | undefined;
+    let selectedSize: string | undefined;
+    for (const opt of product.options) {
+      const valId = selectedOptions[opt.id];
+      const val = opt.values.find((v) => v.id === valId);
+      if (!val) continue;
+      if (opt.type === "color") selectedColor = val.value;
+      if (opt.name.includes("مقاس") || opt.name.toLowerCase().includes("size"))
+        selectedSize = val.value;
+    }
+
+    // نبني كائن Product متوافق مع CartItem
+    const cartProduct: any = {
+      id: product.id,
+      name: product.name,
+      slug: product.slug,
+      description: product.description,
+      brand: product.brand,
+      badge: product.badge,
+      rating: product.rating,
+      reviews: product.reviews,
+      sold: product.sold,
+      freeShipping: product.freeShipping,
+      categoryId: product.categoryId,
+      categoryName: product.categoryName,
+      price: activeVariant.price,
+      oldPrice: activeVariant.oldPrice || undefined,
+      images: product.images,
+      stock: activeVariant.available,
+      sellerSlug: product.sellerSlug,
+      sellerName: product.sellerName,
+      sellerId: product.sellerId,
+    };
+
+    addItem(cartProduct, {
+      variantId: activeVariant.id,
+      variantLabel,
+      quantity,
+      stockSnapshot: activeVariant.available,
+      selectedColor,
+      selectedSize,
+    });
+
     setIsCartOpen(true);
   }
 
   function handleRelatedAddToCart(p: Product) {
-    addItem(p);
+    if (!p.variantId) return;
+    addItem(p, {
+      variantId: p.variantId,
+      variantLabel: "",
+      quantity: 1,
+      stockSnapshot: p.stock,
+    });
     setIsCartOpen(true);
   }
 
@@ -160,7 +349,6 @@ export default function ProductClient() {
     );
   }
 
-  // ═══ خطأ ═══
   if (error || !product) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -176,9 +364,6 @@ export default function ProductClient() {
           <h1 className="mt-4 text-2xl font-black">
             {error || "المنتج غير موجود"}
           </h1>
-          <p className="mt-2 text-sm text-[#6b7280]">
-            ربما تم حذفه أو الرابط غير صحيح.
-          </p>
           <Link
             href="/"
             className="mt-6 rounded-full bg-[#ff5c00] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"
@@ -191,14 +376,9 @@ export default function ProductClient() {
     );
   }
 
-  const discountPercent = product.oldPrice
-    ? Math.round(
-        ((product.oldPrice - product.price) / product.oldPrice) * 100
-      )
-    : 0;
-
   const hasNextImage = selectedImage < product.images.length - 1;
   const hasPrevImage = selectedImage > 0;
+  const canAdd = activeVariant && activeVariant.available >= quantity;
 
   return (
     <main
@@ -238,12 +418,6 @@ export default function ProductClient() {
               </Link>
             </>
           )}
-          {product.categoryName && (
-            <>
-              <span>/</span>
-              <span>{product.categoryName}</span>
-            </>
-          )}
         </div>
       </div>
 
@@ -271,7 +445,7 @@ export default function ProductClient() {
                 )}
 
                 <button
-                  onClick={() => product && toggleFavorite(product)}
+                  onClick={() => toggleFavorite(product as any)}
                   className={`absolute bottom-3 left-3 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition ${
                     isFavorite(product.id)
                       ? "bg-red-500 text-white"
@@ -334,7 +508,6 @@ export default function ProductClient() {
 
           {/* التفاصيل */}
           <div className="flex flex-col gap-3">
-            {/* رابط المتجر */}
             {product.sellerSlug && (
               <Link
                 href={`/store/${product.sellerSlug}`}
@@ -379,14 +552,14 @@ export default function ProductClient() {
             {/* السعر */}
             <div className="flex flex-wrap items-baseline gap-2 rounded-lg bg-white px-3 py-2">
               <strong className="text-2xl font-black text-[#ff5c00]">
-                {product.price}
+                {displayPrice}
               </strong>
               <span className="text-xs font-bold text-[#6b7280]">
                 {CURRENCY}
               </span>
-              {product.oldPrice && (
+              {displayOldPrice && (
                 <del className="text-sm text-gray-400">
-                  {product.oldPrice} {CURRENCY}
+                  {displayOldPrice} {CURRENCY}
                 </del>
               )}
               {discountPercent > 0 && (
@@ -395,6 +568,92 @@ export default function ProductClient() {
                 </span>
               )}
             </div>
+
+            {/* ═══ الخصائص الديناميكية ═══ */}
+            {product.options.map((opt) => {
+              const selectedValueId = selectedOptions[opt.id];
+              const isColor = opt.type === "color";
+
+              return (
+                <div key={opt.id} className="rounded-lg bg-white px-3 py-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-700">
+                      {opt.name}:
+                      {selectedValueId && (
+                        <span className="mr-1 text-[#ff5c00]">
+                          {
+                            opt.values.find((v) => v.id === selectedValueId)
+                              ?.value
+                          }
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {isColor ? (
+                    <div className="flex flex-wrap gap-2">
+                      {opt.values.map((v) => {
+                        const sel = selectedValueId === v.id;
+                        const available = isValueAvailable(opt.id, v.id);
+                        const isLight =
+                          v.colorHex === "#FFFFFF" ||
+                          v.colorHex === "#F5F5DC" ||
+                          v.colorHex === "#FFFDD0";
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={() => selectOptionValue(opt.id, v.id)}
+                            title={v.value}
+                            className={`relative flex items-center gap-2 rounded-full border-2 py-1 pl-3 pr-1 transition ${
+                              sel
+                                ? "border-[#ff5c00] bg-[#fff4ed]"
+                                : "border-gray-200 bg-white hover:border-gray-300"
+                            } ${!available ? "opacity-40" : ""}`}
+                          >
+                            <span
+                              className={`h-5 w-5 rounded-full border ${
+                                isLight
+                                  ? "border-gray-300"
+                                  : "border-transparent"
+                              } ${!available ? "grayscale" : ""}`}
+                              style={{
+                                backgroundColor: v.colorHex || "#ccc",
+                              }}
+                            />
+                            <span className="text-xs font-bold text-gray-700">
+                              {v.value}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {opt.values.map((v) => {
+                        const sel = selectedValueId === v.id;
+                        const available = isValueAvailable(opt.id, v.id);
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={() => selectOptionValue(opt.id, v.id)}
+                            disabled={!available}
+                            className={`min-w-[48px] rounded-lg border-2 px-3 py-1.5 text-xs font-bold transition ${
+                              sel
+                                ? "border-[#ff5c00] bg-[#ff5c00] text-white"
+                                : available
+                                  ? "border-gray-200 bg-white text-gray-700 hover:border-[#ff5c00]"
+                                  : "border-gray-100 bg-gray-50 text-gray-300 line-through"
+                            }`}
+                          >
+                            {v.value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {/* الكمية */}
             <div className="flex items-center gap-3 rounded-lg bg-white px-3 py-2.5">
@@ -411,29 +670,42 @@ export default function ProductClient() {
                   {quantity}
                 </span>
                 <button
-                  onClick={() => setQuantity(quantity + 1)}
+                  onClick={() =>
+                    setQuantity(Math.min(displayStock || 99, quantity + 1))
+                  }
                   className="flex h-7 w-7 items-center justify-center transition hover:bg-gray-50"
                   aria-label="زيادة"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <span className="text-[10px] text-[#6b7280]">
-                {product.stock} متاح في المخزون
+              <span
+                className={`text-[10px] ${
+                  displayStock > 0 ? "text-[#6b7280]" : "text-red-500"
+                }`}
+              >
+                {displayStock > 0
+                  ? `${displayStock} متاح في المخزون`
+                  : "غير متوفر"}
               </span>
             </div>
 
-            {/* زر أضف للسلة */}
+            {/* أزرار سطح المكتب */}
             <div className="hidden gap-2 sm:flex">
               <button
                 onClick={handleAddToCart}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#e64a00] active:scale-[0.98]"
+                disabled={!canAdd}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#e64a00] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ShoppingCart className="h-4 w-4" />
-                أضف إلى السلة
+                {!activeVariant
+                  ? "اختر الخصائص"
+                  : activeVariant.available === 0
+                    ? "غير متوفر"
+                    : "أضف إلى السلة"}
               </button>
               <button
-                onClick={() => product && toggleFavorite(product)}
+                onClick={() => toggleFavorite(product as any)}
                 className={`flex h-11 w-11 items-center justify-center rounded-lg border transition ${
                   isFavorite(product.id)
                     ? "border-red-500 bg-red-50 text-red-500"
@@ -522,130 +794,59 @@ export default function ProductClient() {
               </p>
             </div>
           ) : (
-            <>
-              <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-8">
-                <div className="text-center">
-                  {(() => {
-                    const avg =
-                      reviews.reduce((s, r) => s + r.rating, 0) /
-                      reviews.length;
-                    return (
-                      <>
-                        <div className="text-3xl font-black text-[#ff5c00]">
-                          {avg.toFixed(1)}
-                        </div>
-                        <div className="mt-1 flex items-center justify-center gap-0.5">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`h-4 w-4 ${
-                                i < Math.round(avg)
-                                  ? "fill-yellow-400 text-yellow-400"
-                                  : "text-gray-300"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="mt-1 block text-xs text-[#6b7280]">
-                          من {reviews.length} مراجعة
+            <div className="space-y-4">
+              {reviews.map((review) => (
+                <div
+                  key={review.id}
+                  className="border-b border-gray-50 pb-3 last:border-0"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-xs font-black text-white">
+                      {review.user?.name?.charAt(0) || "؟"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold">
+                          {review.user?.name || "مستخدم"}
                         </span>
-                      </>
-                    );
-                  })()}
-                </div>
-
-                <div className="flex-1 space-y-1.5">
-                  {[5, 4, 3, 2, 1].map((stars) => {
-                    const count = reviews.filter(
-                      (r) => r.rating === stars
-                    ).length;
-                    const percent = reviews.length
-                      ? Math.round((count / reviews.length) * 100)
-                      : 0;
-                    return (
-                      <div
-                        key={stars}
-                        className="flex items-center gap-2 text-xs"
-                      >
-                        <span className="flex w-8 items-center gap-0.5 font-bold">
-                          {stars}
-                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                        <span className="text-[10px] text-[#6b7280]">
+                          {new Date(review.createdAt).toLocaleDateString(
+                            "ar-MA",
+                            { day: "numeric", month: "short", year: "numeric" }
+                          )}
                         </span>
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
-                          <div
-                            className="h-full bg-yellow-400"
-                            style={{ width: `${percent}%` }}
+                      </div>
+                      <div className="mt-1 flex items-center gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`h-3 w-3 ${
+                              i < review.rating
+                                ? "fill-yellow-400 text-yellow-400"
+                                : "text-gray-300"
+                            }`}
                           />
-                        </div>
-                        <span className="w-10 text-left text-[#6b7280]">
-                          {percent}%
-                        </span>
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-4 border-t border-gray-100 pt-4">
-                {reviews.map((review) => (
-                  <div
-                    key={review.id}
-                    className="border-b border-gray-50 pb-3 last:border-0"
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-xs font-black text-white">
-                        {review.user?.name?.charAt(0) || "؟"}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold">
-                            {review.user?.name || "مستخدم"}
-                          </span>
-                          <span className="text-[10px] text-[#6b7280]">
-                            {new Date(review.createdAt).toLocaleDateString(
-                              "ar-MA",
-                              {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              }
-                            )}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-0.5">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`h-3 w-3 ${
-                                i < review.rating
-                                  ? "fill-yellow-400 text-yellow-400"
-                                  : "text-gray-300"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        {review.comment && (
-                          <p className="mt-1.5 text-xs leading-6 text-[#4b5563]">
-                            {review.comment}
-                          </p>
-                        )}
-                      </div>
+                      {review.comment && (
+                        <p className="mt-1.5 text-xs leading-6 text-[#4b5563]">
+                          {review.comment}
+                        </p>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </>
+                </div>
+              ))}
+            </div>
           )}
         </section>
 
         {/* منتجات مشابهة */}
         {related.length > 0 && (
           <section className="mt-5">
-            <div className="mb-3 flex items-end justify-between">
-              <h2 className="text-base font-black sm:text-lg">
-                منتجات مشابهة
-              </h2>
-            </div>
+            <h2 className="mb-3 text-base font-black sm:text-lg">
+              منتجات مشابهة
+            </h2>
             <ProductGrid
               products={related}
               onAddToCart={handleRelatedAddToCart}
@@ -659,9 +860,11 @@ export default function ProductClient() {
       <ProductActionBar
         onAddToCart={handleAddToCart}
         onBuyNow={() => {
+          if (!canAdd) return;
           handleAddToCart();
           router.push("/checkout");
         }}
+        disabled={!canAdd}
       />
 
       <CartDrawer

@@ -141,6 +141,23 @@ enum AuditAction {
   STOCK_ADJUSTMENT
 }
 
+/// نوع حركة نقاط الولاء
+enum LoyaltyTransactionType {
+  EARN          // نقاط من طلب
+  REVOKE        // سحب بسبب إرجاع
+  BONUS         // نقاط إضافية
+  ADMIN_ADJUST  // تعديل يدوي
+}
+
+/// حالة مكافأة الولاء
+enum LoyaltyRewardStatus {
+  PENDING       // فتحها، بانتظار اختيار الأدمن
+  PROCESSING    // الأدمن بدأ التجهيز
+  SHIPPED       // تم الشحن
+  DELIVERED     // تم التسليم
+  CANCELLED     // ملغى
+}
+
 // ============================================
 // GROUP 1 — IDENTITY
 // User, Address, Session, Seller
@@ -166,6 +183,7 @@ model User {
   reviews        Review[]
   notifications  Notification[]
   auditLogs      AuditLog[]
+  loyaltyAccount LoyaltyAccount?
   sessions       Session[]
   passwordResetTokens PasswordResetToken[]
 
@@ -273,6 +291,7 @@ model Seller {
   performanceSnapshots SellerPerformanceSnapshot[]
   payouts              SellerPayout[]
   editLogs             ProductEditLog[]
+  attributeValues      CategoryAttributeValue[]
 
   @@index([status])
   @@index([deletedAt])
@@ -301,9 +320,10 @@ model Category {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children Category[] @relation("CategoryHierarchy")
-  products Product[]
+  parent     Category?           @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Category[]          @relation("CategoryHierarchy")
+  products   Product[]
+  attributes CategoryAttribute[]
 
   @@index([parentId])
   @@index([isActive])
@@ -362,16 +382,18 @@ model ProductImage {
 }
 
 model ProductOption {
-  id        Int      @id @default(autoincrement())
-  productId Int
-  name      String
-  order     Int      @default(0)
+  id                  Int      @id @default(autoincrement())
+  productId           Int
+  categoryAttributeId Int?
+  name                String
+  order               Int      @default(0)
 
   product Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
   values  ProductOptionValue[]
 
   @@unique([productId, name])
   @@index([productId])
+  @@index([categoryAttributeId])
 }
 
 model ProductOptionValue {
@@ -526,6 +548,9 @@ model Order {
   shippingZoneId          Int?
   notes                   String?
   sellerNotes             String?
+  loyaltyPointsAwarded    Int           @default(0)
+  loyaltyPointsRevoked    Int           @default(0)
+  loyaltyAwardedAt        DateTime?
   deliveredAt             DateTime?
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
@@ -623,8 +648,8 @@ model ReservationItem {
 
 model IdempotencyKey {
   id          Int      @id @default(autoincrement())
-  key         String   @unique
-  userId      Int?
+  key         String
+  userId      Int
   endpoint    String
   requestHash String
   response    Json?
@@ -632,7 +657,9 @@ model IdempotencyKey {
   createdAt   DateTime @default(now())
   expiresAt   DateTime
 
+  @@unique([userId, endpoint, key])
   @@index([expiresAt])
+  @@index([userId, endpoint])
 }
 
 model OrderSequence {
@@ -1077,4 +1104,218 @@ model ProductEditLog {
   @@index([createdAt])
   @@index([requiresReapproval])
   @@index([reviewedAt])
+}
+
+// ============================================
+// SECTION 80 — LOYALTY SYSTEM
+// ============================================
+
+// ═══ الإعدادات العامة ═══
+model LoyaltySettings {
+  id             Int      @id @default(1)
+  isEnabled      Boolean  @default(true)
+  pointsPer100DH Int      @default(5)
+  description    String?
+  updatedAt      DateTime @updatedAt
+}
+
+// ═══ حساب الولاء لكل مستخدم ═══
+model LoyaltyAccount {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  balance      Int      @default(0)
+  totalEarned  Int      @default(0)
+  totalRevoked Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions LoyaltyTransaction[]
+  unlocks      LoyaltyTierUnlock[]
+  rewards      LoyaltyReward[]
+
+  @@index([balance])
+}
+
+// ═══ سجل حركات النقاط (Ledger) ═══
+model LoyaltyTransaction {
+  id            Int                    @id @default(autoincrement())
+  accountId     Int
+  type          LoyaltyTransactionType
+  points        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String?
+  orderId       Int?
+  adminId       Int?
+  metadata      Json?
+  createdAt     DateTime               @default(now())
+
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([orderId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ═══ مستويات المكافآت ═══
+model LoyaltyTier {
+  id             Int      @id @default(autoincrement())
+  slug           String   @unique
+  name           String
+  description    String?
+  icon           String?
+  requiredPoints Int
+  rewardValueMin Decimal? @db.Decimal(10, 2)
+  rewardValueMax Decimal? @db.Decimal(10, 2)
+  order          Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  unlocks      LoyaltyTierUnlock[]
+  rewards      LoyaltyReward[]
+  giftProducts LoyaltyGiftProduct[]
+
+  @@index([requiredPoints])
+  @@index([isActive])
+}
+
+// ═══ متى فُتح كل مستوى ═══
+model LoyaltyTierUnlock {
+  id         Int      @id @default(autoincrement())
+  accountId  Int
+  tierId     Int
+  unlockedAt DateTime @default(now())
+
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tier    LoyaltyTier    @relation(fields: [tierId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, tierId])
+  @@index([accountId])
+  @@index([tierId])
+}
+
+// ═══ فئات الهدايا (ملابس، أحذية...) ═══
+model LoyaltyRewardCategory {
+  id       Int     @id @default(autoincrement())
+  slug     String  @unique
+  name     String
+  icon     String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  giftProducts LoyaltyGiftProduct[]
+  rewards      LoyaltyReward[]
+
+  @@index([isActive])
+}
+
+// ═══ مخزون الهدايا (مستقل تماماً) ═══
+model LoyaltyGiftProduct {
+  id            Int      @id @default(autoincrement())
+  name          String
+  description   String?
+  imageUrl      String?
+  tierId        Int
+  categoryId    Int
+  costPrice     Decimal  @db.Decimal(10, 2)
+  salePrice     Decimal? @db.Decimal(10, 2)
+  stock         Int      @default(0)
+  reservedStock Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tier     LoyaltyTier           @relation(fields: [tierId], references: [id], onDelete: Restrict)
+  category LoyaltyRewardCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  rewards  LoyaltyReward[]
+
+  @@index([tierId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+// ═══ المكافآت المفتوحة ═══
+model LoyaltyReward {
+  id            Int                 @id @default(autoincrement())
+  accountId     Int
+  tierId        Int
+  categoryId    Int?
+  giftProductId Int?
+  status        LoyaltyRewardStatus @default(PENDING)
+  adminNote     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  account     LoyaltyAccount         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tier        LoyaltyTier            @relation(fields: [tierId], references: [id], onDelete: Restrict)
+  category    LoyaltyRewardCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  giftProduct LoyaltyGiftProduct?    @relation(fields: [giftProductId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([tierId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// DYNAMIC ATTRIBUTES SYSTEM
+// ═══════════════════════════════════════════
+
+enum AttributeValueStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model CategoryAttribute {
+  id            Int      @id @default(autoincrement())
+  categoryId    Int
+  name          String   // "المقاس", "اللون", "الخامة"
+  slug          String   // "size", "color", "material"
+  type          String   @default("select") // select | color | number | text
+  isVariantAxis Boolean  @default(true)     // يشارك في توليد variants
+  isRequired    Boolean  @default(false)
+  allowCustom   Boolean  @default(false)    // هل يمكن إضافة قيم مخصصة؟
+  order         Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values   CategoryAttributeValue[]
+
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model CategoryAttributeValue {
+  id          Int      @id @default(autoincrement())
+  attributeId Int
+  value       String
+  slug        String
+  colorHex    String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  metadata    Json?
+
+  // ═══ جديد: نظام الموافقة ═══
+  status          AttributeValueStatus @default(APPROVED)
+  sellerId        Int?                 // null = قيمة عامة (من الأدمن)
+  reviewedAt      DateTime?
+  reviewedById    Int?
+  rejectionReason String?
+
+  attribute CategoryAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  seller    Seller?           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([attributeId])
+  @@index([isActive])
+  @@index([status])
+  @@index([sellerId])
+  @@index([attributeId, status])
 }

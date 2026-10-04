@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
-// ═══════ التحقق من صلاحية البائع ═══════
 async function requireSeller() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
@@ -14,8 +13,19 @@ async function requireSeller() {
   ) {
     return { error: "متجرك معطّل", status: 403 };
   }
-  // PENDING و ACTIVE → يمرون
   return { user: current.user, seller: current.user.seller };
+}
+
+function cartesian(lists: number[][]): number[][] {
+  if (lists.length === 0) return [[]];
+  return lists.reduce<number[][]>(
+    (acc, list) => {
+      const next: number[][] = [];
+      for (const e of acc) for (const v of list) next.push([...e, v]);
+      return next;
+    },
+    [[]]
+  );
 }
 
 const createSchema = z.object({
@@ -30,11 +40,19 @@ const createSchema = z.object({
   stock: z.number().int().min(0).default(0),
   freeShipping: z.boolean().default(false),
   imageUrls: z.array(z.string().url()).min(1, "صورة واحدة على الأقل مطلوبة").max(5),
+  selectedValues: z.record(z.string(), z.array(z.number())).optional(),
+  variantData: z
+    .record(
+      z.string(),
+      z.object({
+        price: z.number().min(0).optional(),
+        stock: z.number().int().min(0).optional(),
+      })
+    )
+    .optional(),
 });
 
-// ═══════════════════════════════════════════
-// GET — قائمة منتجات البائع
-// ═══════════════════════════════════════════
+// ═══════ GET — قائمة منتجات البائع ═══════
 export async function GET() {
   try {
     const auth = await requireSeller();
@@ -46,10 +64,7 @@ export async function GET() {
     }
 
     const products = await prisma.product.findMany({
-      where: {
-        sellerId: auth.seller.id,
-        deletedAt: null,
-      },
+      where: { sellerId: auth.seller.id, deletedAt: null },
       include: {
         images: { orderBy: { order: "asc" }, take: 1 },
         category: { select: { id: true, name: true } },
@@ -84,9 +99,7 @@ export async function GET() {
   }
 }
 
-// ═══════════════════════════════════════════
-// POST — إنشاء منتج جديد
-// ═══════════════════════════════════════════
+// ═══════ POST — إنشاء منتج جديد (مع Variants ديناميكية) ═══════
 export async function POST(request: Request) {
   try {
     const auth = await requireSeller();
@@ -112,7 +125,7 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // ═══ slug فريد ضمن منتجات هذا البائع ═══
+    // ═══ slug ═══
     const cleanSlug = data.slug
       .toLowerCase()
       .trim()
@@ -120,7 +133,11 @@ export async function POST(request: Request) {
       .replace(/[^a-z0-9-]/g, "");
 
     const existing = await prisma.product.findFirst({
-      where: { sellerId: auth.seller.id, slug: cleanSlug, deletedAt: null },
+      where: {
+        sellerId: auth.seller.id,
+        slug: cleanSlug,
+        deletedAt: null,
+      },
     });
     if (existing) {
       return NextResponse.json(
@@ -129,7 +146,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ التحقق من الفئة ═══
+    // ═══ الفئة ═══
     const category = await prisma.category.findUnique({
       where: { id: data.categoryId },
     });
@@ -140,54 +157,197 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ إنشاء المنتج + Variant + Inventory في transaction ═══
-    const product = await prisma.$transaction(async (tx) => {
-      const p = await tx.product.create({
-        data: {
-          sellerId: auth.seller.id,
-          categoryId: data.categoryId,
-          name: data.name,
-          slug: cleanSlug,
-          description: data.description || null,
-          brand: data.brand || null,
-          badge: data.badge || null,
-          freeShipping: data.freeShipping,
-          status: "DRAFT",
-          images: {
-            create: data.imageUrls.map((url, idx) => ({
-              url,
-              order: idx,
-              isMain: idx === 0,
-            })),
-          },
-        },
-      });
-
-      const variant = await tx.productVariant.create({
-        data: {
-          productId: p.id,
-          sellerId: auth.seller.id,
-          sku: `${cleanSlug}-default-${Date.now()}`,
-          price: data.price,
-          originalPrice: data.price, // ⚠️ السعر الأصلي - لا يتغير أبداً
-          discountPrice: data.oldPrice || null,
-          isDefault: true,
-          isActive: true,
-          optionsHash: "DEFAULT",
-        },
-      });
-
-      await tx.inventory.create({
-        data: {
-          variantId: variant.id,
-          quantity: data.stock,
-          reservedQuantity: 0,
-          lowStockThreshold: 5,
-        },
-      });
-
-      return p;
+    // ═══ قراءة خصائص الفئة ═══
+    const categoryAttributes = await prisma.categoryAttribute.findMany({
+      where: { categoryId: data.categoryId, isActive: true },
+      include: { values: { where: { isActive: true } } },
     });
+
+    const selectedValues: Record<string, number[]> =
+      data.selectedValues || {};
+
+    type ActiveAttr = {
+      attributeId: number;
+      name: string;
+      order: number;
+      values: Array<{ id: number; value: string; order: number }>;
+    };
+
+    const activeAttrs: ActiveAttr[] = [];
+
+    for (const attr of categoryAttributes) {
+      const ids = selectedValues[String(attr.id)] || [];
+      if (ids.length === 0) continue;
+
+      const vals: Array<{ id: number; value: string; order: number }> = [];
+      ids.forEach((vid, idx) => {
+        const found = attr.values.find((v) => v.id === vid);
+        if (found) {
+          vals.push({ id: found.id, value: found.value, order: idx });
+        }
+      });
+
+      if (vals.length > 0) {
+        activeAttrs.push({
+          attributeId: attr.id,
+          name: attr.name,
+          order: attr.order,
+          values: vals,
+        });
+      }
+    }
+
+    const valueLists = activeAttrs.map((a) => a.values.map((v) => v.id));
+    const combos = cartesian(valueLists);
+
+    if (combos.length > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `عدد التركيبات كبير جداً (${combos.length}). الحد 100.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const variantData: Record<string, { price?: number; stock?: number }> =
+      data.variantData || {};
+
+    // ═══ إنشاء المنتج ═══
+    const product = await prisma.$transaction(
+      async (tx) => {
+        const p = await tx.product.create({
+          data: {
+            sellerId: auth.seller.id,
+            categoryId: data.categoryId,
+            name: data.name,
+            slug: cleanSlug,
+            description: data.description || null,
+            brand: data.brand || null,
+            badge: data.badge || null,
+            freeShipping: data.freeShipping,
+            status: "DRAFT",
+            images: {
+              create: data.imageUrls.map((url, idx) => ({
+                url,
+                order: idx,
+                isMain: idx === 0,
+              })),
+            },
+          },
+        });
+
+        // ═══ بدون خصائص → variant افتراضي ═══
+        if (combos.length === 1 && combos[0].length === 0) {
+          const d = variantData["DEFAULT"] || {};
+          const vPrice = d.price ?? data.price;
+          const vStock = d.stock ?? data.stock;
+
+          await tx.productVariant.create({
+            data: {
+              productId: p.id,
+              sellerId: auth.seller.id,
+              sku: `${cleanSlug}-default-${Date.now()}`,
+              price: vPrice,
+              originalPrice: data.price,
+              discountPrice: data.oldPrice || null,
+              isDefault: true,
+              isActive: true,
+              optionsHash: "DEFAULT",
+              inventory: {
+                create: {
+                  quantity: vStock,
+                  reservedQuantity: 0,
+                  lowStockThreshold: 5,
+                },
+              },
+            },
+          });
+
+          return p;
+        }
+
+        // ═══ إنشاء Options + قيمها ═══
+        const povMap = new Map<number, number>();
+
+        for (const attr of activeAttrs) {
+          const created = await tx.productOption.create({
+            data: {
+              productId: p.id,
+              categoryAttributeId: attr.attributeId,
+              name: attr.name,
+              order: attr.order,
+              values: {
+                create: attr.values.map((v) => ({
+                  value: v.value,
+                  order: v.order,
+                })),
+              },
+            },
+            include: { values: { orderBy: { order: "asc" } } },
+          });
+
+          attr.values.forEach((v, idx) => {
+            povMap.set(v.id, created.values[idx].id);
+          });
+        }
+
+        // ═══ تجهيز بيانات التركيبات ═══
+        const comboData = combos.map((combo, i) => {
+          const hash = [...combo].sort((a, b) => a - b).join("|");
+          const custom = variantData[hash] || {};
+          return {
+            combo,
+            hash,
+            price: custom.price ?? data.price,
+            stock: custom.stock ?? data.stock,
+            isDefault: i === 0,
+          };
+        });
+
+        // ═══ إنشاء variants دفعة واحدة ═══
+        const ts = Date.now();
+        const createdVariants = await tx.productVariant.createManyAndReturn({
+          data: comboData.map((c, i) => ({
+            productId: p.id,
+            sellerId: auth.seller.id,
+            sku: `${cleanSlug}-${i}-${ts}`,
+            price: c.price,
+            originalPrice: data.price,
+            discountPrice: data.oldPrice || null,
+            isDefault: c.isDefault,
+            isActive: true,
+            optionsHash: c.hash,
+          })),
+          select: { id: true },
+        });
+
+        await tx.inventory.createMany({
+          data: createdVariants.map((v, i) => ({
+            variantId: v.id,
+            quantity: comboData[i].stock,
+            reservedQuantity: 0,
+            lowStockThreshold: 5,
+          })),
+        });
+
+        // ═══ ربط الـvariants بقيم الخيارات ═══
+        const links: Array<{ variantId: number; optionValueId: number }> = [];
+        createdVariants.forEach((v, i) => {
+          for (const catValId of comboData[i].combo) {
+            const povId = povMap.get(catValId);
+            if (povId) links.push({ variantId: v.id, optionValueId: povId });
+          }
+        });
+
+        if (links.length > 0) {
+          await tx.productVariantOptionValue.createMany({ data: links });
+        }
+
+        return p;
+      },
+      { timeout: 30000, maxWait: 10000 }
+    );
 
     return NextResponse.json(
       { success: true, product: { id: product.id, slug: product.slug } },

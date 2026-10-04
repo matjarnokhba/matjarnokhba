@@ -78,7 +78,14 @@ export const InventoryService = {
     const inv = await this.lockInventory(tx, variantId);
 
     const beforeReserved = inv.reservedQuantity;
-    const afterReserved = Math.max(0, beforeReserved - quantity);
+
+    if (quantity > beforeReserved) {
+      throw new Error(
+        "محاولة تحرير " + quantity + " من أصل " + beforeReserved + " محجوز فقط"
+      );
+    }
+
+    const afterReserved = beforeReserved - quantity;
 
     await tx.inventory.update({
       where: { id: inv.id },
@@ -120,7 +127,14 @@ export const InventoryService = {
     }
 
     const beforeReserved = inv.reservedQuantity;
-    const afterReserved = Math.max(0, beforeReserved - quantity);
+
+    if (quantity > beforeReserved) {
+      throw new Error(
+        "محاولة بيع " + quantity + " من أصل " + beforeReserved + " محجوز فقط"
+      );
+    }
+
+    const afterReserved = beforeReserved - quantity;
 
     await tx.inventory.update({
       where: { id: inv.id },
@@ -237,9 +251,7 @@ export const InventoryService = {
     const inv = await this.lockInventory(tx, variantId);
 
     if (newQuantity < inv.reservedQuantity) {
-      throw new Error(
-        "لا يمكن تقليل المخزون تحت الكمية المحجوزة الحالية"
-      );
+      throw new Error("لا يمكن تقليل المخزون تحت الكمية المحجوزة الحالية");
     }
 
     const beforeQty = inv.quantity;

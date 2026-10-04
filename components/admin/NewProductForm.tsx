@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Loader2, Package, Plus } from "lucide-react";
 import ImageUploader from "./ImageUploader";
+import ProductOptionsEditor from "./ProductOptionsEditor";
 
 type Category = { id: number; name: string };
 
@@ -29,6 +30,13 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
     freeShipping: false,
   });
 
+  const [selectedValues, setSelectedValues] = useState<
+    Record<number, number[]>
+  >({});
+  const [variantData, setVariantData] = useState<
+    Record<string, { price: number; stock: number }>
+  >({});
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,10 +52,33 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
 
   function updateField(field: string, value: any) {
     setForm((f) => ({ ...f, [field]: value }));
-
     if (field === "name" && !form.slug) {
       setForm((f) => ({ ...f, slug: generateSlug(value) }));
     }
+    if (field === "categoryId") {
+      // تصفير القيم عند تغيير الفئة
+      setSelectedValues({});
+      setVariantData({});
+    }
+  }
+
+  function handleValuesChange(attributeId: number, valueIds: number[]) {
+    setSelectedValues((prev) => ({ ...prev, [attributeId]: valueIds }));
+  }
+
+  function handleVariantChange(
+    key: string,
+    field: "price" | "stock",
+    value: number
+  ) {
+    setVariantData((prev) => ({
+      ...prev,
+      [key]: {
+        price: prev[key]?.price ?? 0,
+        stock: prev[key]?.stock ?? 0,
+        [field]: value,
+      },
+    }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -93,6 +124,8 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
           stock: Number(form.stock) || 0,
           imageUrls: form.imageUrls,
           freeShipping: form.freeShipping,
+          selectedValues,
+          variantData,
         }),
       });
 
@@ -175,7 +208,9 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                   </label>
                   <textarea
                     value={form.description}
-                    onChange={(e) => updateField("description", e.target.value)}
+                    onChange={(e) =>
+                      updateField("description", e.target.value)
+                    }
                     placeholder="وصف تفصيلي للمنتج..."
                     rows={3}
                     className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
@@ -211,8 +246,21 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
               </div>
             </div>
 
+            <ProductOptionsEditor
+              categoryId={Number(form.categoryId) || null}
+              selectedValues={selectedValues}
+              variantData={variantData}
+              defaultPrice={Number(form.price) || 0}
+              defaultStock={Number(form.stock) || 0}
+              onValuesChange={handleValuesChange}
+              onVariantChange={handleVariantChange}
+            />
+
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-black">السعر والمخزون</h2>
+              <p className="mb-3 text-[11px] text-gray-500">
+                قيم افتراضية تُستخدم في التركيبات التي لم تحدد لها سعراً/مخزوناً.
+              </p>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -263,7 +311,9 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                 <input
                   type="checkbox"
                   checked={form.freeShipping}
-                  onChange={(e) => updateField("freeShipping", e.target.checked)}
+                  onChange={(e) =>
+                    updateField("freeShipping", e.target.checked)
+                  }
                   className="h-4 w-4 rounded border-gray-300 text-[#ff5c00] focus:ring-[#ff5c00]"
                 />
                 <span className="text-xs font-bold text-gray-700">

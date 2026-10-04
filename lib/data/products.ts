@@ -27,6 +27,7 @@ export type Product = {
   freeShipping: boolean;
   badge?: string;
   description: string;
+  hasOptions?: boolean;
 };
 
 export type CartItem = Product & {

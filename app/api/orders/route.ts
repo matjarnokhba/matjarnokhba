@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
 import { OrderService } from "@/services/order.service";
+import { IdempotencyService } from "@/lib/idempotency";
+import { rateLimit, formatRetryAfter } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
@@ -12,9 +14,23 @@ export async function POST(request: Request) {
       );
     }
 
+    // ═══ Rate Limit: 5 طلبات/دقيقة لكل مستخدم ═══
+    const limit = rateLimit(`orders:${current.user.id}`, 5, 60 * 1000);
+    if (!limit.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `طلبات كثيرة جداً. حاول بعد ${formatRetryAfter(
+            limit.retryAfterMs
+          )}`,
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
 
-    // ═══ التحقق الأساسي (بدون أسعار) ═══
+    // ═══ 1. التحقق من المدخلات أولاً ═══
     if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
         { success: false, message: "السلة فارغة" },
@@ -22,12 +38,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // كل item يجب أن يحتوي فقط: productId, variantId, quantity
+    if (body.items.length > 50) {
+      return NextResponse.json(
+        { success: false, message: "عدد المنتجات كبير جداً" },
+        { status: 400 }
+      );
+    }
+
     for (const item of body.items) {
       if (
         typeof item.productId !== "number" ||
         typeof item.variantId !== "number" ||
-        typeof item.quantity !== "number"
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        item.quantity > 100
       ) {
         return NextResponse.json(
           { success: false, message: "بيانات المنتج غير صحيحة" },
@@ -49,32 +73,80 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ Server يحسب كل شيء ═══
-    const orders = await OrderService.createOrder(current.user.id, {
-      items: body.items.map((item: any) => ({
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-      })),
-      couponCode: body.couponCode?.trim() || undefined,
-      address: {
-        fullName: addr.fullName.trim(),
-        phone: addr.phone.trim(),
-        city: addr.city.trim(),
-        street: addr.street.trim(),
-        postalCode: addr.postalCode?.trim() || undefined,
-      },
-      customer: {
-        id: current.user.id,
-        name: current.user.name,
-        email: current.user.email,
-      },
-    });
+    // ═══ 2. Idempotency ═══
+    const idempotencyKey =
+      request.headers.get("Idempotency-Key") || body.idempotencyKey;
 
-    return NextResponse.json(
-      { success: true, orders },
-      { status: 201 }
+    if (
+      !idempotencyKey ||
+      typeof idempotencyKey !== "string" ||
+      idempotencyKey.length < 8
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Idempotency-Key مطلوب (8 أحرف على الأقل)",
+        },
+        { status: 400 }
+      );
+    }
+
+    const idem = await IdempotencyService.check(
+      current.user.id,
+      "POST:/api/orders",
+      idempotencyKey,
+      { items: body.items, address: addr, couponCode: body.couponCode }
     );
+
+    if (idem.status === "cached") {
+      return NextResponse.json(idem.response, { status: idem.statusCode });
+    }
+    if (idem.status === "conflict") {
+      return NextResponse.json(
+        { success: false, message: idem.message },
+        { status: 409 }
+      );
+    }
+    if (idem.status === "in_progress") {
+      return NextResponse.json(
+        { success: false, message: idem.message },
+        { status: 429 }
+      );
+    }
+
+    // idem.status === "new"
+    try {
+      const orders = await OrderService.createOrder(current.user.id, {
+        items: body.items.map((item: any) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+        })),
+        couponCode: body.couponCode?.trim() || undefined,
+        address: {
+          fullName: addr.fullName.trim(),
+          phone: addr.phone.trim(),
+          city: addr.city.trim(),
+          street: addr.street.trim(),
+          postalCode:
+            typeof addr.postalCode === "string"
+              ? addr.postalCode.trim()
+              : undefined,
+        },
+        customer: {
+          id: current.user.id,
+          name: current.user.name,
+          email: current.user.email,
+        },
+      });
+
+      const payload = { success: true, orders };
+      await IdempotencyService.save(idem.id, payload, 201);
+      return NextResponse.json(payload, { status: 201 });
+    } catch (err) {
+      await IdempotencyService.clear(idem.id);
+      throw err;
+    }
   } catch (error) {
     console.error("Order API error:", error);
     const message =

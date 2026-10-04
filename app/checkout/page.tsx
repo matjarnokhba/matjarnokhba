@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -58,6 +58,15 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { items, subtotal, clearCart, isReady } = useCart();
 
+  // ═══════ Idempotency Key ═══════
+  const idempotencyKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID();
+    }
+  }, []);
+
   // ═══════ Form State ═══════
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -69,8 +78,8 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<{
-  orders: Array<{ orderNumber: string; sellerId: number }>;
-} | null>(null);
+    orders: Array<{ orderNumber: string; sellerId: number }>;
+  } | null>(null);
   const [search, setSearch] = useState("");
 
   // ═══════ الكوبون ═══════
@@ -162,9 +171,17 @@ export default function CheckoutPage() {
     setLoading(true);
 
     try {
+      // ═══ ضمان وجود Idempotency Key ═══
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = crypto.randomUUID();
+      }
+
       const response = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKeyRef.current,
+        },
         body: JSON.stringify({
           // ⚠️ Client يُرسل فقط: productId + variantId + quantity
           // Server يحسب كل الأسعار
@@ -450,7 +467,9 @@ export default function CheckoutPage() {
                     <input
                       type="text"
                       value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      onChange={(e) =>
+                        setCouponCode(e.target.value.toUpperCase())
+                      }
                       placeholder="أدخل الكود"
                       dir="ltr"
                       className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-sm outline-none focus:border-[#ff5c00] focus:bg-white"

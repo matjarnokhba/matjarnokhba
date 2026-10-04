@@ -8,21 +8,16 @@ import {
   CURRENCY,
   SHIPPING_FEE,
   FREE_SHIPPING_THRESHOLD,
-  type CartItem,
 } from "@/lib/data/products";
+import type { CartItemV2 } from "@/lib/hooks/useCart";
 
 type CartDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
-  items: CartItem[];
+  items: CartItemV2[];
   subtotal: number;
-  onQuantityChange: (
-    id: number,
-    color: string | undefined,
-    size: string | undefined,
-    delta: number
-  ) => void;
-  onRemove: (id: number, color: string | undefined, size: string | undefined) => void;
+  onQuantityChange: (variantId: number, delta: number) => void;
+  onRemove: (variantId: number) => void;
 };
 
 export default function CartDrawer({
@@ -35,7 +30,6 @@ export default function CartDrawer({
 }: CartDrawerProps) {
   const router = useRouter();
 
-  // ═══════ قفل التمرير في الخلفية ═══════
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -47,29 +41,24 @@ export default function CartDrawer({
     };
   }, [isOpen]);
 
-  // ═══════ ESC للإغلاق ═══════
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    if (isOpen) {
-      window.addEventListener("keydown", handleEsc);
-    }
+    if (isOpen) window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [isOpen, onClose]);
 
-  // ═══════ حساب الشحن ═══════
-  const shipping = subtotal > 0 && subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+  const shipping =
+    subtotal > 0 && subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const total = subtotal + shipping;
 
-  // ═══════ حساب التوفير المتبقي للشحن المجاني ═══════
   const remainingForFree = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
   const freeShippingPercent =
     subtotal >= FREE_SHIPPING_THRESHOLD
       ? 100
       : Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
 
-  // ═══════ إتمام الطلب ═══════
   function handleCheckout() {
     onClose();
     router.push("/checkout");
@@ -77,7 +66,6 @@ export default function CartDrawer({
 
   return (
     <>
-      {/* ═══════ Overlay ═══════ */}
       <div
         className={`fixed inset-0 z-50 bg-black/50 transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -86,14 +74,12 @@ export default function CartDrawer({
         aria-hidden={!isOpen}
       />
 
-      {/* ═══════ Drawer ═══════ */}
       <aside
         className={`fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         dir="rtl"
       >
-        {/* ═══════ Header ═══════ */}
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff4ed]">
@@ -115,9 +101,7 @@ export default function CartDrawer({
           </button>
         </div>
 
-        {/* ═══════ Content ═══════ */}
         {items.length === 0 ? (
-          /* سلة فارغة */
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
             <div className="text-6xl">🛒</div>
             <h3 className="mt-4 text-lg font-black">سلتك فارغة</h3>
@@ -134,7 +118,6 @@ export default function CartDrawer({
           </div>
         ) : (
           <>
-            {/* شريط تقدم الشحن المجاني */}
             <div className="border-b border-gray-100 bg-[#fff9f5] px-4 py-2.5">
               <div className="flex items-center gap-2 text-[11px]">
                 <Truck className="h-3.5 w-3.5 shrink-0 text-[#ff5c00]" />
@@ -160,34 +143,25 @@ export default function CartDrawer({
               </div>
             </div>
 
-            {/* قائمة المنتجات */}
             <div className="flex-1 overflow-y-auto px-4">
-              {items.map((item, idx) => (
+              {items.map((item) => (
                 <CartItemRow
-                  key={`${item.id}-${item.selectedColor || "none"}-${item.selectedSize || "none"}-${idx}`}
+                  key={item.variantId}
                   item={item}
                   onQuantityChange={(delta) =>
-                    onQuantityChange(
-                      item.id,
-                      item.selectedColor,
-                      item.selectedSize,
-                      delta
-                    )
+                    onQuantityChange(item.variantId, delta)
                   }
-                  onRemove={() =>
-                    onRemove(item.id, item.selectedColor, item.selectedSize)
-                  }
+                  onRemove={() => onRemove(item.variantId)}
                 />
               ))}
             </div>
 
-            {/* ═══════ الملخص + الإجراءات ═══════ */}
             <div className="border-t border-gray-100 bg-white p-4">
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between text-[#6b7280]">
                   <span>المجموع الفرعي</span>
                   <span className="font-bold text-[#111827]">
-                    {subtotal} {CURRENCY}
+                    {subtotal.toFixed(2)} {CURRENCY}
                   </span>
                 </div>
                 <div className="flex justify-between text-[#6b7280]">
@@ -205,7 +179,7 @@ export default function CartDrawer({
                 <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 text-sm">
                   <span className="font-bold">الإجمالي</span>
                   <span className="text-lg font-black text-[#ff5c00]">
-                    {total} {CURRENCY}
+                    {total.toFixed(2)} {CURRENCY}
                   </span>
                 </div>
               </div>
@@ -228,7 +202,6 @@ export default function CartDrawer({
           </>
         )}
 
-        {/* Safe Area للهواتف */}
         <div className="h-[env(safe-area-inset-bottom)] bg-white" />
       </aside>
     </>

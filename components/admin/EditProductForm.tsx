@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import ImageUploader from "./ImageUploader";
+import ProductOptionsEditor from "./ProductOptionsEditor";
 
 type Category = { id: number; name: string };
 
@@ -55,15 +56,69 @@ export default function EditProductForm({
     freeShipping: initialData.freeShipping,
   });
 
+  const [selectedValues, setSelectedValues] = useState<
+    Record<number, number[]>
+  >({});
+  const [variantData, setVariantData] = useState<
+    Record<string, { price: number; stock: number }>
+  >({});
+
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  // ═══ تحميل الخيارات ═══
+  useEffect(() => {
+    let cancelled = false;
+    setOptionsLoaded(false);
+
+    fetch(`/api/admin/products/${initialData.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.success && data.product) {
+          setSelectedValues(data.product.selectedValues || {});
+          setVariantData(data.product.variantData || {});
+        }
+      })
+      .catch((e) => console.error(e))
+      .finally(() => {
+        if (!cancelled) setOptionsLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialData.id]);
+
   function updateField(field: string, value: any) {
     setForm((f) => ({ ...f, [field]: value }));
     setSuccess(false);
+    if (field === "categoryId") {
+      setSelectedValues({});
+      setVariantData({});
+    }
+  }
+
+  function handleValuesChange(attributeId: number, valueIds: number[]) {
+    setSelectedValues((prev) => ({ ...prev, [attributeId]: valueIds }));
+  }
+
+  function handleVariantChange(
+    key: string,
+    field: "price" | "stock",
+    value: number
+  ) {
+    setVariantData((prev) => ({
+      ...prev,
+      [key]: {
+        price: prev[key]?.price ?? 0,
+        stock: prev[key]?.stock ?? 0,
+        [field]: value,
+      },
+    }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -106,6 +161,8 @@ export default function EditProductForm({
           stock: Number(form.stock) || 0,
           imageUrls: form.imageUrls,
           freeShipping: form.freeShipping,
+          selectedValues,
+          variantData,
         }),
       });
 
@@ -131,20 +188,16 @@ export default function EditProductForm({
   async function handleDelete() {
     setDeleting(true);
     setError("");
-
     try {
       const res = await fetch(`/api/admin/products/${initialData.id}`, {
         method: "DELETE",
       });
-
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         setError(data.message || "فشل الحذف");
         setDeleting(false);
         return;
       }
-
       router.push("/admin/products");
       router.refresh();
     } catch (err) {
@@ -169,7 +222,6 @@ export default function EditProductForm({
           <h1 className="text-2xl font-black text-gray-900">تعديل المنتج</h1>
           <p className="mt-1 text-sm text-gray-500">{initialData.name}</p>
         </div>
-
         <button
           onClick={() => setShowDeleteConfirm(true)}
           className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
@@ -181,14 +233,12 @@ export default function EditProductForm({
 
       <form onSubmit={handleSubmit} className="max-w-3xl">
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* اليسار */}
           <div className="space-y-4 lg:col-span-2">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
                 <Package className="h-4 w-4 text-[#ff5c00]" />
                 معلومات المنتج
               </h2>
-
               <div className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-bold text-gray-700">
@@ -202,7 +252,6 @@ export default function EditProductForm({
                     required
                   />
                 </div>
-
                 <div>
                   <label className="mb-1 block text-xs font-bold text-gray-700">
                     الرابط (slug) <span className="text-red-500">*</span>
@@ -216,19 +265,19 @@ export default function EditProductForm({
                     required
                   />
                 </div>
-
                 <div>
                   <label className="mb-1 block text-xs font-bold text-gray-700">
                     الوصف
                   </label>
                   <textarea
                     value={form.description}
-                    onChange={(e) => updateField("description", e.target.value)}
+                    onChange={(e) =>
+                      updateField("description", e.target.value)
+                    }
                     rows={3}
                     className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
                   />
                 </div>
-
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-bold text-gray-700">
@@ -256,9 +305,30 @@ export default function EditProductForm({
               </div>
             </div>
 
+            {optionsLoaded ? (
+              <ProductOptionsEditor
+                categoryId={Number(form.categoryId) || null}
+                selectedValues={selectedValues}
+                variantData={variantData}
+                defaultPrice={Number(form.price) || 0}
+                defaultStock={Number(form.stock) || 0}
+                onValuesChange={handleValuesChange}
+                onVariantChange={handleVariantChange}
+              />
+            ) : (
+              <div className="flex items-center justify-center rounded-xl bg-white p-8 shadow-sm">
+                <Loader2 className="h-5 w-5 animate-spin text-[#ff5c00]" />
+                <span className="mr-2 text-xs text-gray-500">
+                  جاري تحميل الخصائص...
+                </span>
+              </div>
+            )}
+
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-black">السعر والمخزون</h2>
-
+              <p className="mb-3 text-[11px] text-gray-500">
+                قيم افتراضية للتركيبات التي لم تحدد لها سعراً/مخزوناً.
+              </p>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-bold text-gray-700">
@@ -300,12 +370,13 @@ export default function EditProductForm({
                   />
                 </div>
               </div>
-
               <label className="mt-3 flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
                   checked={form.freeShipping}
-                  onChange={(e) => updateField("freeShipping", e.target.checked)}
+                  onChange={(e) =>
+                    updateField("freeShipping", e.target.checked)
+                  }
                   className="h-4 w-4 rounded border-gray-300 text-[#ff5c00] focus:ring-[#ff5c00]"
                 />
                 <span className="text-xs font-bold text-gray-700">
@@ -315,7 +386,6 @@ export default function EditProductForm({
             </div>
           </div>
 
-          {/* اليمين */}
           <div className="space-y-4 lg:col-span-1">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
@@ -352,7 +422,6 @@ export default function EditProductForm({
             {error}
           </div>
         )}
-
         {success && (
           <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             ✓ تم حفظ التغييرات بنجاح
@@ -362,7 +431,7 @@ export default function EditProductForm({
         <div className="mt-6 flex gap-3">
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !optionsLoaded}
             className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#e64a00] disabled:opacity-50"
           >
             {loading ? (
@@ -381,7 +450,6 @@ export default function EditProductForm({
         </div>
       </form>
 
-      {/* نافذة تأكيد الحذف */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
@@ -391,10 +459,6 @@ export default function EditProductForm({
             <h3 className="mt-4 text-lg font-black">تأكيد الحذف</h3>
             <p className="mt-2 text-sm text-gray-600">
               هل أنت متأكد من حذف "{initialData.name}"؟
-              <br />
-              <span className="text-xs text-gray-400">
-                (سيتم تعطيله وليس حذفه نهائياً)
-              </span>
             </p>
             <div className="mt-6 flex gap-2">
               <button

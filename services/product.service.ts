@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 
-// ═══════ Prisma type ═══════
 type PrismaProduct = {
   id: number;
   name: string;
@@ -21,6 +20,7 @@ type PrismaProduct = {
     discountPrice: unknown;
     inventory: { quantity: number } | null;
   }[];
+  _count: { options: number };
 };
 
 function formatProduct(p: PrismaProduct) {
@@ -51,10 +51,10 @@ function formatProduct(p: PrismaProduct) {
     stock: defaultVariant?.inventory?.quantity ?? 0,
     colors: undefined as string[] | undefined,
     sizes: undefined as string[] | undefined,
+    hasOptions: p._count.options > 0,
   };
 }
 
-// ═══════ Include موحّد ═══════
 const productInclude = {
   images: { orderBy: { order: "asc" as const } },
   category: { select: { slug: true, name: true } },
@@ -63,9 +63,35 @@ const productInclude = {
     where: { isDefault: true },
     include: { inventory: { select: { quantity: true } } },
   },
+  _count: { select: { options: true } },
 };
 
-// ═══════ شروط العرض العام ═══════
+const productDetailInclude = {
+  images: { orderBy: { order: "asc" as const } },
+  category: { select: { slug: true, name: true } },
+  seller: { select: { id: true, slug: true, storeName: true } },
+  options: {
+    orderBy: { order: "asc" as const },
+    include: {
+      values: { orderBy: { order: "asc" as const } },
+    },
+  },
+  variants: {
+    where: { isActive: true },
+    orderBy: [{ isDefault: "desc" as const }, { id: "asc" as const }],
+    include: {
+      inventory: { select: { quantity: true, reservedQuantity: true } },
+      optionValues: {
+        include: {
+          optionValue: {
+            include: { option: true },
+          },
+        },
+      },
+    },
+  },
+};
+
 const publicProductWhere = {
   status: "ACTIVE" as const,
   deletedAt: null,
@@ -73,6 +99,50 @@ const publicProductWhere = {
     status: "ACTIVE" as const,
     deletedAt: null,
   },
+};
+
+type FullDetail = {
+  id: number;
+  sellerId: number;
+  sellerSlug: string;
+  sellerName: string;
+  name: string;
+  slug: string;
+  description: string;
+  brand?: string;
+  badge?: string;
+  rating: number;
+  reviews: number;
+  sold: number;
+  freeShipping: boolean;
+  categoryId: string;
+  categoryName: string;
+  images: string[];
+  options: Array<{
+    id: number;
+    categoryAttributeId: number | null;
+    name: string;
+    type: string;
+    order: number;
+    values: Array<{
+      id: number;
+      value: string;
+      colorHex: string | null;
+      order: number;
+    }>;
+  }>;
+  variants: Array<{
+    id: number;
+    sku: string;
+    price: number;
+    oldPrice: number | null;
+    stock: number;
+    available: number;
+    isDefault: boolean;
+    optionsHash: string;
+    optionValueIds: number[];
+    optionValueLabels: string[];
+  }>;
 };
 
 export const ProductService = {
@@ -85,7 +155,6 @@ export const ProductService = {
     return products.map(formatProduct);
   },
 
-  // ⚠️ بحث بـ slug فقط (deprecated — قد يُرجع نتيجة غير دقيقة)
   async getBySlug(slug: string) {
     const product = await prisma.product.findFirst({
       where: { slug, ...publicProductWhere },
@@ -95,7 +164,6 @@ export const ProductService = {
     return formatProduct(product);
   },
 
-  // ✅ الجديدة: بحث دقيق بـ sellerSlug + productSlug
   async getBySlugAndSeller(productSlug: string, sellerSlug: string) {
     const product = await prisma.product.findFirst({
       where: {
@@ -112,6 +180,121 @@ export const ProductService = {
     });
     if (!product) return null;
     return formatProduct(product);
+  },
+
+  async getFullDetail(
+    productSlug: string,
+    sellerSlug: string
+  ): Promise<FullDetail | null> {
+    const product = await prisma.product.findFirst({
+      where: {
+        slug: productSlug,
+        seller: {
+          slug: sellerSlug,
+          status: "ACTIVE",
+          deletedAt: null,
+        },
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+      include: productDetailInclude,
+    });
+
+    if (!product) return null;
+
+    const attrIds = product.options
+      .map((o) => o.categoryAttributeId)
+      .filter((x): x is number => x !== null);
+
+    const catAttrs =
+      attrIds.length > 0
+        ? await prisma.categoryAttribute.findMany({
+            where: { id: { in: attrIds } },
+            include: { values: true },
+          })
+        : [];
+
+    const attrLookup = new Map<
+      number,
+      { type: string; colorByValue: Map<string, string | null> }
+    >();
+    for (const attr of catAttrs) {
+      const colorByValue = new Map<string, string | null>();
+      for (const v of attr.values) {
+        colorByValue.set(v.value, v.colorHex);
+      }
+      attrLookup.set(attr.id, { type: attr.type, colorByValue });
+    }
+
+    const options = product.options.map((o) => {
+      const lookup = o.categoryAttributeId
+        ? attrLookup.get(o.categoryAttributeId)
+        : null;
+      return {
+        id: o.id,
+        categoryAttributeId: o.categoryAttributeId,
+        name: o.name,
+        type: lookup?.type || "select",
+        order: o.order,
+        values: o.values.map((v) => ({
+          id: v.id,
+          value: v.value,
+          colorHex: lookup?.colorByValue.get(v.value) || null,
+          order: v.order,
+        })),
+      };
+    });
+
+    const variants = product.variants.map((v) => {
+      const optionValueIds: number[] = [];
+      const optionValueLabels: string[] = [];
+      const sortedOV = [...v.optionValues].sort(
+        (a, b) =>
+          (a.optionValue.option.order ?? 0) -
+          (b.optionValue.option.order ?? 0)
+      );
+      for (const ov of sortedOV) {
+        optionValueIds.push(ov.optionValueId);
+        optionValueLabels.push(ov.optionValue.value);
+      }
+
+      const qty = v.inventory?.quantity ?? 0;
+      const reserved = v.inventory?.reservedQuantity ?? 0;
+
+      return {
+        id: v.id,
+        sku: v.sku,
+        price: Number(v.price),
+        oldPrice: v.discountPrice ? Number(v.discountPrice) : null,
+        stock: qty,
+        available: Math.max(0, qty - reserved),
+        isDefault: v.isDefault,
+        optionsHash: v.optionsHash,
+        optionValueIds,
+        optionValueLabels,
+      };
+    });
+
+    return {
+      id: product.id,
+      sellerId: product.seller?.id || 0,
+      sellerSlug: product.seller?.slug || "",
+      sellerName: product.seller?.storeName || "",
+      name: product.name,
+      slug: product.slug,
+      description: product.description || "",
+      brand: product.brand || undefined,
+      badge: product.badge || undefined,
+      rating: product.rating,
+      reviews: product.reviewsCount,
+      sold: product.sold,
+      freeShipping: product.freeShipping,
+      categoryId: product.category?.slug || "",
+      categoryName: product.category?.name || "",
+      images: product.images.map((img) => img.url),
+      options,
+      variants,
+    };
   },
 
   async getFeatured(limit = 8) {

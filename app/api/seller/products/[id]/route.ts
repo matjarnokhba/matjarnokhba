@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
-// ═══════ حدود السعر — تُقارن ضد السعر الأصلي (originalPrice) ═══════
 const MIN_PRICE_RATIO = 0.5;
 const MAX_PRICE_RATIO = 2.0;
 
@@ -15,7 +14,6 @@ async function requireSellerOwnership(productId: number) {
   const product = await prisma.product.findUnique({
     where: { id: productId },
     include: {
-      variants: { where: { isDefault: true } },
       images: { orderBy: { order: "asc" } },
     },
   });
@@ -31,6 +29,18 @@ async function requireSellerOwnership(productId: number) {
   return { user: current.user, seller: current.user.seller, product };
 }
 
+function cartesian(lists: number[][]): number[][] {
+  if (lists.length === 0) return [[]];
+  return lists.reduce<number[][]>(
+    (acc, list) => {
+      const next: number[][] = [];
+      for (const e of acc) for (const v of list) next.push([...e, v]);
+      return next;
+    },
+    [[]]
+  );
+}
+
 const updateSchema = z.object({
   name: z.string().trim().min(2).max(200).optional(),
   slug: z.string().trim().min(2).max(200).optional(),
@@ -43,11 +53,19 @@ const updateSchema = z.object({
   stock: z.number().int().min(0).optional(),
   freeShipping: z.boolean().optional(),
   imageUrls: z.array(z.string().url()).min(1).max(5).optional(),
+  selectedValues: z.record(z.string(), z.array(z.number())).optional(),
+  variantData: z
+    .record(
+      z.string(),
+      z.object({
+        price: z.number().min(0).optional(),
+        stock: z.number().int().min(0).optional(),
+      })
+    )
+    .optional(),
 });
 
-// ═══════════════════════════════════════════
-// GET — تفاصيل منتج واحد
-// ═══════════════════════════════════════════
+// ═══════ GET ═══════
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -71,12 +89,62 @@ export async function GET(
     }
 
     const { product } = auth;
-    const variant = product.variants[0];
-    const inventory = variant
-      ? await prisma.inventory.findUnique({
-          where: { variantId: variant.id },
-        })
-      : null;
+
+    // ═══ جلب variants + options ═══
+    const [variants, options, categoryAttrs] = await Promise.all([
+      prisma.productVariant.findMany({
+        where: { productId, isActive: true },
+        orderBy: [{ isDefault: "desc" }, { id: "asc" }],
+        include: {
+          inventory: { select: { quantity: true } },
+          optionValues: true,
+        },
+      }),
+      prisma.productOption.findMany({
+        where: { productId },
+        include: { values: { orderBy: { order: "asc" } } },
+      }),
+      prisma.categoryAttribute.findMany({
+        where: { categoryId: product.categoryId },
+        include: { values: true },
+      }),
+    ]);
+
+    const defaultVariant =
+      variants.find((v) => v.isDefault) || variants[0] || null;
+
+    // ═══ بناء selectedValues و variantData ═══
+    const selectedValues: Record<number, number[]> = {};
+    const variantData: Record<string, { price: number; stock: number }> = {};
+
+    // خريطة: (attributeId + value string) → categoryAttributeValueId
+    const valueLookup = new Map<string, number>();
+    for (const attr of categoryAttrs) {
+      for (const v of attr.values) {
+        valueLookup.set(`${attr.id}:${v.value}`, v.id);
+      }
+    }
+
+    for (const opt of options) {
+      if (!opt.categoryAttributeId) continue;
+      const ids: number[] = [];
+      for (const pov of opt.values) {
+        const vid = valueLookup.get(
+          `${opt.categoryAttributeId}:${pov.value}`
+        );
+        if (vid) ids.push(vid);
+      }
+      if (ids.length > 0) {
+        selectedValues[opt.categoryAttributeId] = ids;
+      }
+    }
+
+    for (const v of variants) {
+      variantData[v.optionsHash] = {
+        price: Number(v.price),
+        stock: v.inventory?.quantity ?? 0,
+      };
+    }
 
     return NextResponse.json({
       success: true,
@@ -88,19 +156,21 @@ export async function GET(
         brand: product.brand || "",
         badge: product.badge || "",
         categoryId: product.categoryId,
-        price: variant ? Number(variant.price) : 0,
-        originalPrice: variant?.originalPrice
-          ? Number(variant.originalPrice)
-          : variant
-            ? Number(variant.price)
+        price: defaultVariant ? Number(defaultVariant.price) : 0,
+        originalPrice: defaultVariant?.originalPrice
+          ? Number(defaultVariant.originalPrice)
+          : defaultVariant
+            ? Number(defaultVariant.price)
             : 0,
-        oldPrice: variant?.discountPrice
-          ? Number(variant.discountPrice)
+        oldPrice: defaultVariant?.discountPrice
+          ? Number(defaultVariant.discountPrice)
           : null,
-        stock: inventory?.quantity || 0,
+        stock: defaultVariant?.inventory?.quantity || 0,
         freeShipping: product.freeShipping,
         imageUrls: product.images.map((i) => i.url),
         status: product.status,
+        selectedValues,
+        variantData,
       },
     });
   } catch (error) {
@@ -112,9 +182,7 @@ export async function GET(
   }
 }
 
-// ═══════════════════════════════════════════
-// PATCH — تعديل منتج (مع تسجيل كامل)
-// ═══════════════════════════════════════════
+// ═══════ PATCH ═══════
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -152,12 +220,35 @@ export async function PATCH(
 
     const data = parsed.data;
     const { product } = auth;
-    const variant = product.variants[0];
-    const currentInventory = variant
-      ? await prisma.inventory.findUnique({ where: { variantId: variant.id } })
-      : null;
 
-    // ═══════ التحقق من slug ═══════
+    // ═══ قراءات متوازية ═══
+    const [defaultVariant, currentInventory, existingVariants, categoryAttrs] =
+      await Promise.all([
+        prisma.productVariant.findFirst({
+          where: { productId, isDefault: true },
+        }),
+        prisma.productVariant
+          .findFirst({ where: { productId, isDefault: true } })
+          .then((v) =>
+            v
+              ? prisma.inventory.findUnique({ where: { variantId: v.id } })
+              : null
+          ),
+        prisma.productVariant.findMany({
+          where: { productId },
+          select: {
+            id: true,
+            optionsHash: true,
+            _count: { select: { orderItems: true } },
+          },
+        }),
+        prisma.categoryAttribute.findMany({
+          where: { categoryId: data.categoryId || product.categoryId, isActive: true },
+          include: { values: { where: { isActive: true } } },
+        }),
+      ]);
+
+    // ═══ التحقق من slug ═══
     let cleanSlug: string | undefined;
     if (data.slug && data.slug !== product.slug) {
       cleanSlug = data.slug
@@ -176,15 +267,13 @@ export async function PATCH(
       });
       if (duplicate) {
         return NextResponse.json(
-          { success: false, message: "الرابط (slug) مستخدم في منتجاتك" },
+          { success: false, message: "الرابط (slug) مستخدم" },
           { status: 400 }
         );
       }
     }
 
-    // ═══════════════════════════════════════════
-    // 📋 كشف كل التغييرات
-    // ═══════════════════════════════════════════
+    // ═══ كشف التغييرات ═══
     const changes: Array<{
       field: string;
       oldValue: any;
@@ -200,7 +289,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (cleanSlug && cleanSlug !== product.slug) {
       changes.push({
         field: "الرابط",
@@ -209,7 +297,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (
       data.description !== undefined &&
       (data.description || null) !== product.description
@@ -221,7 +308,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (data.brand !== undefined && (data.brand || null) !== product.brand) {
       changes.push({
         field: "الماركة",
@@ -230,7 +316,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (data.badge !== undefined && (data.badge || null) !== product.badge) {
       changes.push({
         field: "الشارة",
@@ -239,7 +324,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (data.categoryId && data.categoryId !== product.categoryId) {
       changes.push({
         field: "التصنيف",
@@ -248,7 +332,6 @@ export async function PATCH(
         sensitive: true,
       });
     }
-
     if (data.imageUrls && data.imageUrls.length > 0) {
       const currentUrls = product.images.map((i) => i.url);
       if (JSON.stringify(currentUrls) !== JSON.stringify(data.imageUrls)) {
@@ -261,14 +344,14 @@ export async function PATCH(
       }
     }
 
-    // ═══════ السعر — يُقارن ضد originalPrice ═══════
+    // ═══ السعر الأساسي (يُقارن ضد originalPrice) ═══
     let priceOutOfRange = false;
     let priceWarning: string | null = null;
 
-    if (data.price !== undefined && variant) {
-      const currentPrice = Number(variant.price);
-      const originalPrice = variant.originalPrice
-        ? Number(variant.originalPrice)
+    if (data.price !== undefined && defaultVariant) {
+      const currentPrice = Number(defaultVariant.price);
+      const originalPrice = defaultVariant.originalPrice
+        ? Number(defaultVariant.originalPrice)
         : currentPrice;
 
       if (data.price !== currentPrice) {
@@ -292,9 +375,9 @@ export async function PATCH(
       }
     }
 
-    if (data.oldPrice !== undefined) {
-      const currentOld = variant?.discountPrice
-        ? Number(variant.discountPrice)
+    if (data.oldPrice !== undefined && defaultVariant) {
+      const currentOld = defaultVariant.discountPrice
+        ? Number(defaultVariant.discountPrice)
         : null;
       const newOld = data.oldPrice || null;
       if (currentOld !== newOld) {
@@ -331,7 +414,74 @@ export async function PATCH(
       });
     }
 
-    // ═══════ هل يحتاج موافقة؟ ═══════
+    // ═══ تحضير الخصائص ═══
+    const selectedValues: Record<string, number[]> =
+      data.selectedValues || {};
+    const variantData: Record<string, { price?: number; stock?: number }> =
+      data.variantData || {};
+
+    type ActiveAttr = {
+      attributeId: number;
+      name: string;
+      order: number;
+      values: Array<{ id: number; value: string; order: number }>;
+    };
+
+    const activeAttrs: ActiveAttr[] = [];
+
+    for (const attr of categoryAttrs) {
+      const ids = selectedValues[String(attr.id)] || [];
+      if (ids.length === 0) continue;
+      const vals: Array<{ id: number; value: string; order: number }> = [];
+      ids.forEach((vid, idx) => {
+        const found = attr.values.find((v) => v.id === vid);
+        if (found) {
+          vals.push({ id: found.id, value: found.value, order: idx });
+        }
+      });
+      if (vals.length > 0) {
+        activeAttrs.push({
+          attributeId: attr.id,
+          name: attr.name,
+          order: attr.order,
+          values: vals,
+        });
+      }
+    }
+
+    const valueLists = activeAttrs.map((a) => a.values.map((v) => v.id));
+    const combos = cartesian(valueLists);
+
+    if (combos.length > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `عدد التركيبات كبير جداً (${combos.length}). الحد 100.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // ═══ هل تغيّرت الخصائص؟ (يحتاج مراجعة) ═══
+    const optionsChanged =
+      (body.selectedValues !== undefined || body.variantData !== undefined) &&
+      JSON.stringify(selectedValues) !== "{}";
+
+    if (optionsChanged) {
+      // نعتبره تعديلاً حسّاساً
+      const hasOptionsInChanges = changes.some(
+        (c) => c.field === "الخصائص"
+      );
+      if (!hasOptionsInChanges) {
+        changes.push({
+          field: "الخصائص",
+          oldValue: "(سابق)",
+          newValue: "(جديد)",
+          sensitive: true,
+        });
+      }
+    }
+
     const requiresReapproval = changes.some((c) => c.sensitive);
     const hasAnyChange = changes.length > 0;
 
@@ -342,146 +492,355 @@ export async function PATCH(
       });
     }
 
-    // ═══════ التعديل + تسجيل ═══════
-    await prisma.$transaction(async (tx) => {
-      await tx.product.update({
-        where: { id: productId },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(cleanSlug && { slug: cleanSlug }),
-          ...(data.description !== undefined && {
-            description: data.description || null,
-          }),
-          ...(data.brand !== undefined && { brand: data.brand || null }),
-          ...(data.badge !== undefined && { badge: data.badge || null }),
-          ...(data.categoryId && { categoryId: data.categoryId }),
-          ...(data.freeShipping !== undefined && {
-            freeShipping: data.freeShipping,
-          }),
-          ...(requiresReapproval && { status: "DRAFT" }),
-        },
-      });
+    const basePrice = data.price ?? (defaultVariant ? Number(defaultVariant.price) : 0);
+    const oldPrice =
+      data.oldPrice !== undefined
+        ? data.oldPrice
+        : defaultVariant?.discountPrice
+          ? Number(defaultVariant.discountPrice)
+          : null;
+    const baseStock = data.stock ?? currentInventory?.quantity ?? 0;
 
-      if (data.imageUrls && data.imageUrls.length > 0) {
-        await tx.productImage.deleteMany({ where: { productId } });
-        await tx.productImage.createMany({
-          data: data.imageUrls.map((url, idx) => ({
-            productId,
-            url,
-            order: idx,
-            isMain: idx === 0,
-          })),
+    const existingByHash = new Map(
+      existingVariants.map((v) => [v.optionsHash, v])
+    );
+    const newHashes = new Set(
+      combos.map((c) => [...c].sort((a, b) => a - b).join("|"))
+    );
+
+    // ═══ Transaction ═══
+    await prisma.$transaction(
+      async (tx) => {
+        // 1. المنتج
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            ...(data.name && { name: data.name }),
+            ...(cleanSlug && { slug: cleanSlug }),
+            ...(data.description !== undefined && {
+              description: data.description || null,
+            }),
+            ...(data.brand !== undefined && { brand: data.brand || null }),
+            ...(data.badge !== undefined && { badge: data.badge || null }),
+            ...(data.categoryId && { categoryId: data.categoryId }),
+            ...(data.freeShipping !== undefined && {
+              freeShipping: data.freeShipping,
+            }),
+            ...(requiresReapproval && { status: "DRAFT" }),
+          },
         });
-      }
 
-      if (variant) {
-        const variantUpdate: any = {
-          ...(data.price !== undefined && { price: data.price }),
-          ...(data.oldPrice !== undefined && {
-            discountPrice: data.oldPrice || null,
-          }),
-        };
-
-        // ⚠️ تعبئة originalPrice إن لم يكن موجوداً (للمنتجات القديمة)
-        if (data.price !== undefined && !variant.originalPrice) {
-          variantUpdate.originalPrice = Number(variant.price);
+        // 2. الصور
+        if (data.imageUrls && data.imageUrls.length > 0) {
+          await tx.productImage.deleteMany({ where: { productId } });
+          await tx.productImage.createMany({
+            data: data.imageUrls.map((url, idx) => ({
+              productId,
+              url,
+              order: idx,
+              isMain: idx === 0,
+            })),
+          });
         }
 
-        await tx.productVariant.update({
-          where: { id: variant.id },
-          data: variantUpdate,
+        // 3. حذف الخيارات القديمة
+        await tx.productOption.deleteMany({ where: { productId } });
+
+        // 4. حالة بدون خصائص
+        if (combos.length === 1 && combos[0].length === 0) {
+          if (defaultVariant) {
+            await tx.productVariant.update({
+              where: { id: defaultVariant.id },
+              data: {
+                price: basePrice,
+                originalPrice: defaultVariant.originalPrice ?? basePrice,
+                discountPrice: oldPrice,
+                isActive: true,
+                isDefault: true,
+              },
+            });
+            await tx.inventory.upsert({
+              where: { variantId: defaultVariant.id },
+              update: { quantity: baseStock },
+              create: {
+                variantId: defaultVariant.id,
+                quantity: baseStock,
+                reservedQuantity: 0,
+                lowStockThreshold: 5,
+              },
+            });
+          } else {
+            const d = variantData["DEFAULT"] || {};
+            await tx.productVariant.create({
+              data: {
+                productId,
+                sellerId: product.sellerId,
+                sku: `${product.slug}-default-${Date.now()}`,
+                price: d.price ?? basePrice,
+                originalPrice: basePrice,
+                discountPrice: oldPrice,
+                isDefault: true,
+                isActive: true,
+                optionsHash: "DEFAULT",
+                inventory: {
+                  create: {
+                    quantity: d.stock ?? baseStock,
+                    reservedQuantity: 0,
+                    lowStockThreshold: 5,
+                  },
+                },
+              },
+            });
+          }
+        } else {
+          // 5. إنشاء الخيارات الجديدة
+          const povMap = new Map<number, number>();
+
+          for (const attr of activeAttrs) {
+            const created = await tx.productOption.create({
+              data: {
+                productId,
+                categoryAttributeId: attr.attributeId,
+                name: attr.name,
+                order: attr.order,
+                values: {
+                  create: attr.values.map((v) => ({
+                    value: v.value,
+                    order: v.order,
+                  })),
+                },
+              },
+              include: { values: { orderBy: { order: "asc" } } },
+            });
+            attr.values.forEach((v, idx) => {
+              povMap.set(v.id, created.values[idx].id);
+            });
+          }
+
+          // 6. تحديث/إنشاء
+          const toUpdate: Array<{
+            combo: number[];
+            hash: string;
+            price: number;
+            stock: number;
+            isDefault: boolean;
+            variantId: number;
+          }> = [];
+          const toCreate: Array<{
+            combo: number[];
+            hash: string;
+            price: number;
+            stock: number;
+            isDefault: boolean;
+          }> = [];
+
+          combos.forEach((combo, i) => {
+            const hash = [...combo].sort((a, b) => a - b).join("|");
+            const custom = variantData[hash] || {};
+            const price = custom.price ?? basePrice;
+            const stock = custom.stock ?? baseStock;
+            const isDefault = i === 0;
+
+            const existing = existingByHash.get(hash);
+            if (existing) {
+              toUpdate.push({
+                combo,
+                hash,
+                price,
+                stock,
+                isDefault,
+                variantId: existing.id,
+              });
+            } else {
+              toCreate.push({ combo, hash, price, stock, isDefault });
+            }
+          });
+
+          // تحديث الموجود
+          for (const u of toUpdate) {
+            await tx.productVariant.update({
+              where: { id: u.variantId },
+              data: {
+                price: u.price,
+                originalPrice: basePrice,
+                discountPrice: oldPrice,
+                isActive: true,
+                isDefault: u.isDefault,
+              },
+            });
+
+            await tx.productVariantOptionValue.deleteMany({
+              where: { variantId: u.variantId },
+            });
+            const newLinks: Array<{ optionValueId: number }> = [];
+            for (const cvId of u.combo) {
+              const povId = povMap.get(cvId);
+              if (povId) newLinks.push({ optionValueId: povId });
+            }
+            if (newLinks.length > 0) {
+              await tx.productVariantOptionValue.createMany({
+                data: newLinks.map((l) => ({
+                  variantId: u.variantId,
+                  optionValueId: l.optionValueId,
+                })),
+              });
+            }
+
+            await tx.inventory.upsert({
+              where: { variantId: u.variantId },
+              update: { quantity: u.stock },
+              create: {
+                variantId: u.variantId,
+                quantity: u.stock,
+                reservedQuantity: 0,
+                lowStockThreshold: 5,
+              },
+            });
+          }
+
+          // إنشاء الجديدة دفعة واحدة
+          if (toCreate.length > 0) {
+            const ts = Date.now();
+            const created = await tx.productVariant.createManyAndReturn({
+              data: toCreate.map((c, i) => ({
+                productId,
+                sellerId: product.sellerId,
+                sku: `${product.slug}-${i}-${ts}`,
+                price: c.price,
+                originalPrice: basePrice,
+                discountPrice: oldPrice,
+                isDefault: c.isDefault,
+                isActive: true,
+                optionsHash: c.hash,
+              })),
+              select: { id: true },
+            });
+
+            await tx.inventory.createMany({
+              data: created.map((v, i) => ({
+                variantId: v.id,
+                quantity: toCreate[i].stock,
+                reservedQuantity: 0,
+                lowStockThreshold: 5,
+              })),
+            });
+
+            const links: Array<{
+              variantId: number;
+              optionValueId: number;
+            }> = [];
+            created.forEach((v, i) => {
+              for (const cvId of toCreate[i].combo) {
+                const povId = povMap.get(cvId);
+                if (povId)
+                  links.push({ variantId: v.id, optionValueId: povId });
+              }
+            });
+            if (links.length > 0) {
+              await tx.productVariantOptionValue.createMany({ data: links });
+            }
+          }
+        }
+
+        // 7. حذف/تعطيل variants القديمة
+        const toDeactivate: number[] = [];
+        const toDelete: number[] = [];
+
+        for (const v of existingVariants) {
+          if (newHashes.has(v.optionsHash)) continue;
+          if (v._count.orderItems > 0) toDeactivate.push(v.id);
+          else toDelete.push(v.id);
+        }
+
+        if (toDeactivate.length > 0) {
+          await tx.productVariant.updateMany({
+            where: { id: { in: toDeactivate } },
+            data: { isActive: false },
+          });
+        }
+        if (toDelete.length > 0) {
+          await tx.productVariant.deleteMany({
+            where: { id: { in: toDelete } },
+          });
+        }
+
+        // 8. سجل التعديل
+        await tx.productEditLog.create({
+          data: {
+            productId,
+            sellerId: auth.seller.id,
+            changedFields: changes.map((c) => c.field),
+            oldValues: Object.fromEntries(
+              changes.map((c) => [c.field, c.oldValue])
+            ),
+            newValues: Object.fromEntries(
+              changes.map((c) => [c.field, c.newValue])
+            ),
+            requiresReapproval,
+            reason: priceWarning || null,
+          },
         });
 
-        if (data.stock !== undefined) {
-          await tx.inventory.upsert({
-            where: { variantId: variant.id },
-            update: { quantity: data.stock },
-            create: {
-              variantId: variant.id,
-              quantity: data.stock,
-              reservedQuantity: 0,
-              lowStockThreshold: 5,
+        // 9. إشعار للتاجر
+        if (requiresReapproval) {
+          await tx.notification.create({
+            data: {
+              userId: auth.user.id,
+              type: "SELLER_PRODUCT_NEEDS_REVIEW",
+              title: "منتجك بانتظار إعادة الموافقة",
+              message: `تم تعديل: ${changes
+                .filter((c) => c.sensitive)
+                .map((c) => c.field)
+                .join(", ")}${priceWarning ? ` · ${priceWarning}` : ""}`,
+              link: `/seller/products/${productId}`,
             },
           });
         }
-      }
 
-      // ═══ سجل التعديل ═══
-      await tx.productEditLog.create({
-        data: {
-          productId,
-          sellerId: auth.seller.id,
-          changedFields: changes.map((c) => c.field),
-          oldValues: Object.fromEntries(
-            changes.map((c) => [c.field, c.oldValue])
-          ),
-          newValues: Object.fromEntries(
-            changes.map((c) => [c.field, c.newValue])
-          ),
-          requiresReapproval,
-          reason: priceWarning || null,
-        },
-      });
-
-      // ═══ إشعار للتاجر ═══
-      if (requiresReapproval) {
-        await tx.notification.create({
-          data: {
-            userId: auth.user.id,
-            type: "SELLER_PRODUCT_NEEDS_REVIEW",
-            title: "منتجك بانتظار إعادة الموافقة",
-            message: `تم تعديل: ${changes
-              .filter((c) => c.sensitive)
-              .map((c) => c.field)
-              .join(", ")}${priceWarning ? ` · ${priceWarning}` : ""}`,
-            link: `/seller/products/${productId}`,
+        // 10. إشعار للأدمن
+        const admins = await tx.user.findMany({
+          where: {
+            role: { in: ["ADMIN", "SUPER_ADMIN"] },
+            deletedAt: null,
           },
+          select: { id: true },
         });
-      }
 
-      // ═══ إشعار للأدمن (دائماً) ═══
-      const admins = await tx.user.findMany({
-        where: {
-          role: { in: ["ADMIN", "SUPER_ADMIN"] },
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
+        const changedFieldNames = changes.map((c) => c.field).join(", ");
 
-      const changedFieldNames = changes.map((c) => c.field).join(", ");
-
-      for (const admin of admins) {
-        await tx.notification.create({
-          data: {
-            userId: admin.id,
-            type: requiresReapproval
-              ? "SELLER_PRODUCT_NEEDS_REVIEW"
-              : "SELLER_PRODUCT_EDITED",
-            title: requiresReapproval
-              ? "⚠️ منتج يحتاج مراجعة"
-              : "✏️ منتج تم تعديله",
-            message: `بائع "${auth.seller.storeName}" عدّل "${product.name}": ${changedFieldNames}${
-              priceWarning ? ` · ${priceWarning}` : ""
-            }`,
-            link: requiresReapproval
-              ? `/admin/products/pending`
-              : `/admin/products/${productId}`,
-            category: "PRODUCT",
-            severity: requiresReapproval ? "WARNING" : "INFO",
-            metadata: {
-              productId,
-              productName: product.name,
-              sellerId: auth.seller.id,
-              sellerName: auth.seller.storeName,
-              changedFields: changes.map((c) => c.field),
-              changes: changes,
-              priceWarning: priceWarning,
-              requiresReapproval: requiresReapproval,
+        for (const admin of admins) {
+          await tx.notification.create({
+            data: {
+              userId: admin.id,
+              type: requiresReapproval
+                ? "SELLER_PRODUCT_NEEDS_REVIEW"
+                : "SELLER_PRODUCT_EDITED",
+              title: requiresReapproval
+                ? "⚠️ منتج يحتاج مراجعة"
+                : "✏️ منتج تم تعديله",
+              message: `بائع "${auth.seller.storeName}" عدّل "${product.name}": ${changedFieldNames}${
+                priceWarning ? ` · ${priceWarning}` : ""
+              }`,
+              link: requiresReapproval
+                ? `/admin/products/pending`
+                : `/admin/products/${productId}`,
+              category: "PRODUCT",
+              severity: requiresReapproval ? "WARNING" : "INFO",
+              metadata: {
+                productId,
+                productName: product.name,
+                sellerId: auth.seller.id,
+                sellerName: auth.seller.storeName,
+                changedFields: changes.map((c) => c.field),
+                priceWarning,
+                requiresReapproval,
+              },
             },
-          },
-        });
-      }
-    });
+          });
+        }
+      },
+      { timeout: 30000, maxWait: 10000 }
+    );
 
     return NextResponse.json({
       success: true,
@@ -501,9 +860,7 @@ export async function PATCH(
   }
 }
 
-// ═══════════════════════════════════════════
-// DELETE — Soft Delete
-// ═══════════════════════════════════════════
+// ═══════ DELETE ═══════
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }

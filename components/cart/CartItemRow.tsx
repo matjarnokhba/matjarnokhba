@@ -2,10 +2,10 @@
 
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { CURRENCY } from "@/lib/data/products";
-import type { CartItem } from "@/lib/data/products";
+import type { CartItemV2 } from "@/lib/hooks/useCart";
 
 type CartItemRowProps = {
-  item: CartItem;
+  item: CartItemV2;
   onQuantityChange: (delta: number) => void;
   onRemove: () => void;
 };
@@ -16,6 +16,9 @@ export default function CartItemRow({
   onRemove,
 }: CartItemRowProps) {
   const totalPrice = item.price * item.quantity;
+  const atMax =
+    typeof item.stockSnapshot === "number" &&
+    item.quantity >= item.stockSnapshot;
 
   return (
     <div className="flex gap-3 border-b border-gray-100 py-3 last:border-0">
@@ -30,7 +33,6 @@ export default function CartItemRow({
 
       {/* التفاصيل */}
       <div className="flex min-w-0 flex-1 flex-col justify-between">
-        {/* الاسم + الحذف */}
         <div className="flex items-start justify-between gap-2">
           <h3 className="line-clamp-2 text-xs font-bold leading-tight text-[#111827]">
             {item.name}
@@ -44,25 +46,21 @@ export default function CartItemRow({
           </button>
         </div>
 
-        {/* اللون والمقاس */}
-        {(item.selectedColor || item.selectedSize) && (
-          <div className="mt-1 flex gap-2 text-[10px] text-[#6b7280]">
+        {/* الخصائص (label) */}
+        {item.variantLabel && (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[#6b7280]">
             {item.selectedColor && (
-              <span className="flex items-center gap-1">
-                اللون:
-                <span
-                  className="inline-block h-3 w-3 rounded-full border border-gray-200"
-                  style={{ backgroundColor: item.selectedColor }}
-                />
-              </span>
+              <span
+                className="inline-block h-3 w-3 rounded-full border border-gray-200"
+                style={{ backgroundColor: getColorHex(item.selectedColor) }}
+              />
             )}
-            {item.selectedSize && <span>المقاس: {item.selectedSize}</span>}
+            <span>{item.variantLabel}</span>
           </div>
         )}
 
         {/* السعر + الكمية */}
         <div className="mt-2 flex items-center justify-between gap-2">
-          {/* الكمية */}
           <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
             <button
               onClick={() => onQuantityChange(-1)}
@@ -75,18 +73,18 @@ export default function CartItemRow({
               {item.quantity}
             </span>
             <button
-              onClick={() => onQuantityChange(1)}
-              className="flex h-6 w-6 items-center justify-center text-gray-500 transition hover:bg-gray-50"
+              onClick={() => !atMax && onQuantityChange(1)}
+              disabled={atMax}
+              className="flex h-6 w-6 items-center justify-center text-gray-500 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-30"
               aria-label="زيادة"
             >
               <Plus className="h-3 w-3" />
             </button>
           </div>
 
-          {/* السعر الإجمالي */}
           <div className="text-left">
             <strong className="text-sm font-black text-[#ff5c00]">
-              {totalPrice}
+              {totalPrice.toFixed(2)}
             </strong>
             <span className="mr-1 text-[10px] text-[#6b7280]">
               {CURRENCY}
@@ -96,4 +94,37 @@ export default function CartItemRow({
       </div>
     </div>
   );
+}
+
+// ═══ ربط سريع لألوان القيم الشائعة (للعرض فقط) ═══
+function getColorHex(value: string): string {
+  const map: Record<string, string> = {
+    أسود: "#000000",
+    أبيض: "#FFFFFF",
+    رمادي: "#808080",
+    فضي: "#C0C0C0",
+    أحمر: "#EF4444",
+    خمري: "#722F37",
+    عنابي: "#7F1D1D",
+    وردي: "#EC4899",
+    زهري: "#FFB6C1",
+    برتقالي: "#F97316",
+    أصفر: "#FACC15",
+    ذهبي: "#EAB308",
+    بني: "#78350F",
+    بيج: "#F5F5DC",
+    كريمي: "#FFFDD0",
+    كاشمير: "#D4B5A0",
+    نحاسي: "#B87333",
+    أخضر: "#22C55E",
+    "أخضر داكن": "#15803D",
+    زيتي: "#808000",
+    أزرق: "#3B82F6",
+    كحلي: "#1E3A8A",
+    سماوي: "#87CEEB",
+    تركوازي: "#06B6D4",
+    نيلي: "#4F46E5",
+    بنفسجي: "#8B5CF6",
+  };
+  return map[value] || "#ccc";
 }

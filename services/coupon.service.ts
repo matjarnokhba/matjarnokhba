@@ -12,8 +12,20 @@ type ValidateResult = {
   discount?: number;
 };
 
+// ═══ حساب الخصم من كوبون (دالة مشتركة) ═══
+function calcDiscount(
+  type: "PERCENTAGE" | "FIXED",
+  value: number,
+  subtotal: number
+): number {
+  let discount = type === "PERCENTAGE" ? (subtotal * value) / 100 : value;
+  if (discount > subtotal) discount = subtotal;
+  if (discount < 0) discount = 0;
+  return Math.round(discount * 100) / 100;
+}
+
 export const CouponService = {
-  // ═══════ التحقق من كود كوبون ═══════
+  // ═══════ تحقق للعرض المسبق (Client Preview — غير موثوق) ═══════
   async validate(
     code: string,
     userId: number,
@@ -25,14 +37,11 @@ export const CouponService = {
       return { valid: false, message: "أدخل كود الكوبون" };
     }
 
-    const coupon = await prisma.coupon.findFirst({
-      where: {
-        code: cleanCode,
-        deletedAt: null,
-      },
+    const coupon = await prisma.coupon.findUnique({
+      where: { code: cleanCode },
     });
 
-    if (!coupon) {
+    if (!coupon || coupon.deletedAt) {
       return { valid: false, message: "كود غير صحيح" };
     }
 
@@ -59,7 +68,6 @@ export const CouponService = {
       return { valid: false, message: "تم استهلاك الكوبون بالكامل" };
     }
 
-    // عدد استخدامات المستخدم
     const userUsageCount = await prisma.couponUsage.count({
       where: { couponId: coupon.id, userId },
     });
@@ -68,18 +76,8 @@ export const CouponService = {
       return { valid: false, message: "لقد استخدمت هذا الكوبون من قبل" };
     }
 
-    // حساب الخصم
     const couponValue = Number(coupon.value);
-    let discount = 0;
-
-    if (coupon.type === "PERCENTAGE") {
-      discount = (subtotal * couponValue) / 100;
-    } else {
-      discount = couponValue;
-    }
-
-    // الخصم لا يتجاوز subtotal
-    if (discount > subtotal) discount = subtotal;
+    const discount = calcDiscount(coupon.type, couponValue, subtotal);
 
     return {
       valid: true,
@@ -89,18 +87,83 @@ export const CouponService = {
         type: coupon.type,
         value: couponValue,
       },
-      discount: Math.round(discount * 100) / 100,
+      discount,
     };
   },
 
-  // ═══════ تطبيق كوبون (داخل Transaction) ═══════
-  async applyInTransaction(
+  // ═══════ قفل + تحقق داخل Transaction (آمن ضد Race) ═══════
+  async lockAndValidateInTransaction(
+    tx: any,
+    code: string,
+    userId: number,
+    subtotal: number
+  ): Promise<{ couponId: number; discount: number }> {
+    const cleanCode = code.trim().toUpperCase();
+
+    // 1. قفل صف الكوبون
+    const rows: any[] = await tx.$queryRaw`
+      SELECT id
+      FROM "Coupon"
+      WHERE code = ${cleanCode} AND "deletedAt" IS NULL
+      FOR UPDATE
+    `;
+
+    if (!rows[0]) {
+      throw new Error("كود غير صحيح");
+    }
+
+    const coupon = await tx.coupon.findUnique({
+      where: { id: rows[0].id },
+    });
+
+    if (!coupon) {
+      throw new Error("كود غير صحيح");
+    }
+
+    // 2. إعادة التحقق الكامل داخل tx
+    if (!coupon.isActive) {
+      throw new Error("الكوبون غير مفعّل");
+    }
+
+    const now = new Date();
+    if (now < coupon.startDate) {
+      throw new Error("الكوبون لم يبدأ بعد");
+    }
+    if (now > coupon.endDate) {
+      throw new Error("انتهت صلاحية الكوبون");
+    }
+
+    if (coupon.minOrderAmount && subtotal < Number(coupon.minOrderAmount)) {
+      throw new Error(`الحد الأدنى للطلب ${coupon.minOrderAmount} د.م`);
+    }
+
+    if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+      throw new Error("تم استهلاك الكوبون بالكامل");
+    }
+
+    const userUsageCount = await tx.couponUsage.count({
+      where: { couponId: coupon.id, userId },
+    });
+
+    if (userUsageCount >= coupon.maxUsesPerUser) {
+      throw new Error("لقد استخدمت هذا الكوبون من قبل");
+    }
+
+    // 3. حساب الخصم
+    const couponValue = Number(coupon.value);
+    const discount = calcDiscount(coupon.type, couponValue, subtotal);
+
+    return { couponId: coupon.id, discount };
+  },
+
+  // ═══════ تسجيل الاستخدام داخل Transaction ═══════
+  async recordUsageInTransaction(
     tx: any,
     couponId: number,
     userId: number,
     orderId: number,
     discount: number
-  ) {
+  ): Promise<void> {
     await tx.coupon.update({
       where: { id: couponId },
       data: { usedCount: { increment: 1 } },
