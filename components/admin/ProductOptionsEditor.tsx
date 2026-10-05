@@ -479,8 +479,8 @@ export default function ProductOptionsEditor({
           </span>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-gray-200">
-          <table className="w-full text-xs">
+        <div className="w-full overflow-x-auto rounded-lg border border-gray-200">
+          <table className="w-full min-w-[340px] text-xs">
             <thead className="bg-gray-50">
               <tr>
                 {attributes

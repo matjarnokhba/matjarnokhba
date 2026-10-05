@@ -9,14 +9,10 @@ export default async function SellerLayout({
 }) {
   const current = await SessionService.getCurrent();
 
-  // 1) لا جلسة → تسجيل الدخول
-  if (!current) {
-    redirect("/login");
-  }
+  if (!current) redirect("/login");
 
   const { user } = current;
 
-  // 2) ليس SELLER ولا ADMIN → الرئيسية
   if (
     user.role !== "SELLER" &&
     user.role !== "ADMIN" &&
@@ -25,18 +21,19 @@ export default async function SellerLayout({
     redirect("/");
   }
 
-  // 3) لا يوجد Seller → onboarding
   if (!user.seller) {
     redirect("/seller-onboarding");
   }
 
-  // 4) حساب معطّل
   if (
     user.seller.status === "SUSPENDED" ||
     user.seller.status === "CLOSED"
   ) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6" dir="rtl">
+      <div
+        className="flex min-h-screen items-center justify-center bg-gray-50 p-6"
+        dir="rtl"
+      >
         <div className="max-w-md text-center">
           <div className="text-6xl">🚫</div>
           <h1 className="mt-4 text-2xl font-black text-gray-900">
@@ -50,15 +47,19 @@ export default async function SellerLayout({
     );
   }
 
-  // ✅ يمر
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
+    <div
+      className="min-h-screen w-full overflow-x-hidden bg-gray-50"
+      dir="rtl"
+    >
       <SellerSidebar
         storeName={user.seller.storeName}
         storeSlug={user.seller.slug}
         isVerified={user.seller.isVerified}
       />
-      <main className="lg:mr-64">{children}</main>
+      <main className="min-w-0 overflow-x-hidden lg:mr-64">
+        {children}
+      </main>
     </div>
   );
 }

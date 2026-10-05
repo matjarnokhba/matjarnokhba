@@ -11,28 +11,26 @@ export default async function AdminLayout({
 }) {
   const current = await SessionService.getCurrent();
 
-  // غير مسجل دخول
   if (!current) {
     redirect("/login");
   }
 
-  // ليس Admin
   if (current.user.role !== "ADMIN" && current.user.role !== "SUPER_ADMIN") {
     redirect("/");
   }
 
   return (
-    <div className="min-h-screen bg-gray-100" dir="rtl">
-      <div className="flex">
-        <AdminSidebar
-          userName={current.user.name}
-          userRole={current.user.role}
-        />
-
-        <main className="flex-1 overflow-x-hidden lg:mr-64">
-          {children}
-        </main>
-      </div>
+    <div
+      className="min-h-screen w-full overflow-x-hidden bg-gray-100"
+      dir="rtl"
+    >
+      <AdminSidebar
+        userName={current.user.name}
+        userRole={current.user.role}
+      />
+      <main className="min-w-0 overflow-x-hidden lg:mr-64">
+        {children}
+      </main>
     </div>
   );
 }

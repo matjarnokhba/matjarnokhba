@@ -323,7 +323,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
             </div>
           </div>
 
-          <div className="space-y-4 lg:col-span-1">
+          <div className="min-w-0 space-y-4 lg:col-span-1">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
                 التصنيف <span className="text-red-500">*</span>

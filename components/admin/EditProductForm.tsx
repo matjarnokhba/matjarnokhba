@@ -232,8 +232,8 @@ export default function EditProductForm({
       </div>
 
       <form onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl">
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
+        <div className="grid w-full min-w-0 gap-4 lg:grid-cols-3">
+          <div className="min-w-0 space-y-4 lg:col-span-2">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
                 <Package className="h-4 w-4 text-[#ff5c00]" />
@@ -386,7 +386,7 @@ export default function EditProductForm({
             </div>
           </div>
 
-          <div className="space-y-4 lg:col-span-1">
+          <div className="min-w-0 space-y-4 lg:col-span-1">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
                 التصنيف <span className="text-red-500">*</span>

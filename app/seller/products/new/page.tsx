@@ -166,7 +166,7 @@ export default function NewSellerProductPage() {
   }
 
   return (
-    <div className="p-4 pt-16 lg:p-8 lg:pt-8">
+    <div className="w-full max-w-full overflow-x-hidden px-3 pb-8 pt-16 sm:px-4 lg:px-8 lg:pt-8">
       <Link
         href="/seller/products"
         className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-[#ff5c00]"
@@ -182,8 +182,8 @@ export default function NewSellerProductPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="max-w-3xl">
-        <div className="grid gap-4 lg:grid-cols-3">
+      <form onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl">
+        <div className="grid w-full min-w-0 gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
@@ -343,7 +343,7 @@ export default function NewSellerProductPage() {
             </div>
           </div>
 
-          <div className="space-y-4 lg:col-span-1">
+          <div className="min-w-0 space-y-4 lg:col-span-1">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-black">
                 التصنيف <span className="text-red-500">*</span>
