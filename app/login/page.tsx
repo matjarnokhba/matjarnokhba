@@ -31,7 +31,9 @@ export default function LoginPage() {
         return;
       }
 
-      // ═══ نجاح → redirect حسب role ═══
+      // ⭐ إخبار جميع Providers بتغيير الحساب — قبل أي redirect
+      window.dispatchEvent(new CustomEvent("nokhba:auth-changed"));
+
       const role = data.user?.role;
 
       if (role === "SELLER") {
@@ -94,13 +96,13 @@ export default function LoginPage() {
           )}
 
           <div className="text-left">
-              <Link
-                href="/forgot-password"
-                className="text-xs font-bold text-[#ff5c00] hover:underline"
-              >
-                نسيت كلمة المرور؟
-              </Link>
-            </div>
+            <Link
+              href="/forgot-password"
+              className="text-xs font-bold text-[#ff5c00] hover:underline"
+            >
+              نسيت كلمة المرور؟
+            </Link>
+          </div>
 
           <button
             type="submit"

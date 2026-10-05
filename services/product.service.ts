@@ -338,6 +338,33 @@ export const ProductService = {
     });
     return products.map(formatProduct);
   },
+
+  // ═══════════════════════════════════════════
+  // ⭐ الدالة الجديدة — الخطوة 3
+  // ═══════════════════════════════════════════
+  async getFavoritesByUser(userId: number) {
+    const favorites = await prisma.favorite.findMany({
+      where: {
+        userId,
+        product: {
+          status: "ACTIVE",
+          deletedAt: null,
+          seller: {
+            status: "ACTIVE",
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        product: {
+          include: productInclude,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return favorites.map((f) => formatProduct(f.product as any));
+  },
 };
 
 export const CategoryService = {

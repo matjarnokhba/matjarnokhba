@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, Package, Truck, CheckCircle2, RotateCcw, Loader2 } from "lucide-react";
+import {
+  Bell,
+  Package,
+  Truck,
+  CheckCircle2,
+  RotateCcw,
+  Loader2,
+} from "lucide-react";
 
 type Notification = {
   id: number;
@@ -24,7 +31,13 @@ const TYPE_ICONS: Record<string, any> = {
   RETURN_REJECTED: RotateCcw,
 };
 
-export default function NotificationDropdown() {
+type NotificationDropdownProps = {
+  compact?: boolean;
+};
+
+export default function NotificationDropdown({
+  compact = false,
+}: NotificationDropdownProps) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -32,7 +45,6 @@ export default function NotificationDropdown() {
   const [user, setUser] = useState<any>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // ═══ تحميل المستخدم + العدد الأولي ═══
   useEffect(() => {
     async function checkUser() {
       try {
@@ -49,14 +61,12 @@ export default function NotificationDropdown() {
     checkUser();
   }, []);
 
-  // ═══ Polling كل 60 ثانية لعدّاد الإشعارات ═══
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => loadNotifications(true), 60000);
     return () => clearInterval(interval);
   }, [user]);
 
-  // ═══ إغلاق عند النقر خارج ═══
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -93,35 +103,37 @@ export default function NotificationDropdown() {
     try {
       await fetch("/api/notifications/read-all", { method: "POST" });
       setUnreadCount(0);
-      setNotifications((prev) =>
-        prev.map((n) => ({ ...n, isRead: true }))
-      );
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     } catch {
       // silent
     }
   }
 
   async function handleClickNotification(id: number, link: string | null) {
-    // mark as read locally
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
     );
     if (unreadCount > 0) setUnreadCount((c) => c - 1);
 
-    // fire-and-forget على السيرفر
     fetch(`/api/notifications/${id}`, { method: "PATCH" }).catch(() => {});
 
-    // router push يدوياً للرابط (بدون Link لأنه dynamic)
     if (link) {
       window.location.href = link;
     }
   }
 
-  // ═══ إذا لا يوجد مستخدم، لا تُظهر شيئاً ═══
   if (!user) {
     return (
-      <div className="flex h-8 w-8 items-center justify-center sm:h-9 sm:w-9">
-        <Bell className="h-[18px] w-[18px] text-gray-400" />
+      <div
+        className={`flex items-center justify-center transition-all duration-300 ${
+          compact ? "h-7 w-7" : "h-8 w-8 sm:h-9 sm:w-9"
+        }`}
+      >
+        <Bell
+          className={`text-gray-400 transition-all duration-300 ${
+            compact ? "h-4 w-4" : "h-[18px] w-[18px]"
+          }`}
+        />
       </div>
     );
   }
@@ -130,20 +142,31 @@ export default function NotificationDropdown() {
     <div className="relative" ref={ref}>
       <button
         onClick={handleOpen}
-        className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
+        className={`relative flex items-center justify-center rounded-full transition-all duration-300 hover:bg-gray-100 ${
+          compact ? "h-7 w-7" : "h-8 w-8 sm:h-9 sm:w-9"
+        }`}
         aria-label="الإشعارات"
       >
-        <Bell className="h-[18px] w-[18px] text-[#111827]" />
+        <Bell
+          className={`text-[#111827] transition-all duration-300 ${
+            compact ? "h-4 w-4" : "h-[18px] w-[18px]"
+          }`}
+        />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+          <span
+            className={`absolute -right-0.5 -top-0.5 flex items-center justify-center rounded-full bg-red-500 px-1 font-bold text-white transition-all duration-300 ${
+              compact
+                ? "h-3.5 min-w-3.5 text-[8px]"
+                : "h-4 min-w-4 text-[9px]"
+            }`}
+          >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
-          {/* رأس */}
+        <div className="fixed left-2 top-[5.5rem] z-[70] flex max-h-[56vh] w-[290px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-2xl md:right-auto md:left-4 md:top-[4.25rem] md:max-h-[520px] md:w-[420px] md:max-w-[calc(100vw-2rem)]">
           <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-3 py-2.5">
             <span className="text-sm font-black">الإشعارات</span>
             {unreadCount > 0 && (
@@ -156,8 +179,7 @@ export default function NotificationDropdown() {
             )}
           </div>
 
-          {/* القائمة */}
-          <div className="max-h-96 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-[#ff5c00]" />
@@ -173,7 +195,9 @@ export default function NotificationDropdown() {
                 return (
                   <button
                     key={notif.id}
-                    onClick={() => handleClickNotification(notif.id, notif.link)}
+                    onClick={() =>
+                      handleClickNotification(notif.id, notif.link)
+                    }
                     className={`flex w-full gap-2.5 border-b border-gray-50 px-3 py-3 text-right transition hover:bg-gray-50 ${
                       !notif.isRead ? "bg-orange-50/40" : ""
                     }`}
@@ -204,7 +228,6 @@ export default function NotificationDropdown() {
             )}
           </div>
 
-          {/* عرض الكل */}
           <Link
             href="/notifications"
             onClick={() => setOpen(false)}

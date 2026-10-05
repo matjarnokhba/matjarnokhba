@@ -186,6 +186,7 @@ model User {
   loyaltyAccount LoyaltyAccount?
   sessions       Session[]
   passwordResetTokens PasswordResetToken[]
+  favorites      Favorite[]
 
   @@index([email])
   @@index([deletedAt])
@@ -358,6 +359,7 @@ model Product {
   orderItems OrderItem[]
   reviews  Review[]
   editLogs ProductEditLog[]
+  favorites  Favorite[]
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -1318,4 +1320,22 @@ model CategoryAttributeValue {
   @@index([status])
   @@index([sellerId])
   @@index([attributeId, status])
+}
+
+// ═══════════════════════════════════════════
+// FAVORITES
+// ═══════════════════════════════════════════
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@index([userId, createdAt])
 }

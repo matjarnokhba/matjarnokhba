@@ -72,7 +72,7 @@ export default function Header({
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // ═══════ جلب التصنيفات (مرة واحدة) ═══════
+  // ═══════ جلب التصنيفات ═══════
   useEffect(() => {
     async function loadCategories() {
       try {
@@ -100,20 +100,36 @@ export default function Header({
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-black/5 bg-white shadow-sm">
-        {/* ═══════ الصف الرئيسي ═══════ */}
-        <div className="mx-auto flex h-11 max-w-7xl items-center justify-between gap-2 px-3 sm:h-14 sm:gap-4 sm:px-4">
+      <header className="sticky top-0 z-50 border-b border-black/5 bg-white shadow-sm">
+        {/* ═══════ الصف الرئيسي — دائماً مرئي ═══════ */}
+        <div
+          className={`mx-auto flex max-w-7xl items-center justify-between transition-[height,padding,gap] duration-300 sm:h-14 sm:gap-4 sm:px-4 ${
+            showSearchBar ? "h-11 gap-2 px-3" : "h-8 gap-1.5 px-2"
+          }`}
+        >
           {/* اليمين: القائمة + اللوغو */}
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 lg:hidden"
+              className={`flex items-center justify-center rounded-full transition-all duration-300 hover:bg-gray-100 lg:hidden ${
+                showSearchBar ? "h-8 w-8" : "h-7 w-7"
+              }`}
               aria-label="القائمة"
             >
-              <Menu className="h-4 w-4 text-[#111827]" />
+              <Menu
+                className={`text-[#111827] transition-all duration-300 ${
+                  showSearchBar ? "h-4 w-4" : "h-3.5 w-3.5"
+                }`}
+              />
             </button>
 
-            <BrandLogo size="sm" />
+            <div
+              className={`origin-right transition-transform duration-300 ${
+                showSearchBar ? "scale-100" : "scale-[0.8]"
+              }`}
+            >
+              <BrandLogo size="sm" />
+            </div>
           </div>
 
           {/* الوسط: البحث (سطح المكتب) */}
@@ -131,42 +147,66 @@ export default function Header({
             </div>
           </div>
 
-          {/* اليسار: الأيقونات */}
+          {/* اليسار: الأيقونات — دائماً مرئية */}
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             {!showSearchBar && (
               <button
                 onClick={() => setSearchOpen(!searchOpen)}
-                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 lg:hidden"
+                className="flex h-7 w-7 items-center justify-center rounded-full transition-all duration-300 hover:bg-gray-100 lg:hidden"
                 aria-label="البحث"
               >
-                <Search className="h-[18px] w-[18px] text-[#111827]" />
+                <Search className="h-4 w-4 text-[#111827] transition-all duration-300" />
               </button>
             )}
 
             <Link
               href="/favorites"
-              className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
+              className={`relative flex items-center justify-center rounded-full transition-all duration-300 hover:bg-gray-100 ${
+                showSearchBar ? "h-8 w-8 sm:h-9 sm:w-9" : "h-7 w-7"
+              }`}
               aria-label="المفضلة"
             >
-              <Heart className="h-[18px] w-[18px] text-[#111827]" />
+              <Heart
+                className={`text-[#111827] transition-all duration-300 ${
+                  showSearchBar ? "h-[18px] w-[18px]" : "h-4 w-4"
+                }`}
+              />
               {favoritesCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                <span
+                  className={`absolute -right-0.5 -top-0.5 flex items-center justify-center rounded-full bg-red-500 px-1 font-bold text-white transition-all duration-300 ${
+                    showSearchBar
+                      ? "h-4 min-w-4 text-[9px]"
+                      : "h-3.5 min-w-3.5 text-[8px]"
+                  }`}
+                >
                   {favoritesCount}
                 </span>
               )}
             </Link>
 
-            <UserMenu />
-            <NotificationDropdown />
+            <UserMenu compact={!showSearchBar} />
+            <NotificationDropdown compact={!showSearchBar} />
 
             <button
               onClick={onCartClick}
-              className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-gray-100 sm:h-9 sm:w-9"
+              className={`relative flex items-center justify-center rounded-full transition-all duration-300 hover:bg-gray-100 ${
+                showSearchBar ? "h-8 w-8 sm:h-9 sm:w-9" : "h-7 w-7"
+              }`}
               aria-label="السلة"
             >
-              <ShoppingCart className="h-[18px] w-[18px] text-[#111827]" />
+              <ShoppingCart
+                className={`text-[#111827] transition-all duration-300 ${
+                  showSearchBar ? "h-[18px] w-[18px]" : "h-4 w-4"
+                }`}
+              />
               {cartCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff5c00] px-1 text-[9px] font-bold text-white">
+                <span
+                  className={`absolute -right-0.5 -top-0.5 flex items-center justify-center rounded-full bg-[#ff5c00] px-1 font-bold text-white transition-all duration-300 ${
+                    showSearchBar
+                      ? "h-4 min-w-4 text-[9px]"
+                      : "h-3.5 min-w-3.5 text-[8px]"
+                  }`}
+                >
                   {cartCount}
                 </span>
               )}
@@ -174,7 +214,7 @@ export default function Header({
           </div>
         </div>
 
-        {/* ═══════ بحث الهاتف — منزلق ═══════ */}
+        {/* ═══════ بحث الهاتف — ينزلق مع التمرير فقط ═══════ */}
         <div
           className={`overflow-hidden bg-white transition-[max-height,opacity] duration-300 ease-out lg:hidden ${
             showSearchBar
@@ -223,11 +263,7 @@ export default function Header({
         )}
       </header>
 
-      {/* ═══════════════════════════════════════════
-          Drawer القائمة الجانبية (الهاتف فقط)
-      ═══════════════════════════════════════════ */}
-
-      {/* Overlay */}
+      {/* Drawer */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-[60] bg-black/50 transition-opacity duration-300 lg:hidden"
@@ -235,14 +271,12 @@ export default function Header({
         />
       )}
 
-      {/* القائمة الجانبية */}
       <aside
         className={`fixed bottom-0 right-0 top-0 z-[61] flex w-80 max-w-[85vw] flex-col bg-white shadow-2xl transition-transform duration-300 ease-out lg:hidden ${
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         }`}
         dir="rtl"
       >
-        {/* ═══ رأس القائمة ═══ */}
         <div className="flex h-14 items-center justify-between border-b border-gray-100 bg-gradient-to-l from-[#fff4ed] to-white px-4">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 shadow-md">
@@ -264,9 +298,7 @@ export default function Header({
           </button>
         </div>
 
-        {/* ═══ المحتوى — قابل للتمرير ═══ */}
         <div className="flex-1 overflow-y-auto">
-          {/* روابط سريعة */}
           <div className="border-b border-gray-100 p-3">
             <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
               روابط سريعة
@@ -323,7 +355,6 @@ export default function Header({
             </div>
           </div>
 
-          {/* التصنيفات */}
           <div className="p-3">
             <div className="mb-2 flex items-center justify-between px-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -362,7 +393,6 @@ export default function Header({
           </div>
         </div>
 
-        {/* ═══ Footer — زر الحساب ═══ */}
         <div className="border-t border-gray-100 bg-gray-50 p-3">
           <Link
             href="/profile"
