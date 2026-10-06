@@ -51,11 +51,6 @@ export async function PATCH(
       where: { id: orderId },
       include: {
         items: { select: { variantId: true, quantity: true } },
-        reservation: {
-          include: {
-            items: { select: { variantId: true, quantity: true } },
-          },
-        },
       },
     });
 
@@ -79,7 +74,6 @@ export async function PATCH(
       );
     }
 
-    // ═══ نتيجة الولاء (نُعيدها للخارج) ═══
     let loyaltyResult: {
       pointsAwarded: number;
       balanceAfter: number;
@@ -91,7 +85,7 @@ export async function PATCH(
       }>;
     } | null = null;
 
-    // ═══════ التحديث ═══════
+    // ═══════ Transaction ═══════
     await prisma.$transaction(async (tx) => {
       // 1. تحديث حالة الطلب
       await tx.order.update({
@@ -115,85 +109,42 @@ export async function PATCH(
         },
       });
 
-      // ═══ 3. NEW → PROCESSING: تأكيد الحجز + خصم المخزون ═══
-      if (oldStatus === "NEW" && newStatus === "PROCESSING") {
-        const reservation = await tx.reservation.findUnique({
-          where: { orderId },
-          include: { items: true },
+      // ═══ 3. CANCELLED: إرجاع المخزون (COD = Sale عند الإنشاء) ═══
+      if (newStatus === "CANCELLED") {
+        // تحقق: هل سبق أن أُرجع المخزون؟ (idempotency)
+        const alreadyReturned = await tx.inventoryMovement.findFirst({
+          where: {
+            referenceType: "ORDER",
+            referenceId: BigInt(orderId),
+            type: "RETURN",
+            reason: "إلغاء الطلب — إرجاع للمخزون",
+          },
         });
 
-        if (reservation && reservation.status === "ACTIVE") {
-          for (const item of reservation.items) {
-            await InventoryService.commitSale(
+        if (!alreadyReturned) {
+          const itemsWithVariant = order.items.filter(
+            (i): i is { variantId: number; quantity: number } =>
+              i.variantId !== null
+          );
+
+          const sortedItems = [...itemsWithVariant].sort(
+            (a, b) => a.variantId - b.variantId
+          );
+
+          for (const item of sortedItems) {
+            await InventoryService.cancelReturn(
               tx,
               item.variantId,
               item.quantity,
               orderId
             );
           }
-
-          await tx.reservation.update({
-            where: { id: reservation.id },
-            data: { status: "CONFIRMED" },
-          });
         }
       }
 
-      // ═══ 4. CANCELLED: تحرير الحجز ═══
-      if (newStatus === "CANCELLED") {
-        const reservation = await tx.reservation.findUnique({
-          where: { orderId },
-          include: { items: true },
-        });
-
-        if (reservation) {
-          if (oldStatus === "NEW" && reservation.status === "ACTIVE") {
-            for (const item of reservation.items) {
-              await InventoryService.unreserve(
-                tx,
-                item.variantId,
-                item.quantity,
-                orderId,
-                "إلغاء الطلب"
-              );
-            }
-
-            await tx.reservation.update({
-              where: { id: reservation.id },
-              data: {
-                status: "RELEASED",
-                releasedAt: new Date(),
-                releaseReason: "CANCELLED",
-              },
-            });
-          } else if (
-            oldStatus === "PROCESSING" &&
-            reservation.status === "CONFIRMED"
-          ) {
-            for (const item of reservation.items) {
-              await InventoryService.returnStock(
-                tx,
-                item.variantId,
-                item.quantity,
-                0
-              );
-            }
-
-            await tx.reservation.update({
-              where: { id: reservation.id },
-              data: {
-                status: "RELEASED",
-                releasedAt: new Date(),
-                releaseReason: "CANCELLED_AFTER_CONFIRM",
-              },
-            });
-          }
-        }
-      }
-
-      // ═══ 5. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
+      // ═══ 4. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
-        // 5a. زيادة sold
+        // 4a. زيادة sold
         const soldByProduct = new Map<number, number>();
         const fullItems = await tx.orderItem.findMany({
           where: { orderId },
@@ -213,7 +164,7 @@ export async function PATCH(
           });
         }
 
-        // 5b. منح نقاط الولاء
+        // 4b. منح نقاط الولاء
         try {
           const award = await LoyaltyService.awardForOrder(tx, {
             userId: order.userId,
@@ -223,7 +174,6 @@ export async function PATCH(
 
           loyaltyResult = award;
 
-          // تحديث Order بحقول الولاء
           if (award.pointsAwarded > 0) {
             await tx.order.update({
               where: { id: orderId },
@@ -233,7 +183,6 @@ export async function PATCH(
               },
             });
 
-            // إشعار بالنقاط
             await tx.notification.create({
               data: {
                 userId: order.userId,
@@ -252,7 +201,6 @@ export async function PATCH(
             });
           }
 
-          // إشعارات المستويات المفتوحة
           for (const tier of award.unlockedTiers) {
             await tx.notification.create({
               data: {
@@ -272,12 +220,11 @@ export async function PATCH(
             });
           }
         } catch (loyaltyErr) {
-          // لا نُفشل الطلب إن فشل الولاء
           console.error("Loyalty award failed:", loyaltyErr);
         }
       }
 
-      // ═══ 6. إشعار الحالة (عام) ═══
+      // ═══ 5. إشعار الحالة (عام) ═══
       await tx.notification.create({
         data: {
           userId: order.userId,

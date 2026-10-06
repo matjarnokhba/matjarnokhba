@@ -28,15 +28,11 @@ export async function PATCH(
     }
 
     await prisma.$transaction(async (tx) => {
-      // Lock Order
+      // ═══ Lock Order ═══
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
-          reservation: {
-            include: {
-              items: { select: { variantId: true, quantity: true } },
-            },
-          },
+          items: { select: { variantId: true, quantity: true } },
         },
       });
 
@@ -46,35 +42,43 @@ export async function PATCH(
         throw new Error("لا يمكن إلغاء الطلب في هذه المرحلة");
       }
 
-      // نافذة الإلغاء (ساعة واحدة)
+      // ═══ نافذة الإلغاء (ساعة واحدة) ═══
       const elapsed = Date.now() - order.createdAt.getTime();
       if (elapsed > CUSTOMER_CANCEL_WINDOW_MS) {
         throw new Error("انتهت مدة الإلغاء المسموحة");
       }
 
-      // تحرير الحجز
-      if (order.reservation && order.reservation.status === "ACTIVE") {
-        for (const item of order.reservation.items) {
-          await InventoryService.unreserve(
+      // ═══ إرجاع المخزون (COD = Sale عند الإنشاء) ═══
+      const alreadyReturned = await tx.inventoryMovement.findFirst({
+        where: {
+          referenceType: "ORDER",
+          referenceId: BigInt(orderId),
+          type: "RETURN",
+          reason: "إلغاء الطلب — إرجاع للمخزون",
+        },
+      });
+
+      if (!alreadyReturned) {
+        const itemsWithVariant = order.items.filter(
+          (i): i is { variantId: number; quantity: number } =>
+            i.variantId !== null
+        );
+
+        const sortedItems = [...itemsWithVariant].sort(
+          (a, b) => a.variantId - b.variantId
+        );
+
+        for (const item of sortedItems) {
+          await InventoryService.cancelReturn(
             tx,
             item.variantId,
             item.quantity,
-            order.id,
-            "إلغاء من قبل العميل"
+            order.id
           );
         }
-
-        await tx.reservation.update({
-          where: { id: order.reservation.id },
-          data: {
-            status: "RELEASED",
-            releasedAt: new Date(),
-            releaseReason: "CUSTOMER_CANCELLED",
-          },
-        });
       }
 
-      // تحديث حالة الطلب
+      // ═══ تحديث حالة الطلب ═══
       await tx.order.update({
         where: { id: order.id },
         data: { status: "CANCELLED" },

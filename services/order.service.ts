@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { CouponService } from "@/services/coupon.service";
 import { InventoryService } from "@/services/inventory.service";
 
-const RESERVATION_DURATION_MINUTES = 30;
 const SHIPPING_FEE = 30;
 const FREE_SHIPPING_THRESHOLD = 300;
 const TRANSACTION_TIMEOUT_MS = 20000;
@@ -108,14 +107,12 @@ export const OrderService = {
 
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
-    // ═══ 2. التحقق من المخزون ═══
+    // ═══ 2. التحقق من المخزون (قراءة أولية — التحقق النهائي داخل tx) ═══
     for (const item of data.items) {
       const variant = variantMap.get(item.variantId);
       if (!variant) throw new Error("منتج غير موجود");
 
-      const available =
-        (variant.inventory?.quantity ?? 0) -
-        (variant.inventory?.reservedQuantity ?? 0);
+      const available = variant.inventory?.quantity ?? 0;
 
       if (available < item.quantity) {
         throw new Error(
@@ -127,10 +124,9 @@ export const OrderService = {
     // ═══ 3. حساب السعر من DB ═══
     const itemsWithPrice = data.items.map((item) => {
       const variant = variantMap.get(item.variantId)!;
-      const unitPrice = Number(variant.price);
+      const unitPrice = Number(variant.discountPrice ?? variant.price);
       const lineTotal = unitPrice * item.quantity;
 
-      // ═══ بناء variantName من القيم ═══
       const sortedOV = [...variant.optionValues].sort(
         (a, b) =>
           (a.optionValue.option.order ?? 0) -
@@ -141,7 +137,6 @@ export const OrderService = {
           ? sortedOV.map((ov) => ov.optionValue.value).join(" / ")
           : null;
 
-      // ═══ الصورة الرئيسية ═══
       const imageUrl = variant.product.images[0]?.url ?? null;
 
       return {
@@ -224,7 +219,7 @@ export const OrderService = {
       }
     }
 
-    // ═══ 7. تحديد طلب الكوبون (الأكبر) — قبل tx ═══
+    // ═══ 7. تحديد طلب الكوبون (الأكبر) ═══
     let couponOrderSellerId: number | null = null;
     if (data.couponCode?.trim()) {
       let maxSubtotal = 0;
@@ -324,40 +319,21 @@ export const OrderService = {
             include: { items: true },
           });
 
-          const expiresAt = new Date(
-            Date.now() + RESERVATION_DURATION_MINUTES * 60 * 1000
-          );
-
-          const reservation = await tx.reservation.create({
-            data: {
-              orderId: order.id,
-              status: "ACTIVE",
-              expiresAt,
-            },
-          });
-
+          // ═══ 💰 خصم المخزون مباشرة (COD = Sale فوري) ═══
           const sortedItems = [...items].sort(
             (a, b) => a.variantId - b.variantId
           );
 
           for (const item of sortedItems) {
-            await InventoryService.reserve(
+            await InventoryService.saleDirect(
               tx,
               item.variantId,
               item.quantity,
               order.id
             );
-
-            await tx.reservationItem.create({
-              data: {
-                reservationId: reservation.id,
-                variantId: item.variantId,
-                quantity: item.quantity,
-              },
-            });
           }
 
-          // ═══ تسجيل استخدام الكوبون داخل tx (بعد إنشاء الطلب) ═══
+          // ═══ تسجيل استخدام الكوبون داخل tx ═══
           if (isCouponOrder && couponLock && appliedDiscount > 0) {
             await CouponService.recordUsageInTransaction(
               tx,
@@ -425,7 +401,7 @@ export const OrderService = {
         userId: o.userId,
         type: "ORDER_CREATED",
         title: "تم استلام طلبك",
-        message: `طلبك ${o.orderNumber} قيد المراجعة. لديك 30 دقيقة قبل انتهاء الحجز.`,
+        message: `طلبك ${o.orderNumber} قيد المراجعة. سنتواصل معك قريباً.`,
         link: `/orders/${o.id}`,
       });
 

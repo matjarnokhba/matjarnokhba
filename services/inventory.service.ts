@@ -24,7 +24,87 @@ export const InventoryService = {
     return rows[0];
   },
 
-  // ═══════ حجز مخزون (عند Checkout) ═══════
+  // ═══════ بيع مباشر (COD — بدون حجز مسبق) ═══════
+  async saleDirect(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    orderId: number
+  ) {
+    if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    const beforeQty = inv.quantity;
+    const afterQty = beforeQty - quantity;
+
+    if (afterQty < 0) {
+      throw new Error("الكمية المطلوبة غير متوفرة في المخزون");
+    }
+
+    await tx.inventory.update({
+      where: { id: inv.id },
+      data: { quantity: afterQty },
+    });
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "SALE",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: -quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: "بيع مباشر (دفع عند الاستلام)",
+        referenceType: "ORDER",
+        referenceId: BigInt(orderId),
+      },
+    });
+
+    return { inventoryId: inv.id, sold: quantity };
+  },
+
+  // ═══════ إرجاع بسبب إلغاء الطلب (COD) ═══════
+  async cancelReturn(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    orderId: number
+  ) {
+    if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    const beforeQty = inv.quantity;
+    const afterQty = beforeQty + quantity;
+
+    await tx.inventory.update({
+      where: { id: inv.id },
+      data: { quantity: afterQty },
+    });
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "RETURN",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: "إلغاء الطلب — إرجاع للمخزون",
+        referenceType: "ORDER",
+        referenceId: BigInt(orderId),
+      },
+    });
+
+    return { inventoryId: inv.id, returned: quantity };
+  },
+
+  // ═══════ حجز مخزون (للمستقبل — الدفع الإلكتروني) ═══════
   async reserve(
     tx: any,
     variantId: number,
@@ -67,7 +147,7 @@ export const InventoryService = {
     return { inventoryId: inv.id, reserved: quantity };
   },
 
-  // ═══════ تحرير الحجز (Cancel / Expire) ═══════
+  // ═══════ تحرير الحجز (للمستقبل) ═══════
   async unreserve(
     tx: any,
     variantId: number,
@@ -111,7 +191,7 @@ export const InventoryService = {
     return { inventoryId: inv.id, released: quantity };
   },
 
-  // ═══════ تأكيد البيع (عند PROCESSING) ═══════
+  // ═══════ تأكيد البيع (للمستقبل — عند تحويل Reservation إلى Sale) ═══════
   async commitSale(
     tx: any,
     variantId: number,

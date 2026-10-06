@@ -5866,3 +5866,56 @@ fix: Buffer vs Uint8Array for TypeScript 5.7+
 docs: DECISIONS v3.2 bank accounts + verification
 
 End of Section 79 (v3.2)
+
+## Section 81 — COD = Sale مباشر (قرار مُحدَّث)
+
+### القرار
+
+**جميع طلبات الدفع عند الاستلام (COD) تخصم المخزون مباشرة عند إنشاء الطلب.**
+
+لا تستخدم نظام Reservation أو انتهاء الحجز.
+
+### السبب
+
+- COD لا يحتاج خطوة "دفع معلّقة" (لا يوجد Stripe/PayPal بعد)
+- عند تأكيد العميل → الطلب = التزام نهائي
+- الحجز المؤقت (30 دقيقة) كان يُلغي طلبات مؤكَّدة → سلوك خاطئ
+
+### البنية
+
+```
+
+العميل يؤكد الطلب
+↓
+Order = NEW + خصم المخزون مباشرة (InventoryService.saleDirect)
+↓
+Inventory Movement = SALE
+
+إذا أُلغي:
+CANCELLED → InventoryService.cancelReturn → RETURN
+
+إذا سُلّم:
+DELIVERED → sold++ + منح نقاط ولاء
+
+```
+
+### Idempotency
+
+- عند CANCELLED: فحص `InventoryMovement` بـ`reason: "إلغاء الطلب — إرجاع للمخزون"` قبل الإرجاع
+- يمنع إرجاع المخزون مرتين
+
+### Reservation — مستقبلاً
+
+- الجداول `Reservation` و `ReservationItem` تبقى في Schema
+- تُستخدم **فقط** عند إضافة دفع إلكتروني معلّق
+- `InventoryService.reserve()` و `unreserve()` و `commitSale()` محفوظة للاستقبال
+- تم حذف `app/api/cron/expire-reservations/` (لم يعد مطلوباً)
+
+### مسؤوليات الملفات
+
+| العملية | الملف | الدالة |
+|---------|-------|--------|
+| إنشاء + خصم | `services/order.service.ts` | `saleDirect()` |
+| إلغاء (عميل) | `app/api/orders/[id]/cancel/route.ts` | `cancelReturn()` |
+| إلغاء (أدمن) | `app/api/admin/orders/[id]/status/route.ts` | `cancelReturn()` |
+| تسليم | نفس الملفات أعلاه | `sold++` + ولاء |

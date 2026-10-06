@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { InventoryService } from "@/services/inventory.service";
+import { LoyaltyService } from "@/services/loyalty.service";
 
-// ═══════ التغييرات المسموحة للتاجر ═══════
 const SELLER_ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING"],
   PROCESSING: ["SHIPPED"],
@@ -50,11 +49,8 @@ export async function PATCH(
     const order = await prisma.order.findFirst({
       where: { id: orderId, sellerId: auth.seller.id },
       include: {
-        items: { select: { variantId: true, quantity: true, productId: true } },
-        reservation: {
-          include: {
-            items: { select: { variantId: true, quantity: true } },
-          },
+        items: {
+          select: { variantId: true, quantity: true, productId: true },
         },
       },
     });
@@ -80,7 +76,7 @@ export async function PATCH(
       );
     }
 
-    // ═══ التنفيذ ═══
+    // ═══ Transaction ═══
     await prisma.$transaction(async (tx) => {
       // 1. تحديث الحالة
       await tx.order.update({
@@ -100,36 +96,13 @@ export async function PATCH(
           fromStatus: oldStatus,
           toStatus: newStatus,
           changedById: auth.user.id,
-          note: note || `تحديث من التاجر`,
+          note: note || "تحديث من التاجر",
         },
       });
 
-      // ═══ 3. NEW → PROCESSING: تأكيد الحجز ═══
-      if (oldStatus === "NEW" && newStatus === "PROCESSING") {
-        const reservation = await tx.reservation.findUnique({
-          where: { orderId },
-          include: { items: true },
-        });
-
-        if (reservation && reservation.status === "ACTIVE") {
-          for (const item of reservation.items) {
-            await InventoryService.commitSale(
-              tx,
-              item.variantId,
-              item.quantity,
-              orderId
-            );
-          }
-
-          await tx.reservation.update({
-            where: { id: reservation.id },
-            data: { status: "CONFIRMED" },
-          });
-        }
-      }
-
-      // ═══ 4. DELIVERED: زيادة المبيعات ═══
+      // ═══ 3. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
+        // 3a. زيادة sold
         const soldByProduct = new Map<number, number>();
         for (const item of order.items) {
           soldByProduct.set(
@@ -143,9 +116,66 @@ export async function PATCH(
             data: { sold: { increment: qty } },
           });
         }
+
+        // 3b. منح نقاط الولاء
+        try {
+          const award = await LoyaltyService.awardForOrder(tx, {
+            userId: order.userId,
+            orderId: order.id,
+            orderTotal: Number(order.total),
+          });
+
+          if (award.pointsAwarded > 0) {
+            await tx.order.update({
+              where: { id: orderId },
+              data: {
+                loyaltyPointsAwarded: award.pointsAwarded,
+                loyaltyAwardedAt: new Date(),
+              },
+            });
+
+            await tx.notification.create({
+              data: {
+                userId: order.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: "🎁 ربحت نقاط ولاء!",
+                message: `حصلت على ${award.pointsAwarded} نقطة من الطلب ${order.orderNumber}. رصيدك الآن: ${award.balanceAfter} نقطة.`,
+                link: `/loyalty`,
+                category: "ORDER",
+                severity: "INFO",
+                metadata: {
+                  orderId: order.id,
+                  pointsAwarded: award.pointsAwarded,
+                  balanceAfter: award.balanceAfter,
+                },
+              },
+            });
+          }
+
+          for (const tier of award.unlockedTiers) {
+            await tx.notification.create({
+              data: {
+                userId: order.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: `${tier.icon || "🎁"} مبروك! فتحت ${tier.name}`,
+                message: `وصلت إلى مستوى "${tier.name}". اختر فئة الهدية المفضلة لديك!`,
+                link: `/loyalty`,
+                category: "ORDER",
+                severity: "INFO",
+                metadata: {
+                  tierId: tier.tierId,
+                  rewardId: tier.rewardId,
+                  tierName: tier.name,
+                },
+              },
+            });
+          }
+        } catch (loyaltyErr) {
+          console.error("Loyalty award failed:", loyaltyErr);
+        }
       }
 
-      // ═══ 5. إشعار للعميل ═══
+      // ═══ 4. إشعار للعميل ═══
       await tx.notification.create({
         data: {
           userId: order.userId,
@@ -164,7 +194,7 @@ export async function PATCH(
         },
       });
 
-      // ═══ 6. إشعار للأدمن ═══
+      // ═══ 5. إشعار للأدمن ═══
       const admins = await tx.user.findMany({
         where: {
           role: { in: ["ADMIN", "SUPER_ADMIN"] },
