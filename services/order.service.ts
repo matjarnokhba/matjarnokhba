@@ -124,7 +124,7 @@ export const OrderService = {
     // ═══ 3. حساب السعر من DB ═══
     const itemsWithPrice = data.items.map((item) => {
       const variant = variantMap.get(item.variantId)!;
-      const unitPrice = Number(variant.discountPrice ?? variant.price);
+      const unitPrice = Number(variant.price);
       const lineTotal = unitPrice * item.quantity;
 
       const sortedOV = [...variant.optionValues].sort(
