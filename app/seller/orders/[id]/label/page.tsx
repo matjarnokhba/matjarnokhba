@@ -38,8 +38,10 @@ export default function OrderLabelPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrGenerating, setQrGenerating] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // ═══ 1. تحميل البيانات ═══
   useEffect(() => {
     async function load() {
       try {
@@ -65,25 +67,6 @@ export default function OrderLabelPage() {
           storeName: sellerData.seller.storeName,
           slug: sellerData.seller.slug,
         });
-
-        const token = orderData.order.deliveryToken;
-        if (!token) {
-          setError("الطلب لا يحتوي على deliveryToken");
-          return;
-        }
-
-        const origin = window.location.origin;
-        const url = `${origin}/d/${token}`;
-
-        if (canvasRef.current) {
-          await QRCode.toCanvas(canvasRef.current, url, {
-            width: 800,
-            margin: 1,
-            color: { dark: "#0a1f44", light: "#ffffff" },
-            errorCorrectionLevel: "H",
-          });
-          setQrDataUrl(canvasRef.current.toDataURL("image/png"));
-        }
       } catch (err) {
         console.error(err);
         setError("فشل التحميل");
@@ -93,6 +76,40 @@ export default function OrderLabelPage() {
     }
     if (orderId) load();
   }, [orderId]);
+
+  // ═══ 2. توليد QR (بعد وجود canvas في DOM) ═══
+  useEffect(() => {
+    if (loading || !order || !seller || !canvasRef.current) return;
+    if (qrDataUrl) return;
+
+    const token = order.deliveryToken;
+    if (!token) return;
+
+    async function generate() {
+      setQrGenerating(true);
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const origin = window.location.origin;
+        const url = `${origin}/d/${token}`;
+
+        await QRCode.toCanvas(canvas, url, {
+          width: 800,
+          margin: 1,
+          color: { dark: "#0a1f44", light: "#ffffff" },
+          errorCorrectionLevel: "H",
+        });
+
+        setQrDataUrl(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.error("QR generation failed:", err);
+      } finally {
+        setQrGenerating(false);
+      }
+    }
+    generate();
+  }, [loading, order, seller, qrDataUrl]);
 
   function handlePrint() {
     window.print();
@@ -123,7 +140,6 @@ export default function OrderLabelPage() {
     <div className="min-h-screen bg-gray-200 p-4 print:bg-white print:p-0">
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      {/* أزرار */}
       <div className="mx-auto mb-2 flex w-full max-w-[500px] gap-2 print:hidden">
         <Link
           href={`/seller/orders/${orderId}`}
@@ -135,20 +151,23 @@ export default function OrderLabelPage() {
         <div className="ml-auto">
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 rounded-lg bg-[#0a1f44] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1a2f54]"
+            disabled={qrGenerating}
+            className="flex items-center gap-2 rounded-lg bg-[#0a1f44] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1a2f54] disabled:opacity-50"
           >
-            <Printer className="h-4 w-4" />
+            {qrGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="h-4 w-4" />
+            )}
             طباعة الملصق
           </button>
         </div>
       </div>
 
-      {/* ═══ الملصق ═══ */}
       <div
         className="mx-auto rounded-xl bg-white p-2 shadow-xl print:shadow-none"
         style={{ width: "33%", minWidth: "320px", maxWidth: "500px" }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b-2 border-[#0a1f44] pb-1">
           <div className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">
             {seller.storeName}
@@ -158,7 +177,6 @@ export default function OrderLabelPage() {
           </div>
         </div>
 
-        {/* QR */}
         <div className="flex justify-center pt-1">
           <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
             {qrDataUrl ? (
@@ -179,7 +197,6 @@ export default function OrderLabelPage() {
           📱 امسح الرمز لبدء التوصيل
         </div>
 
-        {/* Customer Info */}
         <div className="mt-1 rounded-lg border-2 border-gray-300 p-1.5">
           <div className="flex items-baseline gap-1.5">
             <span className="shrink-0 text-[10px] font-black uppercase leading-none text-gray-400">
@@ -199,7 +216,6 @@ export default function OrderLabelPage() {
             </div>
           )}
 
-          {/* العنوان: الشارع + المدينة + الرمز في سطر واحد */}
           <div className="mt-1 text-base leading-tight text-gray-700">
             {address.street && <span>{address.street}، </span>}
             <span>{address.city}</span>
@@ -207,7 +223,6 @@ export default function OrderLabelPage() {
           </div>
         </div>
 
-        {/* Totals — سطر واحد */}
         <div className="mt-1 flex items-center justify-between gap-2 border-t-2 border-dashed border-gray-300 pt-1">
           <div className="flex items-baseline gap-1">
             <span className="text-xs font-bold leading-none text-gray-500">
@@ -230,7 +245,6 @@ export default function OrderLabelPage() {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="mt-0.5 border-t border-gray-200 pt-0.5 text-center text-xs leading-none text-gray-400">
           متجر نخبة — Matjar Nokhba
         </div>

@@ -39,19 +39,24 @@ export default function ProductTicketPage() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [barcodeDataUrl, setBarcodeDataUrl] = useState("");
   const [productUrl, setProductUrl] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [qrGenerating, setQrGenerating] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
-  // ═══ دالة التحميل (قابلة لإعادة الاستدعاء) ═══
-  async function loadData() {
-    setLoading(true);
-    setError("");
+  // ═══ 1. تحميل البيانات ═══
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError("");
+      setQrDataUrl("");
+      setBarcodeDataUrl("");
 
-    try {
-      const [prodRes, sellerRes] = await Promise.all([
-        fetch(`/api/seller/products/${productId}`),
-        fetch("/api/seller/profile"),
-      ]);
+      try {
+        const [prodRes, sellerRes] = await Promise.all([
+          fetch(`/api/seller/products/${productId}`),
+          fetch("/api/seller/profile"),
+        ]);
 
         const prodData = await prodRes.json();
         const sellerData = await sellerRes.json();
@@ -75,12 +80,32 @@ export default function ProductTicketPage() {
           typeof window !== "undefined"
             ? window.location.origin
             : "https://matjarnokhba-lyart.vercel.app";
-        const url = `${origin}/p/${prodData.product.productCode}`;
-        setProductUrl(url);
+        setProductUrl(`${origin}/p/${prodData.product.productCode}`);
+      } catch (err) {
+        console.error(err);
+        setError("فشل تحميل البيانات");
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (productId) load();
+  }, [productId, refreshKey]);
 
+  // ═══ 2. توليد QR + Barcode (بعد وجود canvas في DOM) ═══
+  useEffect(() => {
+    if (loading || !product || !seller || !productUrl) return;
+    if (qrDataUrl || barcodeDataUrl) return;
+
+    // ═══ التقاط المراجع محلياً (لحل مشكلة TS narrowing) ═══
+    const currentProduct = product;
+    const currentProductUrl = productUrl;
+
+    async function generate() {
+      setQrGenerating(true);
+      try {
         // ═══ QR ═══
         if (qrCanvasRef.current) {
-          await QRCode.toCanvas(qrCanvasRef.current, url, {
+          await QRCode.toCanvas(qrCanvasRef.current, currentProductUrl, {
             width: 800,
             margin: 1,
             color: { dark: "#0a1f44", light: "#ffffff" },
@@ -89,8 +114,8 @@ export default function ProductTicketPage() {
           setQrDataUrl(qrCanvasRef.current.toDataURL("image/png"));
         }
 
-        // ═══ Barcode (60% أصغر) ═══
-        const shortCode = prodData.product.productCode
+        // ═══ Barcode ═══
+        const shortCode = currentProduct.productCode
           .slice(0, 8)
           .toUpperCase();
         if (barcodeRef.current) {
@@ -136,17 +161,13 @@ export default function ProductTicketPage() {
           URL.revokeObjectURL(svgUrl);
         }
       } catch (err) {
-      console.error(err);
-      setError("فشل تحميل البيانات");
-    } finally {
-      setLoading(false);
+        console.error("Ticket generation failed:", err);
+      } finally {
+        setQrGenerating(false);
+      }
     }
-  }
-
-  useEffect(() => {
-    if (productId) loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
+    generate();
+  }, [loading, product, seller, productUrl, qrDataUrl, barcodeDataUrl]);
 
   function handleDownloadQR() {
     if (!qrDataUrl || !product) return;
@@ -189,8 +210,6 @@ export default function ProductTicketPage() {
             overflow: hidden;
             border: 2px solid #0a1f44;
           }
-
-          /* ═══ QR (حشوات مضغوطة 30%) ═══ */
           .qr-section {
             padding: 8px 8px 6px;
             text-align: center;
@@ -254,7 +273,6 @@ export default function ProductTicketPage() {
           }
           .phone-icon { font-size: 14px; }
 
-          /* ═══ Product Hero ═══ */
           .product-hero {
             display: flex;
             align-items: stretch;
@@ -306,8 +324,6 @@ export default function ProductTicketPage() {
             overflow: hidden;
             text-overflow: ellipsis;
           }
-
-          /* ═══ Product + Brand (نفس الصف) ═══ */
           .hero-product-row {
             display: flex;
             align-items: center;
@@ -335,8 +351,6 @@ export default function ProductTicketPage() {
             flex-shrink: 0;
           }
           .hero-brand-icon { font-size: 16px; }
-
-          /* ═══ Barcode (60% أصغر) ═══ */
           .barcode-box {
             margin-top: 2px;
             padding: 4px 2px 2px;
@@ -350,8 +364,6 @@ export default function ProductTicketPage() {
             height: auto;
             display: block;
           }
-
-          /* ═══ Product Image ═══ */
           .hero-image {
             width: 30%;
             aspect-ratio: 1 / 1;
@@ -367,7 +379,6 @@ export default function ProductTicketPage() {
             object-fit: cover;
             display: block;
           }
-
           @media print {
             body { background: #fff; padding: 0; }
           }
@@ -375,7 +386,6 @@ export default function ProductTicketPage() {
       </head>
       <body>
         <div class="ticket">
-          <!-- ═══ QR ═══ -->
           <div class="qr-section">
             <div class="qr-frame">
               <span class="corner-bl"></span>
@@ -388,10 +398,8 @@ export default function ProductTicketPage() {
             </div>
           </div>
 
-          <!-- ═══ Product Hero ═══ -->
           <div class="product-hero">
             <div class="hero-info">
-              <!-- المتجر -->
               <div class="hero-store">
                 <div class="hero-logo">ن</div>
                 <div style="min-width: 0; flex: 1;">
@@ -400,7 +408,6 @@ export default function ProductTicketPage() {
                 </div>
               </div>
 
-              <!-- اسم المنتج + الماركة على نفس الصف -->
               <div class="hero-product-row">
                 <div class="hero-product-name">${product.name}</div>
                 ${
@@ -413,7 +420,6 @@ export default function ProductTicketPage() {
                 }
               </div>
 
-              <!-- Barcode -->
               ${
                 barcodeDataUrl
                   ? `<div class="barcode-box">
@@ -423,7 +429,6 @@ export default function ProductTicketPage() {
               }
             </div>
 
-            <!-- الصورة -->
             <div class="hero-image">
               ${mainImage ? `<img src="${mainImage}" alt="" />` : ""}
             </div>
@@ -482,7 +487,6 @@ export default function ProductTicketPage() {
         </p>
       </div>
 
-      {/* ═══ تحذير: المنتج بدون variants نشطة ═══ */}
       {(!product.imageUrls || product.imageUrls.length === 0) && (
         <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <span className="text-lg">⚠️</span>
@@ -493,10 +497,8 @@ export default function ProductTicketPage() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        {/* ═══ المعاينة ═══ */}
         <div className="flex justify-center">
           <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border-2 border-[#0a1f44] bg-white shadow-lg">
-            {/* QR Section */}
             <div className="border-b-2 border-[#0a1f44] bg-gray-50 px-2 pb-1.5 pt-2 text-center">
               <div className="relative mx-auto mb-1.5 h-48 w-48 rounded-xl bg-white p-1.5">
                 <span className="absolute right-0 top-0 h-5 w-5 rounded-tr-xl border-r-[3px] border-t-[3px] border-[#0a1f44]" />
@@ -527,11 +529,8 @@ export default function ProductTicketPage() {
               </div>
             </div>
 
-            {/* ═══ Product Hero ═══ */}
             <div className="flex items-stretch gap-1 p-2">
-              {/* المعلومات */}
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                {/* المتجر */}
                 <div className="flex items-center gap-1.5 overflow-hidden border-b border-gray-200 pb-1.5">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0a1f44] to-purple-600 text-sm font-black text-white">
                     ن
@@ -546,7 +545,6 @@ export default function ProductTicketPage() {
                   </div>
                 </div>
 
-                {/* اسم المنتج + الماركة */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1 text-[26px] font-black leading-none text-gray-900">
                     {product.name}
@@ -559,7 +557,6 @@ export default function ProductTicketPage() {
                   )}
                 </div>
 
-                {/* Barcode */}
                 {barcodeDataUrl && (
                   <div className="mt-0.5 border-t border-dashed border-gray-300 pt-1 text-center">
                     <img
@@ -571,7 +568,6 @@ export default function ProductTicketPage() {
                 )}
               </div>
 
-              {/* الصورة */}
               <div className="aspect-square w-[30%] shrink-0 self-center overflow-hidden rounded-lg bg-gray-50">
                 {product.imageUrls[0] ? (
                   <img
@@ -589,7 +585,6 @@ export default function ProductTicketPage() {
           </div>
         </div>
 
-        {/* ═══ الإجراءات ═══ */}
         <div className="space-y-4">
           <div className="rounded-xl bg-white p-5 shadow-sm">
             <h3 className="mb-3 text-sm font-black text-gray-700">
@@ -598,15 +593,19 @@ export default function ProductTicketPage() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handlePrint}
-                disabled={!qrDataUrl}
+                disabled={!qrDataUrl || qrGenerating}
                 className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
-                <Printer className="h-4 w-4" />
+                {qrGenerating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="h-4 w-4" />
+                )}
                 طباعة البطاقة
               </button>
               <button
                 onClick={handleDownloadQR}
-                disabled={!qrDataUrl}
+                disabled={!qrDataUrl || qrGenerating}
                 className="flex items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed] disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
@@ -621,43 +620,7 @@ export default function ProductTicketPage() {
                 رابط المنتج
               </h3>
               <button
-                onClick={async () => {
-                  setLoading(true);
-                  try {
-                    const res = await fetch(
-                      `/api/seller/products/${productId}`
-                    );
-                    const data = await res.json();
-                    if (data.success && data.product) {
-                      setProduct(data.product);
-
-                      // ═══ أعد توليد QR بالكود الحالي ═══
-                      const origin = window.location.origin;
-                      const url = `${origin}/p/${data.product.productCode}`;
-                      setProductUrl(url);
-
-                      if (qrCanvasRef.current) {
-                        await QRCode.toCanvas(
-                          qrCanvasRef.current,
-                          url,
-                          {
-                            width: 800,
-                            margin: 1,
-                            color: { dark: "#0a1f44", light: "#ffffff" },
-                            errorCorrectionLevel: "H",
-                          }
-                        );
-                        setQrDataUrl(
-                          qrCanvasRef.current.toDataURL("image/png")
-                        );
-                      }
-                    }
-                  } catch (err) {
-                    console.error(err);
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
+                onClick={() => setRefreshKey((k) => k + 1)}
                 disabled={loading}
                 className="flex items-center gap-1 rounded-lg bg-[#fff4ed] px-2.5 py-1 text-[11px] font-bold text-[#ff5c00] transition hover:bg-[#ffe4d3] disabled:opacity-50"
               >
