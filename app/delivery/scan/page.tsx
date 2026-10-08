@@ -15,12 +15,17 @@ import {
   Clock,
   XCircle,
   RotateCcw,
+  Truck,
+  Store,
+  Globe,
 } from "lucide-react";
 
+// ═══════ الأنواع ═══════
 type OrderData = {
   id: number;
   orderNumber: string;
   status: string;
+  source?: string;
   total: number;
   customerName: string;
   customerPhone: string | null;
@@ -39,11 +44,43 @@ type OrderData = {
   }[];
 };
 
+type ShipmentData = {
+  id: number;
+  shipmentNumber: string;
+  status: string;
+  totalCOD: number;
+  totalOrders: number;
+  notes: string | null;
+  customer: {
+    id: number;
+    name: string;
+    phone: string | null;
+    email: string;
+  } | null;
+  orders: Array<{
+    orderId: number;
+    orderNumber: string;
+    shippingAddressSnapshot: any;
+    items: Array<{
+      id: number;
+      productName: string;
+      variantName: string | null;
+      imageUrl: string | null;
+      quantity: number;
+    }>;
+  }>;
+};
+
+type ScanResult =
+  | { type: "order"; data: OrderData }
+  | { type: "shipment"; data: ShipmentData }
+  | null;
+
 type ActionModal =
-  | { type: "deferred"; order: OrderData }
-  | { type: "rejected"; order: OrderData }
-  | { type: "returned"; order: OrderData }
-  | { type: "delivered"; order: OrderData }
+  | { type: "delivered"; target: "order" | "shipment" }
+  | { type: "deferred"; target: "order" | "shipment" }
+  | { type: "rejected"; target: "order" | "shipment" }
+  | { type: "returned"; target: "order" | "shipment" }
   | null;
 
 export default function DeliveryScanPage() {
@@ -52,7 +89,7 @@ export default function DeliveryScanPage() {
   const [scanError, setScanError] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [order, setOrder] = useState<OrderData | null>(null);
+  const [result, setResult] = useState<ScanResult>(null);
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [actionModal, setActionModal] = useState<ActionModal>(null);
@@ -71,6 +108,7 @@ export default function DeliveryScanPage() {
     };
   }, []);
 
+  // ═══ تشغيل الماسح ═══
   async function startScanner() {
     setScanError("");
     setScanning(true);
@@ -112,61 +150,132 @@ export default function DeliveryScanPage() {
     setScanning(false);
   }
 
+  // ═══ معالجة نتيجة المسح ═══
   async function handleScanResult(text: string) {
     await stopScanner();
 
     let token = text.trim();
-    // لو كان رابط
+
+    // ═══ حالة رابط كامل ═══
     if (token.includes("/d/")) {
-      const match = token.match(/\/d\/([A-Za-z0-9-]+)/);
-      if (match) token = match[1];
-    }
-    // لو UUID مباشرة
-    if (token.includes("/")) {
-      const parts = token.split("/");
-      token = parts[parts.length - 1];
-    }
-
-    await loadByToken(token);
-  }
-
-  async function handleManualSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!manualCode.trim()) return;
-    await loadByToken(manualCode.trim());
-    setManualCode("");
-  }
-
-  async function loadByToken(token: string) {
-    setLoading(true);
-    setScanError("");
-    setOrder(null);
-    setSuccessMsg("");
-
-    try {
-      const res = await fetch(`/api/delivery/orders/by-token/${token}`);
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setScanError(data.message || "الطلب غير موجود");
+      // Order QR
+      const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        await loadOrderByToken(match[1]);
         return;
       }
+    }
 
-      setOrder(data.order);
+    if (token.includes("/sd/")) {
+      // Shipment QR
+      const match = token.match(/\/sd\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        await loadShipmentByToken(match[1]);
+        return;
+      }
+    }
+
+    // ═══ حالة token مباشر — نجرب الاثنين ═══
+    if (token.length >= 20 && !token.includes("/")) {
+      // جرب كشحنة أولاً (الأحدث)
+      const shipmentFound = await tryLoadShipment(token);
+      if (shipmentFound) return;
+
+      // ثم كطلب
+      const orderFound = await tryLoadOrder(token);
+      if (orderFound) return;
+
+      setScanError("الرمز غير معروف. تأكد من أنه QR طلب أو شحنة.");
+      return;
+    }
+
+    setScanError("صيغة الرمز غير صحيحة");
+  }
+
+  // ═══ محاولة تحميل شحنة ═══
+  async function tryLoadShipment(token: string): Promise<boolean> {
+    setLoading(true);
+    setScanError("");
+    setResult(null);
+
+    try {
+      const res = await fetch(`/api/delivery/shipments/by-token/${token}`);
+      const data = await res.json();
+
+      if (res.ok && data.success && data.shipment) {
+        setResult({ type: "shipment", data: data.shipment });
+        return true;
+      }
+      return false;
     } catch {
-      setScanError("فشل الاتصال بالخادم");
+      return false;
     } finally {
       setLoading(false);
     }
   }
 
-  async function executeAction(action: string, actionReason?: string) {
-    if (!order) return;
+  // ═══ محاولة تحميل طلب ═══
+  async function tryLoadOrder(token: string): Promise<boolean> {
+    setLoading(true);
+    setScanError("");
+    setResult(null);
+
+    try {
+      const res = await fetch(`/api/delivery/orders/by-token/${token}`);
+      const data = await res.json();
+
+      if (res.ok && data.success && data.order) {
+        setResult({ type: "order", data: data.order });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ═══ تحميل مباشر ═══
+  async function loadOrderByToken(token: string) {
+    const found = await tryLoadOrder(token);
+    if (!found) {
+      setScanError("الطلب غير موجود أو ليس مُسنداً إليك");
+    }
+  }
+
+  async function loadShipmentByToken(token: string) {
+    const found = await tryLoadShipment(token);
+    if (!found) {
+      setScanError("الشحنة غير موجودة أو ليست مُسندة إليك");
+    }
+  }
+
+  async function handleManualSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!manualCode.trim()) return;
+    await handleScanResult(manualCode.trim());
+    setManualCode("");
+  }
+
+  // ═══ تنفيذ إجراء ═══
+  async function executeAction(
+    action: string,
+    actionReason?: string,
+    target?: "order" | "shipment"
+  ) {
+    if (!result) return;
+    const currentTarget = target || result.type;
     setSubmitting(true);
     setScanError("");
 
     try {
-      const res = await fetch(`/api/delivery/orders/${order.id}/action`, {
+      const endpoint =
+        currentTarget === "shipment"
+          ? `/api/delivery/shipments/${result.data.id}/action`
+          : `/api/delivery/orders/${result.data.id}/action`;
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -182,7 +291,7 @@ export default function DeliveryScanPage() {
       }
 
       setSuccessMsg(data.message || "تم بنجاح");
-      setOrder(null);
+      setResult(null);
       setActionModal(null);
       setReason("");
 
@@ -196,10 +305,12 @@ export default function DeliveryScanPage() {
     }
   }
 
-  function openActionModal(type: "deferred" | "rejected" | "returned" | "delivered") {
-    if (!order) return;
+  function openActionModal(
+    type: "delivered" | "deferred" | "rejected" | "returned"
+  ) {
+    if (!result) return;
     setReason("");
-    setActionModal({ type, order } as ActionModal);
+    setActionModal({ type, target: result.type });
   }
 
   return (
@@ -207,15 +318,15 @@ export default function DeliveryScanPage() {
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
           <QrCode className="h-6 w-6 text-green-600" />
-          مسح QR الطلب
+          مسح QR
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          امسح رمز QR الموجود على الطلب
+          امسح رمز الطلب أو الشحنة لبدء التوصيل
         </p>
       </div>
 
       {/* ═══ الماسح ═══ */}
-      {!order && (
+      {!result && (
         <div className="mb-5 rounded-2xl bg-white p-5 shadow-sm">
           {!scanning ? (
             <button
@@ -240,7 +351,7 @@ export default function DeliveryScanPage() {
             <div className="mt-4 overflow-hidden rounded-xl">
               <div id={scannerDivId} className="w-full" />
               <p className="mt-3 text-center text-xs text-gray-500">
-                وجّه الكاميرا نحو QR الطلب
+                وجّه الكاميرا نحو QR الطلب أو الشحنة
               </p>
             </div>
           )}
@@ -255,7 +366,7 @@ export default function DeliveryScanPage() {
                   type="text"
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="الصق كود الطلب..."
+                  placeholder="الصق كود الطلب أو الشحنة..."
                   dir="ltr"
                   className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-green-500 focus:bg-white"
                 />
@@ -287,147 +398,23 @@ export default function DeliveryScanPage() {
       )}
 
       {/* ═══ تفاصيل الطلب ═══ */}
-      {order && (
-        <>
-          <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs text-gray-500">رقم الطلب</div>
-                <div className="mt-1 font-mono text-lg font-black">
-                  {order.orderNumber}
-                </div>
-              </div>
-              <button
-                onClick={() => setOrder(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {result?.type === "order" && (
+        <OrderDetails
+          order={result.data}
+          onClose={() => setResult(null)}
+          onAction={openActionModal}
+          submitting={submitting}
+        />
+      )}
 
-            {/* العميل */}
-            <div className="mb-4 rounded-lg bg-gray-50 p-3">
-              <div className="mb-2 text-xs font-black">بيانات العميل</div>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="font-bold">{order.customerName}</span>
-                </div>
-                {order.customerPhone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-3.5 w-3.5 text-gray-400" />
-                    <span dir="ltr">{order.customerPhone}</span>
-                  </div>
-                )}
-                {order.city && (
-                  <div className="flex items-start gap-2">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
-                    <span>
-                      {order.street}، {order.city}
-                      {order.postalCode && ` - ${order.postalCode}`}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* المنتجات */}
-            <div className="mb-4">
-              <div className="mb-2 text-xs font-black">
-                المنتجات ({order.itemsCount})
-              </div>
-              <div className="space-y-2">
-                {order.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-2 rounded-lg border border-gray-100 p-2"
-                  >
-                    {item.imageUrl ? (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.productName}
-                        className="h-10 w-10 shrink-0 rounded object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-100">
-                        <Package className="h-5 w-5 text-gray-400" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-bold">
-                        {item.productName}
-                      </div>
-                      {item.variantName && (
-                        <div className="text-[10px] text-gray-500">
-                          {item.variantName}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs font-bold">×{item.quantity}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* الإجمالي */}
-            <div className="flex items-center justify-between rounded-lg bg-[#fff4ed] px-4 py-3">
-              <span className="text-xs font-bold text-gray-700">
-                المجموع المطلوب تحصيله
-              </span>
-              <span className="text-lg font-black text-[#ff5c00]">
-                {order.total.toFixed(2)} د.م
-              </span>
-            </div>
-          </div>
-
-          {/* ═══ الإجراءات ═══ */}
-          <div className="space-y-2">
-            <button
-              onClick={() => openActionModal("delivered")}
-              disabled={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 py-4 text-sm font-bold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
-            >
-              <Check className="h-5 w-5" />
-              تم التوصيل
-            </button>
-
-            <button
-              onClick={() => openActionModal("deferred")}
-              disabled={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-500 bg-amber-50 py-3.5 text-sm font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
-            >
-              <Clock className="h-5 w-5" />
-              تأجيل التوصيل
-            </button>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => openActionModal("rejected")}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-              >
-                <XCircle className="h-5 w-5" />
-                رفض العميل
-              </button>
-
-              <button
-                onClick={() => openActionModal("returned")}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-400 bg-gray-50 py-3.5 text-sm font-bold text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
-              >
-                <RotateCcw className="h-5 w-5" />
-                إرجاع
-              </button>
-            </div>
-
-            {scanError && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-700">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{scanError}</span>
-              </div>
-            )}
-          </div>
-        </>
+      {/* ═══ تفاصيل الشحنة ═══ */}
+      {result?.type === "shipment" && (
+        <ShipmentDetails
+          shipment={result.data}
+          onClose={() => setResult(null)}
+          onAction={openActionModal}
+          submitting={submitting}
+        />
       )}
 
       {/* ═══ Modal ═══ */}
@@ -442,23 +429,25 @@ export default function DeliveryScanPage() {
                   </div>
                   <h3 className="mt-4 text-lg font-black">تأكيد التوصيل</h3>
                   <p className="mt-2 text-xs text-gray-600">
-                    هل تم تسليم الطلب للعميل واستلام المبلغ (
-                    {actionModal.order.total.toFixed(2)} د.م)؟
+                    {actionModal.target === "shipment"
+                      ? "هل تم تسليم الشحنة كاملة واستلام المبلغ؟"
+                      : "هل تم تسليم الطلب واستلام المبلغ؟"}
                   </p>
                 </div>
-
                 <div className="flex gap-2">
                   <button
-                    onClick={() => executeAction("delivered")}
+                    onClick={() =>
+                      executeAction("delivered", undefined, actionModal.target)
+                    }
                     disabled={submitting}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500 py-3 text-sm font-bold text-white transition hover:bg-green-600 disabled:opacity-50"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
                     {submitting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Check className="h-4 w-4" />
                     )}
-                    نعم، تم التوصيل
+                    نعم
                   </button>
                   <button
                     onClick={() => setActionModal(null)}
@@ -471,23 +460,21 @@ export default function DeliveryScanPage() {
               </>
             ) : (
               <>
-                <div className="mb-4">
+                <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-black">
                     {actionModal.type === "deferred"
                       ? "تأجيل التوصيل"
                       : actionModal.type === "rejected"
                         ? "رفض العميل"
-                        : "إرجاع الطلب"}
+                        : "إرجاع"}
                   </h3>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {actionModal.type === "deferred"
-                      ? "اذكر سبب تأجيل التوصيل"
-                      : actionModal.type === "rejected"
-                        ? "اذكر سبب رفض العميل"
-                        : "اذكر سبب الإرجاع"}
-                  </p>
+                  <button
+                    onClick={() => setActionModal(null)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-
                 <textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -496,17 +483,18 @@ export default function DeliveryScanPage() {
                   className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-green-500 focus:bg-white"
                   autoFocus
                 />
-
                 <div className="mt-4 flex gap-2">
                   <button
-                    onClick={() => executeAction(actionModal.type, reason)}
+                    onClick={() =>
+                      executeAction(actionModal.type, reason, actionModal.target)
+                    }
                     disabled={submitting || reason.trim().length < 3}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white transition disabled:opacity-50 ${
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white disabled:opacity-50 ${
                       actionModal.type === "deferred"
-                        ? "bg-amber-500 hover:bg-amber-600"
+                        ? "bg-amber-500"
                         : actionModal.type === "rejected"
-                          ? "bg-red-500 hover:bg-red-600"
-                          : "bg-gray-700 hover:bg-gray-800"
+                          ? "bg-red-500"
+                          : "bg-gray-700"
                     }`}
                   >
                     {submitting ? (
@@ -528,6 +516,304 @@ export default function DeliveryScanPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════ تفاصيل الطلب ═══════
+function OrderDetails({
+  order,
+  onClose,
+  onAction,
+  submitting,
+}: {
+  order: OrderData;
+  onClose: () => void;
+  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  submitting: boolean;
+}) {
+  return (
+    <>
+      <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs text-gray-500">رقم الطلب</div>
+            <div className="mt-1 font-mono text-lg font-black">
+              {order.orderNumber}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <CustomerInfo
+          name={order.customerName}
+          phone={order.customerPhone}
+          city={order.city}
+          street={order.street}
+          postalCode={order.postalCode}
+        />
+
+        <ItemsList items={order.items} />
+
+        <div className="flex items-center justify-between rounded-lg bg-[#fff4ed] px-4 py-3">
+          <span className="text-xs font-bold text-gray-700">
+            المجموع المطلوب
+          </span>
+          <span className="text-lg font-black text-[#ff5c00]">
+            {order.total.toFixed(2)} د.م
+          </span>
+        </div>
+      </div>
+
+      <ActionButtons onAction={onAction} submitting={submitting} />
+    </>
+  );
+}
+
+// ═══════ تفاصيل الشحنة ═══════
+function ShipmentDetails({
+  shipment,
+  onClose,
+  onAction,
+  submitting,
+}: {
+  shipment: ShipmentData;
+  onClose: () => void;
+  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  submitting: boolean;
+}) {
+  const firstOrder = shipment.orders[0];
+  const address = firstOrder?.shippingAddressSnapshot || {};
+
+  // ═══ عدد العناصر الإجمالي ═══
+  const totalItems = shipment.orders.reduce(
+    (sum, o) => sum + o.items.reduce((s, i) => s + i.quantity, 0),
+    0
+  );
+
+  return (
+    <>
+      <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Truck className="h-5 w-5 text-[#ff5c00]" />
+              <div className="text-xs text-gray-500">رقم الشحنة</div>
+            </div>
+            <div className="mt-1 font-mono text-lg font-black">
+              {shipment.shipmentNumber}
+            </div>
+            <div className="mt-0.5 text-[11px] text-gray-500">
+              تشمل {shipment.totalOrders} طلب · {totalItems} عنصر
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <CustomerInfo
+          name={address.fullName || shipment.customer?.name || "—"}
+          phone={address.phone || shipment.customer?.phone || null}
+          city={address.city}
+          street={address.street}
+          postalCode={address.postalCode}
+        />
+
+        {/* قائمة الطلبات والعناصر */}
+        <div className="space-y-3">
+          {shipment.orders.map((o) => (
+            <div
+              key={o.orderId}
+              className="rounded-lg border border-gray-200 p-3"
+            >
+              <div className="mb-2 flex items-center gap-2 border-b border-gray-100 pb-2">
+                <span className="font-mono text-xs font-black text-[#ff5c00]">
+                  {o.orderNumber}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {o.items.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.productName}
+                        className="h-9 w-9 shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-gray-100">
+                        <Package className="h-4 w-4 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-bold">
+                        {item.productName}
+                      </div>
+                      {item.variantName && (
+                        <div className="text-[10px] text-gray-500">
+                          {item.variantName}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs font-black">×{item.quantity}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between rounded-lg bg-[#fff4ed] px-4 py-3">
+          <span className="text-xs font-bold text-gray-700">
+            المجموع المطلوب
+          </span>
+          <span className="text-lg font-black text-[#ff5c00]">
+            {shipment.totalCOD.toFixed(2)} د.م
+          </span>
+        </div>
+      </div>
+
+      <ActionButtons onAction={onAction} submitting={submitting} />
+    </>
+  );
+}
+
+// ═══════ مكونات مساعدة ═══════
+function CustomerInfo({
+  name,
+  phone,
+  city,
+  street,
+  postalCode,
+}: {
+  name: string;
+  phone: string | null;
+  city: string | null;
+  street: string | null;
+  postalCode: string | null;
+}) {
+  return (
+    <div className="mb-4 rounded-lg bg-gray-50 p-3">
+      <div className="mb-2 text-xs font-black">بيانات العميل</div>
+      <div className="space-y-1.5 text-xs">
+        <div className="flex items-center gap-2">
+          <User className="h-3.5 w-3.5 text-gray-400" />
+          <span className="font-bold">{name}</span>
+        </div>
+        {phone && (
+          <div className="flex items-center gap-2">
+            <Phone className="h-3.5 w-3.5 text-gray-400" />
+            <span dir="ltr">{phone}</span>
+          </div>
+        )}
+        {city && (
+          <div className="flex items-start gap-2">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
+            <span>
+              {street}، {city}
+              {postalCode && ` - ${postalCode}`}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ItemsList({ items }: { items: OrderData["items"] }) {
+  return (
+    <div className="mb-4">
+      <div className="mb-2 text-xs font-black">المنتجات ({items.length})</div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center gap-2 rounded-lg border border-gray-100 p-2"
+          >
+            {item.imageUrl ? (
+              <img
+                src={item.imageUrl}
+                alt={item.productName}
+                className="h-10 w-10 shrink-0 rounded object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-100">
+                <Package className="h-5 w-5 text-gray-400" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-bold">
+                {item.productName}
+              </div>
+              {item.variantName && (
+                <div className="text-[10px] text-gray-500">
+                  {item.variantName}
+                </div>
+              )}
+            </div>
+            <div className="text-xs font-bold">×{item.quantity}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActionButtons({
+  onAction,
+  submitting,
+}: {
+  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  submitting: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => onAction("delivered")}
+        disabled={submitting}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 py-4 text-sm font-bold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
+      >
+        <Check className="h-5 w-5" />
+        تم التوصيل
+      </button>
+
+      <button
+        onClick={() => onAction("deferred")}
+        disabled={submitting}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-500 bg-amber-50 py-3.5 text-sm font-bold text-amber-700 disabled:opacity-50"
+      >
+        <Clock className="h-5 w-5" />
+        تأجيل التوصيل
+      </button>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onAction("rejected")}
+          disabled={submitting}
+          className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 disabled:opacity-50"
+        >
+          <XCircle className="h-5 w-5" />
+          رفض العميل
+        </button>
+
+        <button
+          onClick={() => onAction("returned")}
+          disabled={submitting}
+          className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-400 bg-gray-50 py-3.5 text-sm font-bold text-gray-700 disabled:opacity-50"
+        >
+          <RotateCcw className="h-5 w-5" />
+          إرجاع
+        </button>
+      </div>
     </div>
   );
 }
