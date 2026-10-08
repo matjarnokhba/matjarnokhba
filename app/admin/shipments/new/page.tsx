@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
   Loader2,
   Search,
-  User,
   Package,
   Check,
   Plus,
@@ -16,6 +15,8 @@ import {
   AlertCircle,
   Store,
   Globe,
+  QrCode,
+  X,
 } from "lucide-react";
 
 type OrderItem = {
@@ -51,38 +52,50 @@ type Customer = {
   phone: string | null;
 };
 
+type ScanMode = "id" | "qr";
+
 export default function NewShipmentPage() {
   const router = useRouter();
 
-  // ═══ البحث ═══
+  const [mode, setMode] = useState<ScanMode>("id");
   const [searchId, setSearchId] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [manualToken, setManualToken] = useState("");
+  const scannerRef = useRef<any>(null);
+  const scannerDivId = "shipment-qr-reader";
 
-  // ═══ النتائج ═══
+  const [searching, setSearching] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [scannedOrderNumber, setScannedOrderNumber] = useState<string | null>(
+    null
+  );
 
-  // ═══ الاختيارات ═══
   const [selectedItems, setSelectedItems] = useState<
     Record<number, number>
-  >({}); // orderItemId → quantity
+  >({});
 
-  // ═══ الحفظ ═══
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // ═══ البحث عن العميل ═══
-  async function handleSearch(e: React.FormEvent) {
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        try {
+          scannerRef.current.stop().catch(() => {});
+        } catch {}
+      }
+    };
+  }, []);
+
+  async function handleSearchById(e: React.FormEvent) {
     e.preventDefault();
-    setSearchError("");
-    setCustomer(null);
-    setOrders([]);
-    setSelectedItems({});
+    setScanError("");
 
     const id = parseInt(searchId.trim());
     if (isNaN(id) || id <= 0) {
-      setSearchError("أدخل معرّف عميل صحيح (رقم)");
+      setScanError("أدخل معرّف عميل صحيح (رقم)");
       return;
     }
 
@@ -92,24 +105,119 @@ export default function NewShipmentPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setSearchError(data.message || "العميل غير موجود");
+        setScanError(data.message || "العميل غير موجود");
         return;
       }
 
       setCustomer(data.customer);
       setOrders(data.orders);
+      setScannedOrderNumber(null);
+      setSelectedItems({});
 
       if (data.orders.length === 0) {
-        setSearchError("لا توجد طلبات قابلة للتجميع لهذا العميل");
+        setScanError("لا توجد طلبات قابلة للتجميع لهذا العميل");
       }
     } catch {
-      setSearchError("فشل الاتصال");
+      setScanError("فشل الاتصال");
     } finally {
       setSearching(false);
     }
   }
 
-  // ═══ تحديد/إلغاء عنصر ═══
+  async function startScanner() {
+    setScanError("");
+    setScanning(true);
+
+    try {
+      const { Html5Qrcode } = await import("html5-qrcode");
+      await new Promise((r) => setTimeout(r, 100));
+
+      const scanner = new Html5Qrcode(scannerDivId);
+      scannerRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText: string) => {
+          handleScanResult(decodedText);
+        },
+        () => {}
+      );
+    } catch (err: any) {
+      console.error(err);
+      setScanError(
+        err?.message?.includes("NotAllowedError")
+          ? "تم رفض الإذن للكاميرا."
+          : "فشل تشغيل الماسح."
+      );
+      setScanning(false);
+    }
+  }
+
+  async function stopScanner() {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch {}
+      scannerRef.current = null;
+    }
+    setScanning(false);
+  }
+
+  async function handleScanResult(text: string) {
+    await stopScanner();
+
+    let token = text.trim();
+
+    if (token.includes("/d/")) {
+      const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
+      if (match) token = match[1];
+    }
+
+    if (token.includes("/")) {
+      const parts = token.split("/");
+      token = parts[parts.length - 1];
+    }
+
+    await loadByToken(token);
+  }
+
+  async function loadByToken(token: string) {
+    setSearching(true);
+    setScanError("");
+
+    try {
+      const res = await fetch(`/api/admin/orders/by-token/${token}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setScanError(data.message || "الطلب غير موجود");
+        return;
+      }
+
+      setCustomer(data.customer);
+      setOrders(data.orders);
+      setScannedOrderNumber(data.scannedOrder?.orderNumber || null);
+      setSelectedItems({});
+
+      if (data.orders.length === 0) {
+        setScanError("لا توجد طلبات قابلة للتجميع لهذا العميل");
+      }
+    } catch {
+      setScanError("فشل الاتصال");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleManualToken(e: React.FormEvent) {
+    e.preventDefault();
+    if (!manualToken.trim()) return;
+    await loadByToken(manualToken.trim());
+    setManualToken("");
+  }
+
   function toggleItem(item: OrderItem) {
     setSelectedItems((prev) => {
       const copy = { ...prev };
@@ -122,13 +230,11 @@ export default function NewShipmentPage() {
     });
   }
 
-  // ═══ تغيير كمية ═══
   function setQuantity(item: OrderItem, qty: number) {
     const clamped = Math.max(1, Math.min(qty, item.remainingQuantity));
     setSelectedItems((prev) => ({ ...prev, [item.id]: clamped }));
   }
 
-  // ═══ تحديد كل عناصر طلب ═══
   function toggleAllInOrder(order: Order) {
     const allSelected = order.items.every((i) => selectedItems[i.id]);
     setSelectedItems((prev) => {
@@ -144,7 +250,6 @@ export default function NewShipmentPage() {
     });
   }
 
-  // ═══ الإجمالي (تقريبي للعرض فقط — السيرفر يحسبه) ═══
   const selectedCount = Object.keys(selectedItems).length;
 
   const totalCOD = orders.reduce((sum, order) => {
@@ -159,7 +264,6 @@ export default function NewShipmentPage() {
     return sum + orderCOD;
   }, 0);
 
-  // ═══ إنشاء الشحنة ═══
   async function handleCreate() {
     if (!customer) return;
     if (selectedCount === 0) {
@@ -216,55 +320,155 @@ export default function NewShipmentPage() {
           شحنة جديدة
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          اختر عميلاً ثم حدد الطلبات والعناصر
+          امسح QR الطلب أو ابحث بمعرّف العميل
         </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* ═══ اليسار: البحث + الطلبات ═══ */}
         <div className="space-y-4 lg:col-span-2">
-          {/* البحث */}
+          <div className="flex gap-2 rounded-xl bg-gray-100 p-1">
+            <button
+              onClick={() => setMode("qr")}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold transition ${
+                mode === "qr"
+                  ? "bg-white text-[#ff5c00] shadow-sm"
+                  : "text-gray-600"
+              }`}
+            >
+              <QrCode className="h-4 w-4" />
+              مسح QR
+            </button>
+            <button
+              onClick={() => setMode("id")}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold transition ${
+                mode === "id"
+                  ? "bg-white text-[#ff5c00] shadow-sm"
+                  : "text-gray-600"
+              }`}
+            >
+              <Search className="h-4 w-4" />
+              بحث بالمعرّف
+            </button>
+          </div>
+
           <div className="rounded-xl bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-sm font-black">البحث عن عميل</h2>
+            {mode === "qr" ? (
+              <>
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
+                  <QrCode className="h-4 w-4 text-[#ff5c00]" />
+                  امسح QR طلب العميل
+                </h2>
 
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchId}
-                  onChange={(e) => setSearchId(e.target.value)}
-                  placeholder="معرّف العميل (مثال: 5)"
-                  dir="ltr"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 font-mono text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={searching || !searchId.trim()}
-                className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
-              >
-                {searching ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {!scanning ? (
+                  <button
+                    onClick={startScanner}
+                    disabled={searching}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-[#ff5c00] to-orange-500 py-3.5 text-sm font-bold text-white transition hover:opacity-95 disabled:opacity-50"
+                  >
+                    <QrCode className="h-5 w-5" />
+                    فتح الكاميرا للمسح
+                  </button>
                 ) : (
-                  <Search className="h-4 w-4" />
+                  <button
+                    onClick={stopScanner}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-600"
+                  >
+                    <X className="h-5 w-5" />
+                    إيقاف الماسح
+                  </button>
                 )}
-                بحث
-              </button>
-            </form>
 
-            {searchError && (
+                {scanning && (
+                  <div className="mt-4 overflow-hidden rounded-xl">
+                    <div id={scannerDivId} className="w-full" />
+                    <p className="mt-3 text-center text-xs text-gray-500">
+                      وجّه الكاميرا نحو QR الطلب
+                    </p>
+                  </div>
+                )}
+
+                {!scanning && (
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <div className="mb-2 text-xs font-bold text-gray-700">
+                      إدخال يدوي للتوكن
+                    </div>
+                    <form onSubmit={handleManualToken} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={manualToken}
+                        onChange={(e) => setManualToken(e.target.value)}
+                        placeholder="الصق توكن الطلب..."
+                        dir="ltr"
+                        className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-[#ff5c00] focus:bg-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!manualToken.trim() || searching}
+                        className="rounded-lg bg-[#ff5c00] px-4 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
+                      >
+                        {searching ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "جلب"
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
+                  <Search className="h-4 w-4 text-[#ff5c00]" />
+                  البحث بمعرّف العميل
+                </h2>
+
+                <form onSubmit={handleSearchById} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchId}
+                      onChange={(e) => setSearchId(e.target.value)}
+                      placeholder="معرّف العميل (مثال: 5)"
+                      dir="ltr"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 font-mono text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={searching || !searchId.trim()}
+                    className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
+                  >
+                    {searching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    بحث
+                  </button>
+                </form>
+              </>
+            )}
+
+            {scanError && (
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{searchError}</span>
+                <span>{scanError}</span>
               </div>
             )}
           </div>
 
-          {/* معلومات العميل */}
           {customer && (
             <div className="rounded-xl border-2 border-[#ff5c00] bg-white p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-black">العميل</h2>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-black">العميل</h2>
+                {scannedOrderNumber && (
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                    ✓ من QR: {scannedOrderNumber}
+                  </span>
+                )}
+              </div>
               <div className="space-y-1.5 text-sm">
                 <div className="font-black text-gray-900">{customer.name}</div>
                 <div className="text-xs text-gray-500">{customer.email}</div>
@@ -277,7 +481,6 @@ export default function NewShipmentPage() {
             </div>
           )}
 
-          {/* قائمة الطلبات */}
           {customer && orders.length > 0 && (
             <div className="space-y-4">
               <h2 className="text-sm font-black">
@@ -300,7 +503,6 @@ export default function NewShipmentPage() {
                       someSelected ? "ring-2 ring-[#ff5c00]" : ""
                     }`}
                   >
-                    {/* رأس الطلب */}
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                       <div>
                         <div className="flex items-center gap-2">
@@ -346,7 +548,6 @@ export default function NewShipmentPage() {
                       </button>
                     </div>
 
-                    {/* العناصر */}
                     <div className="space-y-2">
                       {order.items.map((item) => {
                         const isSelected = !!selectedItems[item.id];
@@ -417,7 +618,6 @@ export default function NewShipmentPage() {
                               </div>
                             </div>
 
-                            {/* اختيار الكمية */}
                             {isSelected && (
                               <div className="mt-2 flex items-center justify-between border-t border-dashed border-gray-200 pt-2">
                                 <span className="text-[11px] font-bold text-gray-600">
@@ -461,7 +661,6 @@ export default function NewShipmentPage() {
           )}
         </div>
 
-        {/* ═══ اليمين: ملخص الشحنة ═══ */}
         <div className="lg:col-span-1">
           <div className="sticky top-8 rounded-xl bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
