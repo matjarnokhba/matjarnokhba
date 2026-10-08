@@ -27,9 +27,10 @@ export default function SellerQRPage() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [storeUrl, setStoreUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [generatingQR, setGeneratingQR] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // ═══ تحميل بيانات التاجر ═══
+  // ═══ 1. تحميل بيانات التاجر ═══
   useEffect(() => {
     async function load() {
       try {
@@ -41,36 +42,16 @@ export default function SellerQRPage() {
           return;
         }
 
-        const s: SellerInfo = {
+        setSeller({
           storeName: data.seller.storeName,
           slug: data.seller.slug,
-        };
-        setSeller(s);
+        });
 
-        // ═══ بناء رابط المتجر ═══
         const origin =
           typeof window !== "undefined"
             ? window.location.origin
             : "https://matjarnokhba-lyart.vercel.app";
-        const url = `${origin}/store/${s.slug}`;
-        setStoreUrl(url);
-
-        // ═══ توليد QR على Canvas ═══
-        if (canvasRef.current) {
-          await QRCode.toCanvas(canvasRef.current, url, {
-            width: 1024,
-            margin: 2,
-            color: {
-              dark: "#111827",
-              light: "#ffffff",
-            },
-            errorCorrectionLevel: "H",
-          });
-
-          // نحوّل الـcanvas إلى dataURL للعرض والتحميل
-          const dataUrl = canvasRef.current.toDataURL("image/png");
-          setQrDataUrl(dataUrl);
-        }
+        setStoreUrl(`${origin}/store/${data.seller.slug}`);
       } catch (err) {
         console.error(err);
         setError("فشل تحميل البيانات");
@@ -80,6 +61,37 @@ export default function SellerQRPage() {
     }
     load();
   }, []);
+
+  // ═══ 2. توليد QR (بعد أن يصبح canvas موجوداً في DOM) ═══
+  useEffect(() => {
+    if (loading || !seller || !storeUrl || !canvasRef.current) return;
+    if (qrDataUrl) return; // لا تُعِد التوليد
+
+    async function generate() {
+      setGeneratingQR(true);
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        await QRCode.toCanvas(canvas, storeUrl, {
+          width: 1024,
+          margin: 2,
+          color: {
+            dark: "#111827",
+            light: "#ffffff",
+          },
+          errorCorrectionLevel: "H",
+        });
+
+        setQrDataUrl(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.error("QR generation failed:", err);
+      } finally {
+        setGeneratingQR(false);
+      }
+    }
+    generate();
+  }, [loading, seller, storeUrl, qrDataUrl]);
 
   // ═══ تحميل PNG ═══
   function handleDownload() {
@@ -228,7 +240,7 @@ export default function SellerQRPage() {
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      {/* ═══ الـCanvas المخفي ═══ */}
+      {/* ═══ الـCanvas — دائماً موجود في DOM بعد انتهاء التحميل ═══ */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
       <Link
@@ -289,7 +301,10 @@ export default function SellerQRPage() {
               رابط متجرك
             </h3>
             <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
-              <span className="flex-1 truncate font-mono text-[11px] text-gray-700" dir="ltr">
+              <span
+                className="flex-1 truncate font-mono text-[11px] text-gray-700"
+                dir="ltr"
+              >
                 {storeUrl}
               </span>
               <button
@@ -327,15 +342,19 @@ export default function SellerQRPage() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleDownload}
-                disabled={!qrDataUrl}
+                disabled={!qrDataUrl || generatingQR}
                 className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
-                <Download className="h-4 w-4" />
+                {generatingQR ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
                 تحميل PNG
               </button>
               <button
                 onClick={handlePrint}
-                disabled={!qrDataUrl}
+                disabled={!qrDataUrl || generatingQR}
                 className="flex items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed] disabled:opacity-50"
               >
                 <Printer className="h-4 w-4" />
