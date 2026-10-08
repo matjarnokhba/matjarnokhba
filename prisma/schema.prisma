@@ -23,6 +23,38 @@ enum UserRole {
   SELLER
   ADMIN
   SUPER_ADMIN
+  DELIVERY
+}
+
+/// مصدر الطلب
+enum OrderSource {
+  ONLINE    // من الموقع الإلكتروني
+  IN_STORE  // من المحل الحقيقي (بمسح QR)
+}
+
+/// حالة حساب السائق
+enum DeliveryPersonStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+/// نوع محاولة التوصيل
+enum DeliveryAttemptType {
+  DELIVERED   // تم التسليم
+  DEFERRED    // تأجيل
+  REJECTED    // رفض العميل
+  RETURNED    // إرجاع
+}
+
+/// فئة الصلاحية
+enum PermissionCategory {
+  ORDERS
+  SHIPMENT
+  DELIVERY
+  SELLER
+  ADMIN
+  SYSTEM
 }
 
 /// حالة البائع
@@ -139,6 +171,11 @@ enum AuditAction {
   PERMISSION_CHANGE
   PAYMENT_CHANGE
   STOCK_ADJUSTMENT
+  QR_SCAN
+  SHIPMENT_CREATE
+  SHIPMENT_UPDATE
+  DELIVERY_ASSIGN
+  DELIVERY_ACTION
 }
 
 /// نوع حركة نقاط الولاء
@@ -166,6 +203,8 @@ enum LoyaltyRewardStatus {
 model User {
   id           Int       @id @default(autoincrement())
   email        String    @unique
+  referralCode String    @unique @default(cuid())
+  referredById Int?
   passwordHash String
   name         String
   phone        String?
@@ -186,7 +225,14 @@ model User {
   loyaltyAccount LoyaltyAccount?
   sessions       Session[]
   passwordResetTokens PasswordResetToken[]
-  favorites      Favorite[]
+
+  referredBy         User?             @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referralsGiven     User[]            @relation("UserReferrals")
+  referralAsReferrer Referral?         @relation("ReferralAsReferrer")
+  referralAsReferred Referral?         @relation("ReferralAsReferred")
+  deliveryPerson     DeliveryPerson?
+  userPermissions    UserPermission[]
+  favorites          Favorite[]
 
   @@index([email])
   @@index([deletedAt])
@@ -333,6 +379,7 @@ model Category {
 
 model Product {
   id          Int           @id @default(autoincrement())
+  productCode String        @unique @default(uuid())
   sellerId    Int
   categoryId  Int
   name        String
@@ -532,6 +579,11 @@ model Order {
   orderNumber             String        @unique
   userId                  Int
   sellerId                Int?
+  source                  OrderSource   @default(ONLINE)
+  createdBySellerId       Int?
+  deliveryToken           String?       @unique @default(uuid())
+  deliveryPersonId        Int?
+  assignedAt              DateTime?
   status                  OrderStatus   @default(NEW)
   paymentMethod           PaymentMethod @default(COD)
   paymentStatus           PaymentStatus @default(PENDING)
@@ -559,6 +611,8 @@ model Order {
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   seller           Seller?              @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  deliveryPerson   DeliveryPerson?      @relation("OrderDeliveryPerson", fields: [deliveryPersonId], references: [id], onDelete: SetNull)
+  deliveryAttempts DeliveryAttempt[]
   items            OrderItem[]
   statusHistory    OrderStatusHistory[]
   reservation      Reservation?
@@ -575,6 +629,10 @@ model Order {
   @@index([createdAt])
   @@index([sellerId, status])
   @@index([sellerId, createdAt])
+  @@index([source])
+  @@index([sellerId, source])
+  @@index([deliveryPersonId])
+  @@index([deliveryPersonId, status])
 }
 
 model OrderItem {
@@ -1338,4 +1396,114 @@ model Favorite {
   @@index([userId])
   @@index([productId])
   @@index([userId, createdAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 82 — REFERRAL SYSTEM
+// ═══════════════════════════════════════════
+
+model Referral {
+  id             Int       @id @default(autoincrement())
+  referrerId     Int       @unique
+  referredId     Int       @unique
+  createdAt      DateTime  @default(now())
+
+  firstOrderId   Int?
+  firstOrderAt   DateTime?
+  pointsAwarded  Int       @default(0)
+  rewardedAt     DateTime?
+
+  referrer User @relation("ReferralAsReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred User @relation("ReferralAsReferred", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
+  @@index([referredId])
+  @@index([rewardedAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 83 — DELIVERY PERSON SYSTEM
+// ═══════════════════════════════════════════
+
+model DeliveryPerson {
+  id                   Int                    @id @default(autoincrement())
+  userId               Int                    @unique
+  city                 String
+  phone                String
+  vehicleType          String?
+  status               DeliveryPersonStatus   @default(ACTIVE)
+  notes                String?
+  totalDeliveries      Int                    @default(0)
+  successfulDeliveries Int                    @default(0)
+  failedDeliveries     Int                    @default(0)
+  returnCount          Int                    @default(0)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  deletedAt            DateTime?
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedOrders    Order[]            @relation("OrderDeliveryPerson")
+  deliveryAttempts  DeliveryAttempt[]
+
+  @@index([status])
+  @@index([city])
+  @@index([deletedAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 84 — DELIVERY ATTEMPTS LOG
+// ═══════════════════════════════════════════
+
+model DeliveryAttempt {
+  id               Int                 @id @default(autoincrement())
+  orderId          Int
+  deliveryPersonId Int
+  type             DeliveryAttemptType
+  reason           String?
+  createdAt        DateTime            @default(now())
+
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  deliveryPerson DeliveryPerson @relation(fields: [deliveryPersonId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([deliveryPersonId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 85 — PERMISSIONS SYSTEM
+// ═══════════════════════════════════════════
+
+/// الصلاحية الواحدة — مثل: CREATE_SHIPMENT
+model Permission {
+  id          Int                @id @default(autoincrement())
+  key         String             @unique
+  name        String
+  description String?
+  category    PermissionCategory
+  createdAt   DateTime           @default(now())
+
+  userPermissions UserPermission[]
+
+  @@index([category])
+}
+
+/// منح صلاحية لمستخدم معين
+model UserPermission {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  permissionId  Int
+  grantedAt     DateTime @default(now())
+  grantedById   Int?
+  revokedAt     DateTime?
+  notes         String?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@index([userId, revokedAt])
 }

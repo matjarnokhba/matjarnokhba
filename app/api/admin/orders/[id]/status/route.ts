@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
 import { LoyaltyService } from "@/services/loyalty.service";
+import { ReferralService } from "@/services/referral.service";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING", "CANCELLED"],
@@ -111,7 +112,6 @@ export async function PATCH(
 
       // ═══ 3. CANCELLED: إرجاع المخزون (COD = Sale عند الإنشاء) ═══
       if (newStatus === "CANCELLED") {
-        // تحقق: هل سبق أن أُرجع المخزون؟ (idempotency)
         const alreadyReturned = await tx.inventoryMovement.findFirst({
           where: {
             referenceType: "ORDER",
@@ -142,7 +142,7 @@ export async function PATCH(
         }
       }
 
-      // ═══ 4. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
+      // ═══ 4. DELIVERED: زيادة المبيعات + منح نقاط الولاء + مكافأة الإحالة ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
         // 4a. زيادة sold
         const soldByProduct = new Map<number, number>();
@@ -221,6 +221,13 @@ export async function PATCH(
           }
         } catch (loyaltyErr) {
           console.error("Loyalty award failed:", loyaltyErr);
+        }
+
+        // 4c. مكافأة الإحالة عند أول طلب مؤهل
+        try {
+          await ReferralService.awardOnFirstOrder(tx, order.userId, order.id);
+        } catch (refErr) {
+          console.error("Referral award failed:", refErr);
         }
       }
 

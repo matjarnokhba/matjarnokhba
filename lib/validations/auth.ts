@@ -22,6 +22,12 @@ export const registerSchema = z.object({
     .min(8, "رقم الهاتف غير صالح")
     .optional()
     .or(z.literal("")),
+  referralCode: z
+    .string()
+    .trim()
+    .max(20, "كود الإحالة غير صالح")
+    .optional()
+    .or(z.literal("")),
 });
 
 // ═══════════════════════════════════════════

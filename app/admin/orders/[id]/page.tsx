@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ArrowRight, User, MapPin, Phone, Package } from "lucide-react";
 import OrderStatusChanger from "@/components/admin/OrderStatusChanger";
+import AssignDeliveryButton from "@/components/admin/AssignDeliveryButton";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,11 @@ export default async function OrderDetailsPage({
     include: {
       user: { select: { name: true, email: true, phone: true } },
       items: true,
+      deliveryPerson: {
+        include: {
+          user: { select: { name: true, email: true } },
+        },
+      },
       statusHistory: {
         orderBy: { createdAt: "desc" },
         include: { order: { select: { orderNumber: true } } },
@@ -60,10 +66,19 @@ export default async function OrderDetailsPage({
           </p>
         </div>
 
-        <OrderStatusChanger
-          orderId={order.id}
-          currentStatus={order.status}
-        />
+        <div className="flex flex-wrap gap-2">
+          <AssignDeliveryButton
+            orderId={order.id}
+            orderSource={order.source}
+            orderStatus={order.status}
+            currentDeliveryPersonId={order.deliveryPersonId}
+            currentDeliveryPersonName={order.deliveryPerson?.user.name || null}
+          />
+          <OrderStatusChanger
+            orderId={order.id}
+            currentStatus={order.status}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

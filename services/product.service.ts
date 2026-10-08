@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 type PrismaProduct = {
   id: number;
+  productCode: string;
   name: string;
   slug: string;
   description: string | null;
@@ -103,6 +104,7 @@ const publicProductWhere = {
 
 type FullDetail = {
   id: number;
+  productCode: string;
   sellerId: number;
   sellerSlug: string;
   sellerName: string;
@@ -277,6 +279,7 @@ export const ProductService = {
 
     return {
       id: product.id,
+      productCode: product.productCode,
       sellerId: product.seller?.id || 0,
       sellerSlug: product.seller?.slug || "",
       sellerName: product.seller?.storeName || "",

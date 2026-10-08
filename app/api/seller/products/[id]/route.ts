@@ -150,6 +150,7 @@ export async function GET(
       success: true,
       product: {
         id: product.id,
+        productCode: product.productCode,
         name: product.name,
         slug: product.slug,
         description: product.description || "",
@@ -505,7 +506,10 @@ export async function PATCH(
       existingVariants.map((v) => [v.optionsHash, v])
     );
     const newHashes = new Set(
-      combos.map((c) => [...c].sort((a, b) => a - b).join("|"))
+      combos.map((c) => {
+        if (c.length === 0) return "DEFAULT";
+        return [...c].sort((a, b) => a - b).join("|");
+      })
     );
 
     // ═══ Transaction ═══

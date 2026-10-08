@@ -16,6 +16,7 @@ import {
   FileText,
   Tag,
   DollarSign,
+  QrCode,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
@@ -278,13 +279,22 @@ export default function EditSellerProductPage() {
           <h1 className="text-2xl font-black text-gray-900">تعديل المنتج</h1>
           <p className="mt-1 text-sm text-gray-500">{name}</p>
         </div>
-        <button
-          onClick={() => setShowDelete(true)}
-          className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          حذف المنتج
-        </button>
+        <div className="flex gap-2">
+          <Link
+            href={`/seller/products/${productId}/ticket`}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#ff5c00] bg-white px-4 py-2 text-xs font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            بطاقة المنتج
+          </Link>
+          <button
+            onClick={() => setShowDelete(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            حذف المنتج
+          </button>
+        </div>
       </div>
 
       {isActive && (

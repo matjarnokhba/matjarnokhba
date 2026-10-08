@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Package,
   Gift,
+  Users,
 } from "lucide-react";
 
 type UserData = {
@@ -161,6 +162,15 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
             >
               <Package className="h-3.5 w-3.5" />
               طلباتي
+            </Link>
+
+            <Link
+              href="/referral"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+            >
+              <Users className="h-3.5 w-3.5 text-[#ff5c00]" />
+              <span>دعوة الأصدقاء</span>
             </Link>
 
             <Link

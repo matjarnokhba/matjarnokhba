@@ -16,6 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Store,
+  Share2,
+  Check,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -94,6 +96,7 @@ export default function ProductClient() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [shared, setShared] = useState(false);
 
   // خريطة: optionId → valueId
   const [selectedOptions, setSelectedOptions] = useState<
@@ -323,6 +326,33 @@ export default function ProductClient() {
     setIsCartOpen(true);
   }
 
+  // ═══ مشاركة المنتج ═══
+  async function handleShare() {
+    if (!product) return;
+    const fullUrl = `${window.location.origin}/product/${product.sellerSlug}/${product.slug}`;
+    const shareData = {
+      title: product.name,
+      text: `شاهد هذا المنتج: ${product.name}`,
+      url: fullUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+        return;
+      }
+      await navigator.clipboard.writeText(fullUrl);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch (err) {
+      if ((err as Error)?.name !== "AbortError") {
+        console.error(err);
+      }
+    }
+  }
+
   // ═══ التحميل ═══
   if (loading) {
     return (
@@ -456,6 +486,22 @@ export default function ProductClient() {
                   <Heart
                     className={`h-5 w-5 ${isFavorite(product.id) ? "fill-current" : ""}`}
                   />
+                </button>
+
+                <button
+                  onClick={handleShare}
+                  className={`absolute bottom-3 left-16 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition ${
+                    shared
+                      ? "bg-green-500 text-white"
+                      : "bg-white text-[#111827]"
+                  }`}
+                  aria-label="مشاركة"
+                >
+                  {shared ? (
+                    <Check className="h-5 w-5" />
+                  ) : (
+                    <Share2 className="h-5 w-5" />
+                  )}
                 </button>
 
                 {product.images.length > 1 && (
@@ -716,6 +762,21 @@ export default function ProductClient() {
                 <Heart
                   className={`h-5 w-5 ${isFavorite(product.id) ? "fill-current" : ""}`}
                 />
+              </button>
+              <button
+                onClick={handleShare}
+                className={`flex h-11 w-11 items-center justify-center rounded-lg border transition ${
+                  shared
+                    ? "border-green-500 bg-green-50 text-green-600"
+                    : "border-gray-200 text-[#111827] hover:border-gray-300"
+                }`}
+                aria-label="مشاركة"
+              >
+                {shared ? (
+                  <Check className="h-5 w-5" />
+                ) : (
+                  <Share2 className="h-5 w-5" />
+                )}
               </button>
             </div>
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Gift } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -10,8 +11,19 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // ═══ قراءة ?ref= من الرابط ═══
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref && typeof ref === "string") {
+      setReferralCode(ref.trim().toUpperCase());
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,13 +34,18 @@ export default function RegisterPage() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, phone }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          phone,
+          referralCode: referralCode || undefined,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        // إذا كان خطأ في الحقول
         if (data.errors && data.errors.length > 0) {
           setError(data.errors[0].message);
         } else {
@@ -38,7 +55,6 @@ export default function RegisterPage() {
         return;
       }
 
-      // نجاح → انتقل إلى صفحة الدخول
       router.push("/login");
     } catch (err) {
       setError("حدث خطأ في الاتصال");
@@ -55,6 +71,22 @@ export default function RegisterPage() {
         <p className="text-center text-gray-500 mb-8">
           انضم إلى متجر نخبة
         </p>
+
+        {/* ═══ شارة الإحالة ═══ */}
+        {referralCode && (
+          <div className="mb-6 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+            <Gift className="h-5 w-5 shrink-0 text-green-600" />
+            <div className="text-xs">
+              <div className="font-bold text-green-800">
+                🎉 دعوة من صديق
+              </div>
+              <div className="mt-0.5 text-green-700">
+                كود الإحالة:{" "}
+                <strong className="font-mono">{referralCode}</strong>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

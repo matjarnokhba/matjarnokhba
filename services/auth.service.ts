@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { ReferralService } from "@/services/referral.service";
 import {
   registerSchema,
   loginSchema,
@@ -27,7 +28,10 @@ export const AuthService = {
     // 3. شف​ر كلمة المرور
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    // 4. أنشئ المستخدم في قاعدة البيانات
+    // 4. ولّد كود إحالة فريد للمستخدم الجديد
+    const referralCode = await ReferralService.generateUniqueCode();
+
+    // 5. أنشئ المستخدم
     const user = await prisma.user.create({
       data: {
         name: data.name,
@@ -35,6 +39,7 @@ export const AuthService = {
         passwordHash,
         phone: data.phone || null,
         role: "CUSTOMER",
+        referralCode,
       },
       select: {
         id: true,
@@ -45,6 +50,17 @@ export const AuthService = {
         createdAt: true,
       },
     });
+
+    // 6. ربط الإحالة إن وُجد كود
+    const incomingCode = data.referralCode;
+    if (incomingCode && typeof incomingCode === "string" && incomingCode.trim()) {
+      try {
+        await ReferralService.linkReferral(user.id, incomingCode);
+      } catch (err) {
+        // لا نُفشل التسجيل إن فشل الربط
+        console.error("Referral link failed:", err);
+      }
+    }
 
     return user;
   },

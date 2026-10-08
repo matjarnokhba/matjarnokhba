@@ -9,6 +9,7 @@ import {
   Edit3,
   Eye,
   AlertTriangle,
+  QrCode,
 } from "lucide-react";
 
 type SellerProduct = {
@@ -195,6 +196,13 @@ export default function SellerProductsPage() {
                       aria-label="عرض"
                     >
                       <Eye className="h-4 w-4" />
+                    </Link>
+                    <Link
+                      href={`/seller/products/${product.id}/ticket`}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-[#ff5c00] transition hover:bg-[#fff4ed]"
+                      aria-label="بطاقة المنتج (QR)"
+                    >
+                      <QrCode className="h-4 w-4" />
                     </Link>
                     <Link
                       href={`/seller/products/${product.id}`}

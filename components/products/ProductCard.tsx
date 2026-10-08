@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Star, Truck, ShoppingCart, Heart } from "lucide-react";
+import { useState } from "react";
+import { Star, Truck, ShoppingCart, Heart, Share2, Check } from "lucide-react";
 import type { Product } from "@/lib/data/products";
 import { CURRENCY } from "@/lib/data/products";
-import { getCategoryById } from "@/lib/data/categories";
 import { useFavorites } from "@/lib/hooks/useFavorites";
 
 type ProductCardProps = {
@@ -19,6 +19,7 @@ export default function ProductCard({
 }: ProductCardProps) {
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const [shared, setShared] = useState(false);
 
   const discountPercent = product.oldPrice
     ? Math.round(((product.oldPrice - product.price) / product.oldPrice) * 100)
@@ -29,17 +30,46 @@ export default function ProductCard({
 
   const productUrl = `/product/${product.sellerSlug || "unknown"}/${product.slug}`;
 
-  // ═══ هل المنتج له خصائص (لون/مقاس...)؟ ═══
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
 
     if (product.hasOptions) {
-      // وجّه العميل لصفحة المنتج ليختار
       router.push(productUrl);
     } else {
-      // أضف مباشرة
       onAddToCart(product);
+    }
+  }
+
+  async function handleShare(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const fullUrl = `${window.location.origin}${productUrl}`;
+    const shareData = {
+      title: product.name,
+      text: `شاهد هذا المنتج: ${product.name}`,
+      url: fullUrl,
+    };
+
+    try {
+      // Web Share API (الهاتف)
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+        return;
+      }
+
+      // Fallback: نسخ الرابط
+      await navigator.clipboard.writeText(fullUrl);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch (err) {
+      // المستخدم أغلق النافذة — لا نفعل شيئاً
+      if ((err as Error)?.name !== "AbortError") {
+        console.error(err);
+      }
     }
   }
 
@@ -71,30 +101,48 @@ export default function ProductCard({
           </span>
         )}
 
-        {/* شارة "خيارات متعددة" — إن كان له variants */}
         {product.hasOptions && (
           <span className="absolute bottom-1.5 left-1.5 rounded-md bg-white/95 px-1.5 py-0.5 text-[9px] font-bold text-[#111827] shadow-sm backdrop-blur sm:bottom-2 sm:left-2 sm:text-[10px]">
             خيارات متعددة
           </span>
         )}
 
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleFavorite(product);
-          }}
-          className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full shadow-md backdrop-blur transition active:scale-90 sm:right-2 sm:top-2 sm:h-8 sm:w-8 ${
-            fav
-              ? "bg-red-500 text-white"
-              : "bg-white/90 text-[#111827] hover:bg-white"
-          }`}
-          aria-label="المفضلة"
-        >
-          <Heart
-            className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${fav ? "fill-current" : ""}`}
-          />
-        </button>
+        {/* ═══ أزرار الصورة (قلب + مشاركة) ═══ */}
+        <div className="absolute right-1.5 top-1.5 flex flex-col gap-1.5 sm:right-2 sm:top-2">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFavorite(product);
+            }}
+            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-md backdrop-blur transition active:scale-90 sm:h-8 sm:w-8 ${
+              fav
+                ? "bg-red-500 text-white"
+                : "bg-white/90 text-[#111827] hover:bg-white"
+            }`}
+            aria-label="المفضلة"
+          >
+            <Heart
+              className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${fav ? "fill-current" : ""}`}
+            />
+          </button>
+
+          <button
+            onClick={handleShare}
+            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-md backdrop-blur transition active:scale-90 sm:h-8 sm:w-8 ${
+              shared
+                ? "bg-green-500 text-white"
+                : "bg-white/90 text-[#111827] hover:bg-white"
+            }`}
+            aria-label="مشاركة"
+          >
+            {shared ? (
+              <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            ) : (
+              <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            )}
+          </button>
+        </div>
 
         {product.freeShipping && (
           <span className="absolute bottom-2 right-2 hidden items-center gap-1 rounded-md bg-green-500/95 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm sm:flex">
@@ -103,7 +151,6 @@ export default function ProductCard({
           </span>
         )}
 
-        {/* زر السلة (الهاتف) */}
         <button
           onClick={handleAddToCart}
           className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-[#ff5c00] text-white shadow-lg transition hover:bg-[#e64a00] active:scale-95 sm:hidden"
@@ -112,7 +159,6 @@ export default function ProductCard({
           <ShoppingCart className="h-4 w-4" />
         </button>
 
-        {/* زر أضف للسلة (سطح المكتب) */}
         <button
           onClick={handleAddToCart}
           className="absolute bottom-2 left-2 right-2 hidden translate-y-12 rounded-lg bg-[#ff5c00] py-2 text-xs font-bold text-white opacity-0 shadow-lg transition-all duration-300 hover:bg-[#e64a00] group-hover:translate-y-0 group-hover:opacity-100 sm:block"

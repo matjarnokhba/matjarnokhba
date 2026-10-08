@@ -13,12 +13,15 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
+  Store,
+  Globe,
 } from "lucide-react";
 
 type Order = {
   id: number;
   orderNumber: string;
   status: string;
+  source: string;
   total: number;
   createdAt: string;
   itemsCount: number;
@@ -100,6 +103,7 @@ export default function SellerOrdersPage() {
     total: 0,
   });
   const [filter, setFilter] = useState<Filter>("ALL");
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | "ONLINE" | "IN_STORE">("ALL");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -108,6 +112,7 @@ export default function SellerOrdersPage() {
     try {
       const params = new URLSearchParams();
       if (filter !== "ALL") params.set("status", filter);
+      if (sourceFilter !== "ALL") params.set("source", sourceFilter);
       if (search.trim()) params.set("q", search.trim());
 
       const res = await fetch(`/api/seller/orders?${params.toString()}`);
@@ -126,7 +131,7 @@ export default function SellerOrdersPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, sourceFilter]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -237,7 +242,33 @@ export default function SellerOrdersPage() {
         </div>
       </div>
 
-      {/* Filter chips */}
+      {/* ═══ فلتر المصدر ═══ */}
+      <div className="mb-3 flex flex-wrap gap-2 rounded-xl bg-white p-3 shadow-sm">
+        <span className="self-center text-[11px] font-bold text-gray-500">
+          نوع الطلب:
+        </span>
+        {(
+          [
+            ["ALL", "الكل", null],
+            ["ONLINE", "🌐 إلكتروني", Globe],
+            ["IN_STORE", "🏪 طلب محل", Store],
+          ] as const
+        ).map(([s, label]) => (
+          <button
+            key={s}
+            onClick={() => setSourceFilter(s)}
+            className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+              sourceFilter === s
+                ? "bg-[#0a1f44] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ فلتر الحالة ═══ */}
       <div className="mb-4 flex flex-wrap gap-2">
         {(
           [
@@ -331,6 +362,12 @@ export default function SellerOrdersPage() {
                         <Icon className="h-3 w-3" />
                         {info.label}
                       </span>
+                      {order.source === "IN_STORE" && (
+                        <span className="flex items-center gap-1 rounded-full bg-[#fff4ed] px-2 py-0.5 text-[10px] font-bold text-[#ff5c00]">
+                          <Store className="h-3 w-3" />
+                          طلب محل
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-1 text-[11px] text-gray-500">

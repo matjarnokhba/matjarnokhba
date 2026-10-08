@@ -21,11 +21,13 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") || "ALL";
+    const source = searchParams.get("source") || "ALL";
     const search = searchParams.get("q")?.trim() || "";
 
     const where: any = { sellerId: auth.seller.id };
 
     if (status !== "ALL") where.status = status;
+    if (source !== "ALL") where.source = source;
 
     if (search) {
       where.OR = [
@@ -71,6 +73,7 @@ export async function GET(request: Request) {
         id: o.id,
         orderNumber: o.orderNumber,
         status: o.status,
+        source: o.source,
         total: Number(o.total),
         createdAt: o.createdAt,
         itemsCount: o._count.items,

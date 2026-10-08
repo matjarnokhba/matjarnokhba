@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { LoyaltyService } from "@/services/loyalty.service";
+import { ReferralService } from "@/services/referral.service";
 
 const SELLER_ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING"],
@@ -45,7 +46,6 @@ export async function PATCH(
     const newStatus = body.status;
     const note = body.note?.trim() || null;
 
-    // ═══ التحقق من الطلب + الملكية ═══
     const order = await prisma.order.findFirst({
       where: { id: orderId, sellerId: auth.seller.id },
       include: {
@@ -64,7 +64,6 @@ export async function PATCH(
 
     const oldStatus = order.status;
 
-    // ═══ التحقق من الانتقال ═══
     const allowed = SELLER_ALLOWED_TRANSITIONS[oldStatus] || [];
     if (!allowed.includes(newStatus)) {
       return NextResponse.json(
@@ -100,7 +99,7 @@ export async function PATCH(
         },
       });
 
-      // ═══ 3. DELIVERED: زيادة المبيعات + منح نقاط الولاء ═══
+      // ═══ 3. DELIVERED: زيادة المبيعات + منح نقاط الولاء + مكافأة الإحالة ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
         // 3a. زيادة sold
         const soldByProduct = new Map<number, number>();
@@ -172,6 +171,13 @@ export async function PATCH(
           }
         } catch (loyaltyErr) {
           console.error("Loyalty award failed:", loyaltyErr);
+        }
+
+        // 3c. مكافأة الإحالة عند أول طلب مؤهل
+        try {
+          await ReferralService.awardOnFirstOrder(tx, order.userId, order.id);
+        } catch (refErr) {
+          console.error("Referral award failed:", refErr);
         }
       }
 

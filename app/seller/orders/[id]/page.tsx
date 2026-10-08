@@ -19,6 +19,7 @@ import {
   ShoppingBag,
   AlertTriangle,
   DollarSign,
+  Printer,
 } from "lucide-react";
 
 type OrderItem = {
@@ -270,13 +271,29 @@ export default function SellerOrderDetailPage() {
             </div>
           </div>
 
-          <div
-            className={`flex items-center gap-2 self-start rounded-full px-4 py-2 ${statusInfo.bg}`}
-          >
-            <StatusIcon className={`h-4 w-4 ${statusInfo.color}`} />
-            <span className={`text-sm font-bold ${statusInfo.color}`}>
-              {statusInfo.label}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 self-start">
+            <Link
+              href={`/seller/orders/${orderId}/invoice`}
+              className="flex items-center gap-1.5 rounded-full border border-[#ff5c00] bg-white px-3 py-2 text-xs font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              الفاتورة
+            </Link>
+            <Link
+              href={`/seller/orders/${orderId}/label`}
+              className="flex items-center gap-1.5 rounded-full border border-[#0a1f44] bg-white px-3 py-2 text-xs font-bold text-[#0a1f44] transition hover:bg-[#0a1f44]/5"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              ملصق الشحن
+            </Link>
+            <div
+              className={`flex items-center gap-2 rounded-full px-4 py-2 ${statusInfo.bg}`}
+            >
+              <StatusIcon className={`h-4 w-4 ${statusInfo.color}`} />
+              <span className={`text-sm font-bold ${statusInfo.color}`}>
+                {statusInfo.label}
+              </span>
+            </div>
           </div>
         </div>
       </div>

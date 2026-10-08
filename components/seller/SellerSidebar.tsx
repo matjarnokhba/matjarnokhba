@@ -18,6 +18,8 @@ import {
   X,
   Store,
   Bell,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -29,7 +31,9 @@ type SellerSidebarProps = {
 const NAV_ITEMS = [
   { href: "/seller", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false },
+  { href: "/seller/scanner", label: "ماسح المنتجات", icon: ScanLine, exact: false },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false },
+  { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
   { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false },
