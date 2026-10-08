@@ -1,0 +1,449 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
+import { LoyaltyService } from "@/services/loyalty.service";
+import { ReferralService } from "@/services/referral.service";
+import { AuditService } from "@/services/audit.service";
+
+async function requireDelivery() {
+  const current = await SessionService.getCurrent();
+  if (!current) return { error: "غير مصرح", status: 401 };
+  if (current.user.role !== "DELIVERY") {
+    return { error: "غير مصرح", status: 403 };
+  }
+
+  const person = await prisma.deliveryPerson.findUnique({
+    where: { userId: current.user.id },
+    select: { id: true, status: true, deletedAt: true },
+  });
+
+  if (!person || person.deletedAt || person.status !== "ACTIVE") {
+    return { error: "الحساب غير نشط", status: 403 };
+  }
+
+  return { user: current.user, person };
+}
+
+const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("delivered") }),
+  z.object({
+    action: z.literal("postponed"),
+    reason: z.string().trim().min(3, "سبب التأجيل مطلوب").max(500),
+  }),
+  z.object({
+    action: z.literal("refused"),
+    reason: z.string().trim().min(3, "سبب الرفض مطلوب").max(500),
+  }),
+  z.object({
+    action: z.literal("returned"),
+    reason: z.string().trim().min(3, "سبب الإرجاع مطلوب").max(500),
+  }),
+]);
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireDelivery();
+    if ("error" in auth) {
+      return NextResponse.json(
+        { success: false, message: auth.error },
+        { status: auth.status }
+      );
+    }
+
+    const { id } = await params;
+    const shipmentId = parseInt(id);
+    if (isNaN(shipmentId)) {
+      return NextResponse.json(
+        { success: false, message: "معرف غير صحيح" },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const parsed = actionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
+        },
+        { status: 400 }
+      );
+    }
+
+    const data = parsed.data;
+
+    const shipment = await prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      include: {
+        items: {
+          include: {
+            order: {
+              select: {
+                id: true,
+                userId: true,
+                status: true,
+                total: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!shipment) {
+      return NextResponse.json(
+        { success: false, message: "الشحنة غير موجودة" },
+        { status: 404 }
+      );
+    }
+
+    // ═══ التحقق: الإسناد ═══
+    if (shipment.deliveryPersonId !== auth.person.id) {
+      return NextResponse.json(
+        { success: false, message: "هذه الشحنة ليست مُسندة إليك" },
+        { status: 403 }
+      );
+    }
+
+    // ═══ التحقق: الحالة ═══
+    if (!["ASSIGNED", "IN_TRANSIT"].includes(shipment.status)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `لا يمكن التصرف بهذه الشحنة — حالتها: ${shipment.status}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // ═══ تجميع الطلبات الفريدة + العناصر ═══
+    const orderIds = Array.from(new Set(shipment.items.map((i) => i.orderId)));
+    const orderMap = new Map(shipment.items.map((i) => [i.orderId, i.order]));
+
+    // ═══ الإجراء ═══
+    await prisma.$transaction(
+      async (tx) => {
+        if (data.action === "delivered") {
+          // ═══════ 1. الشحنة → DELIVERED ═══════
+          await tx.shipment.update({
+            where: { id: shipmentId },
+            data: { status: "DELIVERED" },
+          });
+
+          // ═══════ 2. كل طلب → DELIVERED ═══════
+          for (const orderId of orderIds) {
+            const ord = orderMap.get(orderId);
+            if (!ord) continue;
+            if (ord.status === "DELIVERED" || ord.status === "RETURNED") {
+              continue;
+            }
+
+            await tx.order.update({
+              where: { id: orderId },
+              data: {
+                status: "DELIVERED",
+                deliveredAt: new Date(),
+                paymentStatus: "PAID",
+              },
+            });
+
+            await tx.orderStatusHistory.create({
+              data: {
+                orderId,
+                fromStatus: ord.status as any,
+                toStatus: "DELIVERED",
+                changedById: auth.user.id,
+                note: `تم التسليم عبر الشحنة ${shipment.shipmentNumber}`,
+              },
+            });
+
+            // ═══ زيادة sold ═══
+            const soldByProduct = new Map<number, number>();
+            const orderItems = await tx.orderItem.findMany({
+              where: { orderId },
+              select: { productId: true, quantity: true },
+            });
+            for (const oi of orderItems) {
+              soldByProduct.set(
+                oi.productId,
+                (soldByProduct.get(oi.productId) || 0) + oi.quantity
+              );
+            }
+            for (const [pid, qty] of soldByProduct) {
+              await tx.product.update({
+                where: { id: pid },
+                data: { sold: { increment: qty } },
+              });
+            }
+
+            // ═══ نقاط الولاء ═══
+            try {
+              const award = await LoyaltyService.awardForOrder(tx, {
+                userId: ord.userId,
+                orderId,
+                orderTotal: Number(ord.total),
+              });
+
+              if (award.pointsAwarded > 0) {
+                await tx.order.update({
+                  where: { id: orderId },
+                  data: {
+                    loyaltyPointsAwarded: award.pointsAwarded,
+                    loyaltyAwardedAt: new Date(),
+                  },
+                });
+              }
+            } catch (loyaltyErr) {
+              console.error("Loyalty award failed:", loyaltyErr);
+            }
+
+            // ═══ مكافأة الإحالة ═══
+            try {
+              await ReferralService.awardOnFirstOrder(
+                tx,
+                ord.userId,
+                orderId
+              );
+            } catch (refErr) {
+              console.error("Referral award failed:", refErr);
+            }
+
+            // ═══ إشعار العميل ═══
+            await tx.notification.create({
+              data: {
+                userId: ord.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: "✅ تم توصيل طلبك",
+                message: `طلبك تم تسليمه بنجاح. شكراً لثقتك!`,
+                link: `/orders/${orderId}`,
+                category: "ORDER",
+                severity: "INFO",
+              },
+            });
+          }
+
+          // ═══ تحديث أداء السائق ═══
+          await tx.deliveryPerson.update({
+            where: { id: auth.person.id },
+            data: {
+              totalDeliveries: { increment: 1 },
+              successfulDeliveries: { increment: 1 },
+            },
+          });
+
+          // ═══ Audit ═══
+          const reqInfo = AuditService.getRequestInfo(request);
+          await AuditService.logInTransaction(tx, {
+            userId: auth.user.id,
+            action: "DELIVERY_ACTION",
+            entity: "Shipment",
+            entityId: shipmentId,
+            newData: {
+              action: "delivered",
+              ordersCount: orderIds.length,
+              shipmentNumber: shipment.shipmentNumber,
+            },
+            ipAddress: reqInfo.ipAddress,
+            userAgent: reqInfo.userAgent,
+          });
+        } else if (data.action === "postponed") {
+          // ═══════ الشحنة → POSTPONED (الطلبات تبقى كما هي) ═══════
+          await tx.shipment.update({
+            where: { id: shipmentId },
+            data: { status: "POSTPONED" },
+          });
+
+          // ═══ Audit ═══
+          const reqInfo = AuditService.getRequestInfo(request);
+          await AuditService.logInTransaction(tx, {
+            userId: auth.user.id,
+            action: "DELIVERY_ACTION",
+            entity: "Shipment",
+            entityId: shipmentId,
+            newData: {
+              action: "postponed",
+              reason: data.reason,
+              shipmentNumber: shipment.shipmentNumber,
+            },
+            ipAddress: reqInfo.ipAddress,
+            userAgent: reqInfo.userAgent,
+          });
+
+          // ═══ إشعار الأدمن ═══
+          const admins = await tx.user.findMany({
+            where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+            select: { id: true },
+          });
+          for (const a of admins) {
+            await tx.notification.create({
+              data: {
+                userId: a.id,
+                type: "ORDER_STATUS_CHANGED",
+                title: "⏸️ تأجيل توصيل شحنة",
+                message: `السائق ${auth.user.name} أجّل الشحنة ${shipment.shipmentNumber}: ${data.reason}`,
+                link: `/admin/shipments/${shipmentId}`,
+                category: "ORDER",
+                severity: "WARNING",
+              },
+            });
+          }
+        } else {
+          // ═══════ REFUSED أو RETURNED → كل الطلبات RETURNED ═══════
+          const isRejected = data.action === "refused";
+          const newStatus = isRejected ? "REFUSED" : "RETURNED";
+          const returnReason = isRejected
+            ? "رفض التوصيل — إرجاع للمخزون"
+            : "إرجاع الشحنة — إرجاع للمخزون";
+
+          await tx.shipment.update({
+            where: { id: shipmentId },
+            data: { status: newStatus },
+          });
+
+          for (const orderId of orderIds) {
+            const ord = orderMap.get(orderId);
+            if (!ord) continue;
+            if (ord.status === "RETURNED" || ord.status === "DELIVERED") {
+              continue;
+            }
+
+            // ═══ إرجاع المخزون (Idempotent) ═══
+            const alreadyReturned = await tx.inventoryMovement.findFirst({
+              where: {
+                referenceType: "ORDER",
+                referenceId: BigInt(orderId),
+                type: "RETURN",
+                reason: returnReason,
+              },
+            });
+
+            if (!alreadyReturned) {
+              const orderItems = await tx.orderItem.findMany({
+                where: { orderId },
+                select: { variantId: true, quantity: true },
+              });
+              const sorted = orderItems
+                .filter(
+                  (i): i is { variantId: number; quantity: number } =>
+                    i.variantId !== null
+                )
+                .sort((a, b) => a.variantId - b.variantId);
+
+              for (const oi of sorted) {
+                await InventoryService.cancelReturn(
+                  tx,
+                  oi.variantId,
+                  oi.quantity,
+                  orderId,
+                  returnReason
+                );
+              }
+            }
+
+            // ═══ تحديث حالة الطلب ═══
+            await tx.order.update({
+              where: { id: orderId },
+              data: { status: "RETURNED" },
+            });
+
+            await tx.orderStatusHistory.create({
+              data: {
+                orderId,
+                fromStatus: ord.status as any,
+                toStatus: "RETURNED",
+                changedById: auth.user.id,
+                note: `${isRejected ? "رفض" : "إرجاع"} عبر الشحنة ${shipment.shipmentNumber} — ${data.reason}`,
+              },
+            });
+
+            // ═══ إشعار العميل ═══
+            await tx.notification.create({
+              data: {
+                userId: ord.userId,
+                type: "ORDER_STATUS_CHANGED",
+                title: isRejected
+                  ? "❌ تم رفض استلام طلبك"
+                  : "↩️ تم إرجاع طلبك",
+                message: `طلبك — ${data.reason}`,
+                link: `/orders/${orderId}`,
+                category: "ORDER",
+                severity: "WARNING",
+              },
+            });
+          }
+
+          // ═══ تحديث أداء السائق ═══
+          await tx.deliveryPerson.update({
+            where: { id: auth.person.id },
+            data: {
+              totalDeliveries: { increment: 1 },
+              failedDeliveries: { increment: 1 },
+              returnCount: { increment: 1 },
+            },
+          });
+
+          // ═══ Audit ═══
+          const reqInfo = AuditService.getRequestInfo(request);
+          await AuditService.logInTransaction(tx, {
+            userId: auth.user.id,
+            action: "DELIVERY_ACTION",
+            entity: "Shipment",
+            entityId: shipmentId,
+            newData: {
+              action: data.action,
+              reason: data.reason,
+              ordersCount: orderIds.length,
+              shipmentNumber: shipment.shipmentNumber,
+            },
+            ipAddress: reqInfo.ipAddress,
+            userAgent: reqInfo.userAgent,
+          });
+
+          // ═══ إشعار الأدمن ═══
+          const admins = await tx.user.findMany({
+            where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+            select: { id: true },
+          });
+          for (const a of admins) {
+            await tx.notification.create({
+              data: {
+                userId: a.id,
+                type: "ORDER_STATUS_CHANGED",
+                title: isRejected ? "❌ رفض شحنة" : "↩️ إرجاع شحنة",
+                message: `السائق ${auth.user.name} — ${shipment.shipmentNumber}: ${data.reason}`,
+                link: `/admin/shipments/${shipmentId}`,
+                category: "ORDER",
+                severity: "WARNING",
+              },
+            });
+          }
+        }
+      },
+      { timeout: 30000 }
+    );
+
+    return NextResponse.json({
+      success: true,
+      message:
+        data.action === "delivered"
+          ? "تم تسجيل التسليم"
+          : data.action === "postponed"
+            ? "تم تسجيل التأجيل"
+            : data.action === "refused"
+              ? "تم تسجيل الرفض"
+              : "تم تسجيل الإرجاع",
+    });
+  } catch (error) {
+    console.error("Shipment action error:", error);
+    return NextResponse.json(
+      { success: false, message: "حدث خطأ" },
+      { status: 500 }
+    );
+  }
+}

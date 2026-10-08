@@ -1534,8 +1534,9 @@ model Shipment {
   id                 Int             @id @default(autoincrement())
   shipmentNumber     String          @unique
 
-  // ═══ QR Security (hash-based) ═══
+  // ═══ QR Security (hash + encrypted) ═══
   qrTokenHash        String          @unique
+  qrTokenEncrypted   Bytes           // raw token مشفّر (AES-256-GCM) للطباعة فقط
   qrTokenPreview     String          // آخر 6 أحرف للعرض
   qrTokenRevokedAt   DateTime?
   qrTokenRegens      Int             @default(0)

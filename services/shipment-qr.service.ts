@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { encrypt, decrypt } from "@/lib/encryption";
 
 const TOKEN_BYTES = 32; // 256-bit
 
@@ -9,9 +10,19 @@ export const ShipmentQRService = {
     return randomBytes(TOKEN_BYTES).toString("base64url");
   },
 
-  // ═══════ Hash آمن للـToken ═══════
+  // ═══════ Hash آمن للـToken (مصدر التحقق الوحيد) ═══════
   hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+  },
+
+  // ═══════ تشفير raw token (للطباعة فقط) ═══════
+  encryptToken(token: string): Uint8Array<ArrayBuffer> {
+    return encrypt(token);
+  },
+
+  // ═══════ فك تشفير raw token (على السيرفر فقط) ═══════
+  decryptToken(encrypted: Uint8Array | Buffer): string {
+    return decrypt(encrypted);
   },
 
   // ═══════ Preview للعرض (آخر 6 أحرف) ═══════
@@ -19,10 +30,11 @@ export const ShipmentQRService = {
     return token.slice(-6);
   },
 
-  // ═══════ البحث عن شحنة بـToken ═══════
+  // ═══════ البحث عن شحنة بـToken (للتحقق عند المسح) ═══════
   async findByToken(token: string) {
     if (!token || token.length < 20) return null;
 
+    // ✅ التحقق عبر hash فقط — لا نستخدم النسخة المشفّرة
     const hash = this.hashToken(token);
 
     return prisma.shipment.findFirst({
@@ -65,6 +77,26 @@ export const ShipmentQRService = {
     });
   },
 
+  // ═══════ استرجاع raw token (لإعادة طباعة QR — Server-Side فقط) ═══════
+  async getRawToken(shipmentId: number): Promise<string | null> {
+    const shipment = await prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      select: {
+        qrTokenEncrypted: true,
+        qrTokenRevokedAt: true,
+      },
+    });
+
+    if (!shipment || shipment.qrTokenRevokedAt) return null;
+
+    try {
+      return this.decryptToken(shipment.qrTokenEncrypted);
+    } catch (err) {
+      console.error("Failed to decrypt shipment token:", err);
+      return null;
+    }
+  },
+
   // ═══════ إبطال Token الشحنة ═══════
   async revokeToken(shipmentId: number) {
     return prisma.shipment.update({
@@ -76,26 +108,24 @@ export const ShipmentQRService = {
     });
   },
 
-  // ═══════ إعادة توليد Token (بعد الإبطال) ═══════
+  // ═══════ إعادة توليد Token (نادراً ما نحتاجه) ═══════
   async regenerateToken(shipmentId: number) {
     const newToken = this.generateToken();
     const newHash = this.hashToken(newToken);
+    const newEncrypted = this.encryptToken(newToken);
     const newPreview = this.preview(newToken);
 
     const updated = await prisma.shipment.update({
       where: { id: shipmentId },
       data: {
         qrTokenHash: newHash,
+        qrTokenEncrypted: newEncrypted,
         qrTokenPreview: newPreview,
         qrTokenRevokedAt: null,
         qrTokenRegens: { increment: 1 },
       },
     });
 
-    // نُعيد الـtoken الأصلي مرة واحدة (لا يُخزَّن مجدداً)
-    return {
-      shipment: updated,
-      rawToken: newToken,
-    };
+    return { shipment: updated, rawToken: newToken };
   },
 };

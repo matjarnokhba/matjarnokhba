@@ -71,7 +71,8 @@ export const InventoryService = {
     tx: any,
     variantId: number,
     quantity: number,
-    orderId: number
+    orderId: number,
+    reason: string = "إلغاء الطلب — إرجاع للمخزون"
   ) {
     if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
 
@@ -95,7 +96,7 @@ export const InventoryService = {
         beforeReserved: inv.reservedQuantity,
         afterReserved: inv.reservedQuantity,
         reservedChange: 0,
-        reason: "إلغاء الطلب — إرجاع للمخزون",
+        reason,
         referenceType: "ORDER",
         referenceId: BigInt(orderId),
       },

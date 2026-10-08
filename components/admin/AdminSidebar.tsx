@@ -40,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/admin/loyalty", label: "نظام الولاء", icon: Gift, exact: false },
   { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
+  { href: "/admin/shipments", label: "الشحنات", icon: Truck, exact: false },
   { href: "/admin/delivery-persons", label: "أصحاب التوصيل", icon: Truck, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
   { href: "/admin/returns", label: "الإرجاع", icon: RotateCcw, exact: false },
