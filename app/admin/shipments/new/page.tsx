@@ -9,40 +9,46 @@ import {
   Search,
   Package,
   Check,
-  Plus,
-  Minus,
   Truck,
   AlertCircle,
   Store,
   Globe,
   QrCode,
   X,
+  CheckCircle2,
+  ListChecks,
 } from "lucide-react";
 
-type OrderItem = {
+// ═══════ الأنواع ═══════
+type AvailableItem = {
   id: number;
+  orderItemId: number;
+  orderId: number;
+  orderNumber: string;
+  orderSource: string;
+  orderStatus: string;
+  orderCreatedAt: string;
+  sellerId: number;
+  sellerName: string;
+  sellerSlug: string;
   productName: string;
   variantName: string | null;
   sku: string;
   imageUrl: string | null;
   quantity: number;
-  shippedQuantity: number;
-  remainingQuantity: number;
-  unitPrice: number;
-  total: number;
-  sellerId: number;
+  status: string;
+  verifiedAt: string | null;
+  codAmount: number;
 };
 
-type Order = {
-  id: number;
+type OrderGroup = {
+  orderId: number;
   orderNumber: string;
-  status: string;
   source: string;
-  total: number;
+  status: string;
   createdAt: string;
-  seller: { id: number; storeName: string } | null;
-  items: OrderItem[];
-  hasRemaining: boolean;
+  totalCOD: number;
+  items: AvailableItem[];
 };
 
 type Customer = {
@@ -52,33 +58,48 @@ type Customer = {
   phone: string | null;
 };
 
-type ScanMode = "id" | "qr";
+type Summary = {
+  totalItems: number;
+  totalOrders: number;
+  totalCOD: number;
+};
+
+type ScanMode = "qr" | "id";
 
 export default function NewShipmentPage() {
   const router = useRouter();
 
   const [mode, setMode] = useState<ScanMode>("id");
-  const [searchId, setSearchId] = useState("");
+
+  // ═══ QR Scanner ═══
   const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState("");
   const [manualToken, setManualToken] = useState("");
   const scannerRef = useRef<any>(null);
   const scannerDivId = "shipment-qr-reader";
 
+  // ═══ البحث بالمعرّف ═══
+  const [searchId, setSearchId] = useState("");
+
+  // ═══ النتائج ═══
   const [searching, setSearching] = useState(false);
+  const [scanError, setScanError] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderGroup[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [scannedOrderNumber, setScannedOrderNumber] = useState<string | null>(
     null
   );
 
-  const [selectedItems, setSelectedItems] = useState<
-    Record<number, number>
-  >({});
+  // ═══ الاختيارات ═══
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(
+    new Set()
+  );
 
+  // ═══ الحفظ ═══
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  // ═══ تنظيف الماسح ═══
   useEffect(() => {
     return () => {
       if (scannerRef.current) {
@@ -89,6 +110,17 @@ export default function NewShipmentPage() {
     };
   }, []);
 
+  // ═══ إعادة تعيين كل شيء ═══
+  function resetResults() {
+    setCustomer(null);
+    setOrders([]);
+    setSummary(null);
+    setSelectedItemIds(new Set());
+    setScanError("");
+    setScannedOrderNumber(null);
+  }
+
+  // ═══ البحث بمعرّف العميل ═══
   async function handleSearchById(e: React.FormEvent) {
     e.preventDefault();
     setScanError("");
@@ -100,6 +132,8 @@ export default function NewShipmentPage() {
     }
 
     setSearching(true);
+    resetResults();
+
     try {
       const res = await fetch(`/api/admin/customers/${id}/orders`);
       const data = await res.json();
@@ -111,11 +145,12 @@ export default function NewShipmentPage() {
 
       setCustomer(data.customer);
       setOrders(data.orders);
-      setScannedOrderNumber(null);
-      setSelectedItems({});
+      setSummary(data.summary);
 
       if (data.orders.length === 0) {
-        setScanError("لا توجد طلبات قابلة للتجميع لهذا العميل");
+        setScanError(
+          "لا توجد عناصر متاحة للشحن لهذا العميل (يجب استلامها في المستودع أولاً)"
+        );
       }
     } catch {
       setScanError("فشل الاتصال");
@@ -124,6 +159,7 @@ export default function NewShipmentPage() {
     }
   }
 
+  // ═══ الماسح ═══
   async function startScanner() {
     setScanError("");
     setScanning(true);
@@ -183,9 +219,16 @@ export default function NewShipmentPage() {
     await loadByToken(token);
   }
 
+  async function handleManualToken(e: React.FormEvent) {
+    e.preventDefault();
+    if (!manualToken.trim()) return;
+    await loadByToken(manualToken.trim());
+    setManualToken("");
+  }
+
   async function loadByToken(token: string) {
     setSearching(true);
-    setScanError("");
+    resetResults();
 
     try {
       const res = await fetch(`/api/admin/orders/by-token/${token}`);
@@ -198,11 +241,13 @@ export default function NewShipmentPage() {
 
       setCustomer(data.customer);
       setOrders(data.orders);
+      setSummary(data.summary);
       setScannedOrderNumber(data.scannedOrder?.orderNumber || null);
-      setSelectedItems({});
 
       if (data.orders.length === 0) {
-        setScanError("لا توجد طلبات قابلة للتجميع لهذا العميل");
+        setScanError(
+          "لا توجد عناصر متاحة للشحن (يجب استلامها في المستودع أولاً)"
+        );
       }
     } catch {
       setScanError("فشل الاتصال");
@@ -211,62 +256,35 @@ export default function NewShipmentPage() {
     }
   }
 
-  async function handleManualToken(e: React.FormEvent) {
-    e.preventDefault();
-    if (!manualToken.trim()) return;
-    await loadByToken(manualToken.trim());
-    setManualToken("");
-  }
-
-  function toggleItem(item: OrderItem) {
-    setSelectedItems((prev) => {
-      const copy = { ...prev };
-      if (copy[item.id]) {
-        delete copy[item.id];
-      } else {
-        copy[item.id] = item.remainingQuantity;
-      }
-      return copy;
+  // ═══ تحديد/إلغاء عنصر ═══
+  function toggleItem(itemId: number) {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
     });
   }
 
-  function setQuantity(item: OrderItem, qty: number) {
-    const clamped = Math.max(1, Math.min(qty, item.remainingQuantity));
-    setSelectedItems((prev) => ({ ...prev, [item.id]: clamped }));
-  }
-
-  function toggleAllInOrder(order: Order) {
-    const allSelected = order.items.every((i) => selectedItems[i.id]);
-    setSelectedItems((prev) => {
-      const copy = { ...prev };
+  // ═══ تحديد/إلغاء كل عناصر طلب ═══
+  function toggleAllInOrder(order: OrderGroup) {
+    const allSelected = order.items.every((i) =>
+      selectedItemIds.has(i.id)
+    );
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
       for (const item of order.items) {
-        if (allSelected) {
-          delete copy[item.id];
-        } else {
-          copy[item.id] = item.remainingQuantity;
-        }
+        if (allSelected) next.delete(item.id);
+        else next.add(item.id);
       }
-      return copy;
+      return next;
     });
   }
 
-  const selectedCount = Object.keys(selectedItems).length;
-
-  const totalCOD = orders.reduce((sum, order) => {
-    const orderItemsTotal = order.items.reduce((s, i) => s + i.total, 0);
-    let orderCOD = 0;
-    for (const item of order.items) {
-      const qty = selectedItems[item.id];
-      if (!qty) continue;
-      const ratio = orderItemsTotal > 0 ? item.total / orderItemsTotal : 0;
-      orderCOD += (order.total * ratio * qty) / item.quantity;
-    }
-    return sum + orderCOD;
-  }, 0);
-
+  // ═══ إنشاء الشحنة ═══
   async function handleCreate() {
     if (!customer) return;
-    if (selectedCount === 0) {
+    if (selectedItemIds.size === 0) {
       setSaveError("اختر عنصراً واحداً على الأقل");
       return;
     }
@@ -275,17 +293,11 @@ export default function NewShipmentPage() {
     setSaveError("");
 
     try {
-      const items = Object.entries(selectedItems).map(([id, qty]) => ({
-        orderItemId: parseInt(id),
-        quantity: qty,
-      }));
-
       const res = await fetch("/api/admin/shipments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: customer.id,
-          items,
+          fulfillmentItemIds: Array.from(selectedItemIds),
         }),
       });
 
@@ -304,6 +316,20 @@ export default function NewShipmentPage() {
     }
   }
 
+  // ═══ الإجمالي المعروض ═══
+  const selectedCOD =
+    Math.round(
+      orders
+        .flatMap((o) => o.items)
+        .filter((i) => selectedItemIds.has(i.id))
+        .reduce((s, i) => s + i.codAmount, 0) * 100
+    ) / 100;
+
+  const selectedOrdersCount = new Set(
+    orders
+      .filter((o) => o.items.some((i) => selectedItemIds.has(i.id)))
+      .map((o) => o.orderId)
+  ).size;// ═══ العرض ═══
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
       <Link
@@ -320,12 +346,14 @@ export default function NewShipmentPage() {
           شحنة جديدة
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          امسح QR الطلب أو ابحث بمعرّف العميل
+          اختر العناصر المتاحة للشحن (المستلمة في المستودع)
         </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
+        {/* ═══ العمود الأيسر ═══ */}
         <div className="space-y-4 lg:col-span-2">
+          {/* Tabs */}
           <div className="flex gap-2 rounded-xl bg-gray-100 p-1">
             <button
               onClick={() => setMode("qr")}
@@ -351,6 +379,7 @@ export default function NewShipmentPage() {
             </button>
           </div>
 
+          {/* Panels */}
           <div className="rounded-xl bg-white p-5 shadow-sm">
             {mode === "qr" ? (
               <>
@@ -392,7 +421,10 @@ export default function NewShipmentPage() {
                     <div className="mb-2 text-xs font-bold text-gray-700">
                       إدخال يدوي للتوكن
                     </div>
-                    <form onSubmit={handleManualToken} className="flex gap-2">
+                    <form
+                      onSubmit={handleManualToken}
+                      className="flex gap-2"
+                    >
                       <input
                         type="text"
                         value={manualToken}
@@ -459,6 +491,7 @@ export default function NewShipmentPage() {
             )}
           </div>
 
+          {/* معلومات العميل */}
           {customer && (
             <div className="rounded-xl border-2 border-[#ff5c00] bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
@@ -470,10 +503,17 @@ export default function NewShipmentPage() {
                 )}
               </div>
               <div className="space-y-1.5 text-sm">
-                <div className="font-black text-gray-900">{customer.name}</div>
-                <div className="text-xs text-gray-500">{customer.email}</div>
+                <div className="font-black text-gray-900">
+                  {customer.name}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {customer.email}
+                </div>
                 {customer.phone && (
-                  <div className="text-xs text-gray-500" dir="ltr">
+                  <div
+                    className="text-xs text-gray-500"
+                    dir="ltr"
+                  >
                     📞 {customer.phone}
                   </div>
                 )}
@@ -481,28 +521,31 @@ export default function NewShipmentPage() {
             </div>
           )}
 
+          {/* قائمة الطلبات */}
           {customer && orders.length > 0 && (
             <div className="space-y-4">
-              <h2 className="text-sm font-black">
-                الطلبات القابلة للتجميع ({orders.length})
+              <h2 className="flex items-center gap-2 text-sm font-black">
+                <ListChecks className="h-4 w-4 text-[#ff5c00]" />
+                العناصر المتاحة للشحن ({summary?.totalItems || 0})
               </h2>
 
               {orders.map((order) => {
-                const allSelected = order.items.every(
-                  (i) => selectedItems[i.id]
+                const allSelected = order.items.every((i) =>
+                  selectedItemIds.has(i.id)
                 );
-                const someSelected = order.items.some(
-                  (i) => selectedItems[i.id]
+                const someSelected = order.items.some((i) =>
+                  selectedItemIds.has(i.id)
                 );
                 const isOnline = order.source === "ONLINE";
 
                 return (
                   <div
-                    key={order.id}
+                    key={order.orderId}
                     className={`rounded-xl bg-white p-5 shadow-sm ${
                       someSelected ? "ring-2 ring-[#ff5c00]" : ""
                     }`}
                   >
+                    {/* رأس الطلب */}
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                       <div>
                         <div className="flex items-center gap-2">
@@ -529,11 +572,11 @@ export default function NewShipmentPage() {
                             )}
                           </span>
                         </div>
-                        {order.seller && (
-                          <div className="mt-1 text-[10px] text-gray-500">
-                            من متجر: {order.seller.storeName}
-                          </div>
-                        )}
+                        <div className="mt-1 text-[10px] text-gray-500">
+                          {new Date(order.createdAt).toLocaleDateString(
+                            "ar-MA"
+                          )}
+                        </div>
                       </div>
 
                       <button
@@ -548,108 +591,78 @@ export default function NewShipmentPage() {
                       </button>
                     </div>
 
+                    {/* العناصر */}
                     <div className="space-y-2">
                       {order.items.map((item) => {
-                        const isSelected = !!selectedItems[item.id];
-                        const currentQty = selectedItems[item.id] || 0;
-
+                        const isSelected = selectedItemIds.has(item.id);
                         return (
                           <div
                             key={item.id}
-                            className={`rounded-lg border-2 p-3 transition ${
+                            onClick={() => toggleItem(item.id)}
+                            className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 transition ${
                               isSelected
                                 ? "border-[#ff5c00] bg-[#fff4ed]/30"
-                                : "border-gray-100 bg-white"
+                                : "border-gray-100 bg-white hover:border-gray-200"
                             }`}
                           >
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() => toggleItem(item)}
-                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition ${
-                                  isSelected
-                                    ? "border-[#ff5c00] bg-[#ff5c00] text-white"
-                                    : "border-gray-300 bg-white"
-                                }`}
-                              >
-                                {isSelected && <Check className="h-4 w-4" />}
-                              </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleItem(item.id);
+                              }}
+                              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition ${
+                                isSelected
+                                  ? "border-[#ff5c00] bg-[#ff5c00] text-white"
+                                  : "border-gray-300 bg-white"
+                              }`}
+                            >
+                              {isSelected && (
+                                <Check className="h-4 w-4" />
+                              )}
+                            </button>
 
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.productName}
-                                  className="h-12 w-12 shrink-0 rounded object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-100">
-                                  <Package className="h-5 w-5 text-gray-400" />
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.productName}
+                                className="h-14 w-14 shrink-0 rounded object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-gray-100">
+                                <Package className="h-5 w-5 text-gray-400" />
+                              </div>
+                            )}
+
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-xs font-bold">
+                                {item.productName}
+                              </div>
+                              {item.variantName && (
+                                <div className="text-[10px] text-gray-500">
+                                  {item.variantName}
                                 </div>
                               )}
-
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-xs font-bold">
-                                  {item.productName}
-                                </div>
-                                {item.variantName && (
-                                  <div className="text-[10px] text-gray-500">
-                                    {item.variantName}
-                                  </div>
-                                )}
-                                <div className="mt-0.5 flex flex-wrap gap-2 text-[10px] text-gray-500">
-                                  <span>
-                                    المطلوب: <strong>{item.quantity}</strong>
-                                  </span>
-                                  {item.shippedQuantity > 0 && (
-                                    <span className="text-orange-600">
-                                      مشحون: {item.shippedQuantity}
-                                    </span>
-                                  )}
-                                  <span className="text-green-700">
-                                    متبقي:{" "}
-                                    <strong>{item.remainingQuantity}</strong>
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="shrink-0 text-left">
-                                <div className="text-xs font-black text-[#ff5c00]">
-                                  {item.unitPrice.toFixed(2)} د.م
-                                </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px]">
+                                <span className="rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-700">
+                                  {item.sellerName}
+                                </span>
+                                <span className="text-green-700">
+                                  ✓ متحقق
+                                </span>
                               </div>
                             </div>
 
-                            {isSelected && (
-                              <div className="mt-2 flex items-center justify-between border-t border-dashed border-gray-200 pt-2">
-                                <span className="text-[11px] font-bold text-gray-600">
-                                  الكمية في الشحنة:
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() =>
-                                      setQuantity(item, currentQty - 1)
-                                    }
-                                    disabled={currentQty <= 1}
-                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-50 disabled:opacity-30"
-                                  >
-                                    <Minus className="h-3 w-3" />
-                                  </button>
-                                  <span className="min-w-[2rem] text-center text-sm font-black">
-                                    {currentQty}
-                                  </span>
-                                  <button
-                                    onClick={() =>
-                                      setQuantity(item, currentQty + 1)
-                                    }
-                                    disabled={
-                                      currentQty >= item.remainingQuantity
-                                    }
-                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-50 disabled:opacity-30"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                </div>
+                            <div className="shrink-0 text-left">
+                              <div className="text-xs font-bold text-gray-600">
+                                ×{item.quantity}
                               </div>
-                            )}
+                              <div className="text-xs font-black text-[#ff5c00]">
+                                {item.codAmount.toFixed(2)}
+                              </div>
+                              <div className="text-[9px] text-gray-500">
+                                د.م
+                              </div>
+                            </div>
                           </div>
                         );
                       })}
@@ -661,6 +674,7 @@ export default function NewShipmentPage() {
           )}
         </div>
 
+        {/* ═══ العمود الأيمن — الملخص ═══ */}
         <div className="lg:col-span-1">
           <div className="sticky top-8 rounded-xl bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-black">
@@ -676,19 +690,19 @@ export default function NewShipmentPage() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">العناصر المختارة</span>
-                <span className="font-bold">{selectedCount}</span>
+                <span className="text-gray-500">
+                  العناصر المختارة
+                </span>
+                <span className="font-bold">
+                  {selectedItemIds.size}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">الطلبات المشمولة</span>
+                <span className="text-gray-500">
+                  الطلبات المشمولة
+                </span>
                 <span className="font-bold">
-                  {new Set(
-                    orders
-                      .filter((o) =>
-                        o.items.some((i) => selectedItems[i.id])
-                      )
-                      .map((o) => o.id)
-                  ).size}
+                  {selectedOrdersCount}
                 </span>
               </div>
             </div>
@@ -697,7 +711,7 @@ export default function NewShipmentPage() {
               <span className="text-sm font-bold">إجمالي COD</span>
               <div className="text-left">
                 <span className="text-xl font-black text-[#ff5c00]">
-                  {totalCOD.toFixed(2)}
+                  {selectedCOD.toFixed(2)}
                 </span>
                 <span className="mr-1 text-xs text-gray-500">د.م</span>
               </div>
@@ -712,20 +726,24 @@ export default function NewShipmentPage() {
 
             <button
               onClick={handleCreate}
-              disabled={saving || selectedCount === 0 || !customer}
+              disabled={
+                saving ||
+                selectedItemIds.size === 0 ||
+                !customer
+              }
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Check className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4" />
               )}
               إنشاء الشحنة
             </button>
 
             <p className="mt-3 text-[10px] leading-relaxed text-gray-400">
-              💡 المبلغ الإجمالي محسوب تقريبياً للعرض. السيرفر يحسب القيم
-              النهائية.
+              💡 العناصر المختارة يجب أن تكون بحالة "متاح للشحن"
+              (تم استلامها في المستودع).
             </p>
           </div>
         </div>

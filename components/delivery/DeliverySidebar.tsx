@@ -21,8 +21,9 @@ type DeliverySidebarProps = {
 
 const NAV_ITEMS = [
   { href: "/delivery", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
-  { href: "/delivery/shipments", label: "شحناتي", icon: Package, exact: false },
-  { href: "/delivery/orders", label: "الطلبات الفردية", icon: Truck, exact: false },
+  { href: "/delivery/collections", label: "جمع المنتجات", icon: Package, exact: false },
+  { href: "/delivery/shipments", label: "الشحنات", icon: Truck, exact: false },
+  { href: "/delivery/orders", label: "الطلبات الفردية", icon: Package, exact: false },
   { href: "/delivery/scan", label: "مسح QR", icon: QrCode, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
 ];

@@ -7,20 +7,39 @@ export const PERMISSIONS = {
   VIEW_ORDER_DETAILS: "VIEW_ORDER_DETAILS",
   VIEW_CUSTOMER_CONTACT: "VIEW_CUSTOMER_CONTACT",
 
-  // ═══ التجميع والشحن ═══
+  // ═══ التجهيز (Fulfillment) ═══
+  VIEW_FULFILLMENTS: "VIEW_FULFILLMENTS",
+  MANAGE_FULFILLMENTS: "MANAGE_FULFILLMENTS",
+
+  // ═══ التجميع من التجار (Collection) ═══
+  VIEW_COLLECTIONS: "VIEW_COLLECTIONS",
+  ASSIGN_COLLECTION: "ASSIGN_COLLECTION",
+  EXECUTE_COLLECTION: "EXECUTE_COLLECTION",
+
+  // ═══ المستودع (Warehouse) ═══
+  VIEW_WAREHOUSE: "VIEW_WAREHOUSE",
+  RECEIVE_WAREHOUSE: "RECEIVE_WAREHOUSE",
+  VERIFY_WAREHOUSE: "VERIFY_WAREHOUSE",
+
+  // ═══ تجميع طلبات العميل (Grouping) ═══
   VIEW_CONSOLIDATED_ORDERS: "VIEW_CONSOLIDATED_ORDERS",
+  MAKE_GROUPING_DECISION: "MAKE_GROUPING_DECISION",
+
+  // ═══ الشحنات (Shipment) ═══
   CREATE_SHIPMENT: "CREATE_SHIPMENT",
   MANAGE_SHIPMENT_ITEMS: "MANAGE_SHIPMENT_ITEMS",
+  PRINT_SHIPMENT_LABEL: "PRINT_SHIPMENT_LABEL",
 
-  // ═══ التوصيل ═══
+  // ═══ التوصيل (Delivery) ═══
   ASSIGN_DELIVERY: "ASSIGN_DELIVERY",
   MANAGE_DELIVERY_PERSONS: "MANAGE_DELIVERY_PERSONS",
+  EXECUTE_DELIVERY: "EXECUTE_DELIVERY",
 
   // ═══ البائعون ═══
   MANAGE_SELLERS: "MANAGE_SELLERS",
   VIEW_SELLER_FINANCIALS: "VIEW_SELLER_FINANCIALS",
 
-  // ═══ إدارة ═══
+  // ═══ الإدارة ═══
   MANAGE_USERS: "MANAGE_USERS",
   MANAGE_PERMISSIONS: "MANAGE_PERMISSIONS",
   MANAGE_SETTINGS: "MANAGE_SETTINGS",
@@ -58,13 +77,75 @@ export const DEFAULT_PERMISSIONS: Array<{
     category: "ORDERS",
   },
 
-  // ═══ التجميع والشحن ═══
+  // ═══ التجهيز ═══
+  {
+    key: PERMISSIONS.VIEW_FULFILLMENTS,
+    name: "عرض عمليات التجهيز",
+    description: "رؤية FulfillmentItems ومراحل التجهيز",
+    category: "ORDERS",
+  },
+  {
+    key: PERMISSIONS.MANAGE_FULFILLMENTS,
+    name: "إدارة عمليات التجهيز",
+    description: "تحديث حالات التجهيز والملاحظات",
+    category: "ORDERS",
+  },
+
+  // ═══ التجميع من التجار ═══
+  {
+    key: PERMISSIONS.VIEW_COLLECTIONS,
+    name: "عرض مهام الجمع",
+    description: "رؤية CollectionAssignments",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.ASSIGN_COLLECTION,
+    name: "تكليف مهام الجمع",
+    description: "تعيين السائق لجمع المنتجات من التجار",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.EXECUTE_COLLECTION,
+    name: "تنفيذ عمليات الجمع",
+    description: "تأكيد استلام المنتجات من التاجر",
+    category: "SHIPMENT",
+  },
+
+  // ═══ المستودع ═══
+  {
+    key: PERMISSIONS.VIEW_WAREHOUSE,
+    name: "عرض المستودع",
+    description: "رؤية عمليات المستودع والاستلامات",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.RECEIVE_WAREHOUSE,
+    name: "استلام في المستودع",
+    description: "تأكيد استلام المنتجات في المستودع",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.VERIFY_WAREHOUSE,
+    name: "التحقق من المستودع",
+    description: "فحص المنتجات المستلمة وتوثيق حالتها",
+    category: "SHIPMENT",
+  },
+
+  // ═══ تجميع طلبات العميل ═══
   {
     key: PERMISSIONS.VIEW_CONSOLIDATED_ORDERS,
     name: "عرض الطلبات للتجميع",
     description: "رؤية طلبات العميل الواحد للتجميع",
     category: "SHIPMENT",
   },
+  {
+    key: PERMISSIONS.MAKE_GROUPING_DECISION,
+    name: "قرار التجميع",
+    description: "اتخاذ قرار الانتظار أو الإرسال الجزئي",
+    category: "SHIPMENT",
+  },
+
+  // ═══ الشحنات ═══
   {
     key: PERMISSIONS.CREATE_SHIPMENT,
     name: "إنشاء شحنة",
@@ -75,6 +156,12 @@ export const DEFAULT_PERMISSIONS: Array<{
     key: PERMISSIONS.MANAGE_SHIPMENT_ITEMS,
     name: "إدارة عناصر الشحنة",
     description: "إضافة/إزالة الطلبات والعناصر في الشحنة",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.PRINT_SHIPMENT_LABEL,
+    name: "طباعة ملصق الشحنة",
+    description: "طباعة ملصق QR للشحنة",
     category: "SHIPMENT",
   },
 
@@ -89,6 +176,12 @@ export const DEFAULT_PERMISSIONS: Array<{
     key: PERMISSIONS.MANAGE_DELIVERY_PERSONS,
     name: "إدارة أصحاب التوصيل",
     description: "إنشاء وتعديل حسابات السائقين",
+    category: "DELIVERY",
+  },
+  {
+    key: PERMISSIONS.EXECUTE_DELIVERY,
+    name: "تنفيذ التوصيل",
+    description: "تأكيد التسليم/الرفض/التأجيل",
     category: "DELIVERY",
   },
 
@@ -106,7 +199,7 @@ export const DEFAULT_PERMISSIONS: Array<{
     category: "SELLER",
   },
 
-  // ═══ إدارة ═══
+  // ═══ الإدارة ═══
   {
     key: PERMISSIONS.MANAGE_USERS,
     name: "إدارة المستخدمين",
@@ -137,7 +230,6 @@ export const DEFAULT_PERMISSIONS: Array<{
 
 // ═══════ Service ═══════
 export const PermissionService = {
-  // ═══ هل المستخدم يملك صلاحية معينة؟ ═══
   async hasPermission(
     userId: number,
     permissionKey: string
@@ -149,16 +241,16 @@ export const PermissionService = {
 
     if (!user) return false;
 
-    // ═══ SUPER_ADMIN يملك كل الصلاحيات ═══
+    // SUPER_ADMIN → كل الصلاحيات
     if (user.role === "SUPER_ADMIN") return true;
 
-    // ═══ ADMIN يملك معظم الصلاحيات (لكن ليس MANAGE_PERMISSIONS) ═══
+    // ADMIN → كل الصلاحيات إلا MANAGE_PERMISSIONS
     if (user.role === "ADMIN") {
       if (permissionKey === PERMISSIONS.MANAGE_PERMISSIONS) return false;
       return true;
     }
 
-    // ═══ باقي الأدوار: من UserPermission ═══
+    // باقي الأدوار
     const userPerm = await prisma.userPermission.findFirst({
       where: {
         userId,
@@ -171,7 +263,6 @@ export const PermissionService = {
     return !!userPerm;
   },
 
-  // ═══ هل يملك كل الصلاحيات المطلوبة؟ ═══
   async hasAllPermissions(
     userId: number,
     permissionKeys: string[]
@@ -183,7 +274,6 @@ export const PermissionService = {
     return true;
   },
 
-  // ═══ هل يملك أي صلاحية من القائمة؟ ═══
   async hasAnyPermission(
     userId: number,
     permissionKeys: string[]
@@ -195,7 +285,6 @@ export const PermissionService = {
     return false;
   },
 
-  // ═══ قائمة صلاحيات المستخدم ═══
   async getUserPermissions(userId: number): Promise<string[]> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -204,7 +293,6 @@ export const PermissionService = {
 
     if (!user) return [];
 
-    // SUPER_ADMIN → كل الصلاحيات
     if (user.role === "SUPER_ADMIN") {
       const all = await prisma.permission.findMany({
         select: { key: true },
@@ -212,7 +300,6 @@ export const PermissionService = {
       return all.map((p) => p.key);
     }
 
-    // ADMIN → كل الصلاحيات إلا MANAGE_PERMISSIONS
     if (user.role === "ADMIN") {
       const all = await prisma.permission.findMany({
         where: { key: { not: PERMISSIONS.MANAGE_PERMISSIONS } },
@@ -221,7 +308,6 @@ export const PermissionService = {
       return all.map((p) => p.key);
     }
 
-    // باقي الأدوار
     const userPerms = await prisma.userPermission.findMany({
       where: { userId, revokedAt: null },
       include: { permission: { select: { key: true } } },
@@ -230,7 +316,6 @@ export const PermissionService = {
     return userPerms.map((up) => up.permission.key);
   },
 
-  // ═══ منح صلاحية ═══
   async grant(
     userId: number,
     permissionKey: string,
@@ -244,7 +329,6 @@ export const PermissionService = {
       throw new Error(`الصلاحية ${permissionKey} غير معرّفة`);
     }
 
-    // إن كان موجود ومُلغى → أعد تفعيله
     const existing = await prisma.userPermission.findUnique({
       where: {
         userId_permissionId: {
@@ -265,7 +349,7 @@ export const PermissionService = {
           },
         });
       }
-      return existing; // مفعّل مسبقاً
+      return existing;
     }
 
     return prisma.userPermission.create({
@@ -277,7 +361,6 @@ export const PermissionService = {
     });
   },
 
-  // ═══ سحب صلاحية ═══
   async revoke(userId: number, permissionKey: string) {
     const permission = await prisma.permission.findUnique({
       where: { key: permissionKey },
@@ -295,13 +378,16 @@ export const PermissionService = {
     });
   },
 
-  // ═══ مزامنة الصلاحيات الافتراضية (Seed) ═══
+  // ═══ مزامنة الصلاحيات الافتراضية ═══
   async syncDefaults() {
     let created = 0;
+    let updated = 0;
+
     for (const perm of DEFAULT_PERMISSIONS) {
       const existing = await prisma.permission.findUnique({
         where: { key: perm.key },
       });
+
       if (!existing) {
         await prisma.permission.create({
           data: {
@@ -312,8 +398,26 @@ export const PermissionService = {
           },
         });
         created++;
+      } else {
+        // نُحدّث الوصف/الاسم إن تغيّرا
+        if (
+          existing.name !== perm.name ||
+          existing.description !== perm.description ||
+          existing.category !== perm.category
+        ) {
+          await prisma.permission.update({
+            where: { id: existing.id },
+            data: {
+              name: perm.name,
+              description: perm.description,
+              category: perm.category,
+            },
+          });
+          updated++;
+        }
       }
     }
-    return created;
+
+    return { created, updated, total: DEFAULT_PERMISSIONS.length };
   },
 };

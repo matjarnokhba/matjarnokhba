@@ -6,6 +6,8 @@ import { InventoryService } from "@/services/inventory.service";
 import { LoyaltyService } from "@/services/loyalty.service";
 import { ReferralService } from "@/services/referral.service";
 import { AuditService } from "@/services/audit.service";
+import { FulfillmentService } from "@/services/fulfillment.service";
+import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 
 async function requireDelivery() {
   const current = await SessionService.getCurrent();
@@ -30,19 +32,17 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("delivered") }),
   z.object({
     action: z.literal("postponed"),
-    reason: z.string().trim().min(3, "سبب التأجيل مطلوب").max(500),
+    reason: z.string().trim().min(3).max(500),
   }),
   z.object({
     action: z.literal("refused"),
-    reason: z.string().trim().min(3, "سبب الرفض مطلوب").max(500),
+    reason: z.string().trim().min(3).max(500),
   }),
   z.object({
     action: z.literal("returned"),
-    reason: z.string().trim().min(3, "سبب الإرجاع مطلوب").max(500),
+    reason: z.string().trim().min(3).max(500),
   }),
-]);
-
-export async function POST(
+]);export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -103,7 +103,6 @@ export async function POST(
       );
     }
 
-    // ═══ التحقق: الإسناد ═══
     if (shipment.deliveryPersonId !== auth.person.id) {
       return NextResponse.json(
         { success: false, message: "هذه الشحنة ليست مُسندة إليك" },
@@ -111,8 +110,11 @@ export async function POST(
       );
     }
 
-    // ═══ التحقق: الحالة ═══
-    if (!["ASSIGNED", "IN_TRANSIT"].includes(shipment.status)) {
+    if (
+      !["ASSIGNED", "IN_TRANSIT", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(
+        shipment.status
+      )
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -122,21 +124,44 @@ export async function POST(
       );
     }
 
-    // ═══ تجميع الطلبات الفريدة + العناصر ═══
     const orderIds = Array.from(new Set(shipment.items.map((i) => i.orderId)));
     const orderMap = new Map(shipment.items.map((i) => [i.orderId, i.order]));
 
-    // ═══ الإجراء ═══
     await prisma.$transaction(
       async (tx) => {
         if (data.action === "delivered") {
-          // ═══════ 1. الشحنة → DELIVERED ═══════
           await tx.shipment.update({
             where: { id: shipmentId },
             data: { status: "DELIVERED" },
           });
 
-          // ═══════ 2. كل طلب → DELIVERED ═══════
+          for (const shipmentItem of shipment.items) {
+            if (!shipmentItem.fulfillmentItemId) continue;
+
+            const fi = await tx.fulfillmentItem.findUnique({
+              where: { id: shipmentItem.fulfillmentItemId },
+              select: { status: true, orderItemId: true },
+            });
+
+            if (!fi) continue;
+            if (fi.status === "DELIVERED") continue;
+
+            await tx.fulfillmentItem.update({
+              where: { id: shipmentItem.fulfillmentItemId },
+              data: { status: "DELIVERED" },
+            });
+
+            await tx.fulfillmentStatusHistory.create({
+              data: {
+                fulfillmentItemId: shipmentItem.fulfillmentItemId,
+                fromStatus: fi.status as FulfillmentStatus,
+                toStatus: "DELIVERED",
+                changedById: auth.user.id,
+                note: `تم التسليم عبر الشحنة ${shipment.shipmentNumber}`,
+              },
+            });
+          }
+
           for (const orderId of orderIds) {
             const ord = orderMap.get(orderId);
             if (!ord) continue;
@@ -163,7 +188,6 @@ export async function POST(
               },
             });
 
-            // ═══ زيادة sold ═══
             const soldByProduct = new Map<number, number>();
             const orderItems = await tx.orderItem.findMany({
               where: { orderId },
@@ -182,7 +206,6 @@ export async function POST(
               });
             }
 
-            // ═══ نقاط الولاء ═══
             try {
               const award = await LoyaltyService.awardForOrder(tx, {
                 userId: ord.userId,
@@ -203,24 +226,18 @@ export async function POST(
               console.error("Loyalty award failed:", loyaltyErr);
             }
 
-            // ═══ مكافأة الإحالة ═══
             try {
-              await ReferralService.awardOnFirstOrder(
-                tx,
-                ord.userId,
-                orderId
-              );
+              await ReferralService.awardOnFirstOrder(tx, ord.userId, orderId);
             } catch (refErr) {
               console.error("Referral award failed:", refErr);
             }
 
-            // ═══ إشعار العميل ═══
             await tx.notification.create({
               data: {
                 userId: ord.userId,
                 type: "ORDER_STATUS_CHANGED",
-                title: "✅ تم توصيل طلبك",
-                message: `طلبك تم تسليمه بنجاح. شكراً لثقتك!`,
+                title: "تم توصيل طلبك",
+                message: "طلبك تم تسليمه بنجاح. شكراً لثقتك!",
                 link: `/orders/${orderId}`,
                 category: "ORDER",
                 severity: "INFO",
@@ -228,7 +245,14 @@ export async function POST(
             });
           }
 
-          // ═══ تحديث أداء السائق ═══
+          const allOrderItemIds = await tx.orderItem.findMany({
+            where: { orderId: { in: orderIds } },
+            select: { id: true },
+          });
+          for (const oi of allOrderItemIds) {
+            await FulfillmentService.syncOrderFulfillmentStatus(tx, oi.id);
+          }
+
           await tx.deliveryPerson.update({
             where: { id: auth.person.id },
             data: {
@@ -237,7 +261,6 @@ export async function POST(
             },
           });
 
-          // ═══ Audit ═══
           const reqInfo = AuditService.getRequestInfo(request);
           await AuditService.logInTransaction(tx, {
             userId: auth.user.id,
@@ -253,13 +276,11 @@ export async function POST(
             userAgent: reqInfo.userAgent,
           });
         } else if (data.action === "postponed") {
-          // ═══════ الشحنة → POSTPONED (الطلبات تبقى كما هي) ═══════
           await tx.shipment.update({
             where: { id: shipmentId },
             data: { status: "POSTPONED" },
           });
 
-          // ═══ Audit ═══
           const reqInfo = AuditService.getRequestInfo(request);
           await AuditService.logInTransaction(tx, {
             userId: auth.user.id,
@@ -275,9 +296,11 @@ export async function POST(
             userAgent: reqInfo.userAgent,
           });
 
-          // ═══ إشعار الأدمن ═══
           const admins = await tx.user.findMany({
-            where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+            where: {
+              role: { in: ["ADMIN", "SUPER_ADMIN"] },
+              deletedAt: null,
+            },
             select: { id: true },
           });
           for (const a of admins) {
@@ -285,7 +308,7 @@ export async function POST(
               data: {
                 userId: a.id,
                 type: "ORDER_STATUS_CHANGED",
-                title: "⏸️ تأجيل توصيل شحنة",
+                title: "تأجيل توصيل شحنة",
                 message: `السائق ${auth.user.name} أجّل الشحنة ${shipment.shipmentNumber}: ${data.reason}`,
                 link: `/admin/shipments/${shipmentId}`,
                 category: "ORDER",
@@ -294,7 +317,6 @@ export async function POST(
             });
           }
         } else {
-          // ═══════ REFUSED أو RETURNED → كل الطلبات RETURNED ═══════
           const isRejected = data.action === "refused";
           const newStatus = isRejected ? "REFUSED" : "RETURNED";
           const returnReason = isRejected
@@ -306,6 +328,33 @@ export async function POST(
             data: { status: newStatus },
           });
 
+          for (const shipmentItem of shipment.items) {
+            if (!shipmentItem.fulfillmentItemId) continue;
+
+            const fi = await tx.fulfillmentItem.findUnique({
+              where: { id: shipmentItem.fulfillmentItemId },
+              select: { status: true, orderItemId: true },
+            });
+
+            if (!fi) continue;
+            if (fi.status === "RETURNED") continue;
+
+            await tx.fulfillmentItem.update({
+              where: { id: shipmentItem.fulfillmentItemId },
+              data: { status: "RETURNED" },
+            });
+
+            await tx.fulfillmentStatusHistory.create({
+              data: {
+                fulfillmentItemId: shipmentItem.fulfillmentItemId,
+                fromStatus: fi.status as FulfillmentStatus,
+                toStatus: "RETURNED",
+                changedById: auth.user.id,
+                note: `${isRejected ? "رفض" : "إرجاع"} عبر الشحنة ${shipment.shipmentNumber} — ${data.reason}`,
+              },
+            });
+          }
+
           for (const orderId of orderIds) {
             const ord = orderMap.get(orderId);
             if (!ord) continue;
@@ -313,7 +362,6 @@ export async function POST(
               continue;
             }
 
-            // ═══ إرجاع المخزون (Idempotent) ═══
             const alreadyReturned = await tx.inventoryMovement.findFirst({
               where: {
                 referenceType: "ORDER",
@@ -346,7 +394,6 @@ export async function POST(
               }
             }
 
-            // ═══ تحديث حالة الطلب ═══
             await tx.order.update({
               where: { id: orderId },
               data: { status: "RETURNED" },
@@ -362,14 +409,11 @@ export async function POST(
               },
             });
 
-            // ═══ إشعار العميل ═══
             await tx.notification.create({
               data: {
                 userId: ord.userId,
                 type: "ORDER_STATUS_CHANGED",
-                title: isRejected
-                  ? "❌ تم رفض استلام طلبك"
-                  : "↩️ تم إرجاع طلبك",
+                title: isRejected ? "تم رفض استلام طلبك" : "تم إرجاع طلبك",
                 message: `طلبك — ${data.reason}`,
                 link: `/orders/${orderId}`,
                 category: "ORDER",
@@ -378,7 +422,14 @@ export async function POST(
             });
           }
 
-          // ═══ تحديث أداء السائق ═══
+          const allOrderItemIds = await tx.orderItem.findMany({
+            where: { orderId: { in: orderIds } },
+            select: { id: true },
+          });
+          for (const oi of allOrderItemIds) {
+            await FulfillmentService.syncOrderFulfillmentStatus(tx, oi.id);
+          }
+
           await tx.deliveryPerson.update({
             where: { id: auth.person.id },
             data: {
@@ -388,7 +439,6 @@ export async function POST(
             },
           });
 
-          // ═══ Audit ═══
           const reqInfo = AuditService.getRequestInfo(request);
           await AuditService.logInTransaction(tx, {
             userId: auth.user.id,
@@ -405,9 +455,11 @@ export async function POST(
             userAgent: reqInfo.userAgent,
           });
 
-          // ═══ إشعار الأدمن ═══
           const admins = await tx.user.findMany({
-            where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+            where: {
+              role: { in: ["ADMIN", "SUPER_ADMIN"] },
+              deletedAt: null,
+            },
             select: { id: true },
           });
           for (const a of admins) {
@@ -415,7 +467,7 @@ export async function POST(
               data: {
                 userId: a.id,
                 type: "ORDER_STATUS_CHANGED",
-                title: isRejected ? "❌ رفض شحنة" : "↩️ إرجاع شحنة",
+                title: isRejected ? "رفض شحنة" : "إرجاع شحنة",
                 message: `السائق ${auth.user.name} — ${shipment.shipmentNumber}: ${data.reason}`,
                 link: `/admin/shipments/${shipmentId}`,
                 category: "ORDER",

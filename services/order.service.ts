@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { CouponService } from "@/services/coupon.service";
 import { InventoryService } from "@/services/inventory.service";
+import { FulfillmentService } from "@/services/fulfillment.service";
 
 const SHIPPING_FEE = 30;
 const FREE_SHIPPING_THRESHOLD = 300;
@@ -332,6 +333,12 @@ export const OrderService = {
               order.id
             );
           }
+
+          // ═══ 📦 إنشاء FulfillmentItems (لطلبات ONLINE فقط) ═══
+          // للطلبات IN_STORE، الخدمة ترجع 0 تلقائياً (تسليم فوري)
+          await FulfillmentService.createForOrder(tx, {
+            orderId: order.id,
+          });
 
           // ═══ تسجيل استخدام الكوبون داخل tx ═══
           if (isCouponOrder && couponLock && appliedDiscount > 0) {

@@ -31,6 +31,7 @@ type SellerSidebarProps = {
 const NAV_ITEMS = [
   { href: "/seller", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false },
+  { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false },
   { href: "/seller/scanner", label: "ماسح المنتجات", icon: ScanLine, exact: false },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false },

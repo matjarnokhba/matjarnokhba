@@ -4,9 +4,11 @@ import { PermissionService } from "@/services/permission.service";
 async function main() {
   console.log("🔐 مزامنة الصلاحيات...\n");
 
-  const created = await PermissionService.syncDefaults();
+  const result = await PermissionService.syncDefaults();
 
-  console.log(`✅ تم إنشاء ${created} صلاحية جديدة`);
+  console.log(
+    `✅ تم: ${result.created} جديدة · ${result.updated} محدَّثة · إجمالي: ${result.total}`
+  );
 
   // قائمة الصلاحيات الموجودة
   const { prisma } = await import("@/lib/prisma");

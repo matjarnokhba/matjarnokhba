@@ -1,12 +1,22 @@
 import { prisma } from "@/lib/prisma";
 import { PermissionService, PERMISSIONS } from "@/services/permission.service";
 
-// ═══════ نتيجة التقييم ═══════
-export type AccessResult =
+// ═══════ نتائج تقييم الوصول ═══════
+export type OrderAccessResult =
   | { allowed: true; role: "ADMIN" | "SUPER_ADMIN"; scope: "full" }
   | { allowed: true; role: "SELLER"; scope: "seller"; sellerId: number }
   | { allowed: true; role: "CUSTOMER"; scope: "owner"; userId: number }
   | { allowed: true; role: "DELIVERY"; scope: "delivery"; deliveryPersonId: number }
+  | { allowed: false; reason: string };
+
+export type ShipmentAccessResult =
+  | { allowed: true; role: "ADMIN" | "SUPER_ADMIN"; scope: "full" }
+  | { allowed: true; role: "DELIVERY"; scope: "assigned"; deliveryPersonId: number; assignmentId: number }
+  | { allowed: false; reason: string };
+
+export type FulfillmentAccessResult =
+  | { allowed: true; role: "ADMIN" | "SUPER_ADMIN"; scope: "full" }
+  | { allowed: true; role: "SELLER"; scope: "owner"; sellerId: number }
   | { allowed: false; reason: string };
 
 type CurrentUser = {
@@ -17,13 +27,12 @@ type CurrentUser = {
 
 export const AccessPolicyService = {
   // ═══════════════════════════════════════════
-  // تقييم صلاحية الوصول لطلب
+  // الطلبات (Orders)
   // ═══════════════════════════════════════════
   async canAccessOrder(
     user: CurrentUser,
     orderId: number
-  ): Promise<AccessResult> {
-    // ═══ 1. تحقق من وجود الطلب ═══
+  ): Promise<OrderAccessResult> {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -39,22 +48,17 @@ export const AccessPolicyService = {
       return { allowed: false, reason: "الطلب غير موجود" };
     }
 
-    // ═══ 2. ADMIN / SUPER_ADMIN ═══
+    // ADMIN / SUPER_ADMIN
     if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
-      return {
-        allowed: true,
-        role: user.role,
-        scope: "full",
-      };
+      return { allowed: true, role: user.role, scope: "full" };
     }
 
-    // ═══ 3. SELLER ═══
+    // SELLER
     if (user.role === "SELLER") {
       if (!user.seller) {
         return { allowed: false, reason: "لا يوجد متجر مرتبط بحسابك" };
       }
 
-      // هل التاجر مرتبط بهذا الطلب؟
       if (order.sellerId === user.seller.id) {
         return {
           allowed: true,
@@ -64,7 +68,6 @@ export const AccessPolicyService = {
         };
       }
 
-      // لو الطلب multi-vendor: نتحقق إن كان للتاجر أي OrderItem
       const hasItems = await prisma.orderItem.findFirst({
         where: {
           orderId,
@@ -85,7 +88,7 @@ export const AccessPolicyService = {
       return { allowed: false, reason: "هذا الطلب لا يخص متجرك" };
     }
 
-    // ═══ 4. CUSTOMER ═══
+    // CUSTOMER
     if (user.role === "CUSTOMER") {
       if (order.userId === user.id) {
         return {
@@ -98,7 +101,7 @@ export const AccessPolicyService = {
       return { allowed: false, reason: "هذا الطلب لا يخصك" };
     }
 
-    // ═══ 5. DELIVERY ═══
+    // DELIVERY
     if (user.role === "DELIVERY") {
       const person = await prisma.deliveryPerson.findUnique({
         where: { userId: user.id },
@@ -118,32 +121,26 @@ export const AccessPolicyService = {
         };
       }
 
-      return {
-        allowed: false,
-        reason: "هذا الطلب ليس مُسنداً إليك",
-      };
+      return { allowed: false, reason: "هذا الطلب ليس مُسنداً إليك" };
     }
 
     return { allowed: false, reason: "غير مصرح" };
   },
 
   // ═══════════════════════════════════════════
-  // هل يستطيع رؤية بيانات تواصل العميل الكاملة؟
+  // بيانات تواصل العميل
   // ═══════════════════════════════════════════
   async canViewCustomerContact(
     user: CurrentUser,
     orderId: number
   ): Promise<boolean> {
-    // ADMIN → نعم (إذا عنده الصلاحية)
     if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
-      const hasPerm = await PermissionService.hasPermission(
+      return PermissionService.hasPermission(
         user.id,
         PERMISSIONS.VIEW_CUSTOMER_CONTACT
       );
-      return hasPerm;
     }
 
-    // SELLER → نعم فقط لطلبات IN_STORE الخاصة به
     if (user.role === "SELLER") {
       if (!user.seller) return false;
 
@@ -154,7 +151,7 @@ export const AccessPolicyService = {
 
       if (!order) return false;
 
-      // طلب IN_STORE أنشأه التاجر بنفسه → يستطيع رؤية بياناته
+      // IN_STORE من التاجر نفسه → يستطيع
       if (
         order.source === "IN_STORE" &&
         order.sellerId === user.seller.id
@@ -162,11 +159,9 @@ export const AccessPolicyService = {
         return true;
       }
 
-      // طلب ONLINE → لا
       return false;
     }
 
-    // DELIVERY → نعم فقط للطلبات المُسندة له
     if (user.role === "DELIVERY") {
       const person = await prisma.deliveryPerson.findUnique({
         where: { userId: user.id },
@@ -189,51 +184,40 @@ export const AccessPolicyService = {
   },
 
   // ═══════════════════════════════════════════
-  // تصفية بيانات الطلب حسب الصلاحية
+  // تصفية بيانات الطلب
   // ═══════════════════════════════════════════
-  filterOrderData(
-    order: any,
-    access: AccessResult
-  ): any {
+  filterOrderData(order: any, access: OrderAccessResult): any {
     if (!access.allowed) return null;
 
-    // ═══ ADMIN → كل شيء ═══
     if (access.scope === "full") {
       return order;
     }
 
-    // ═══ SELLER → فلترة ═══
     if (access.scope === "seller") {
       const sellerId = access.sellerId;
 
-      // فلترة الـitems — فقط منتجات هذا التاجر
       const filteredItems = (order.items || []).filter(
         (item: any) => item.product?.sellerId === sellerId
       );
 
-      // هل الطلب IN_STORE؟
       const isInStore = order.source === "IN_STORE";
 
       return {
         ...order,
         items: filteredItems,
-        // بيانات العميل:
         customerSnapshot: isInStore ? order.customerSnapshot : null,
         shippingAddressSnapshot: isInStore
           ? order.shippingAddressSnapshot
           : null,
-        // حجب بيانات حساسة للتاجر لطلبات ONLINE
         userId: isInStore ? order.userId : null,
         ...(isInStore ? {} : { user: undefined }),
       };
     }
 
-    // ═══ CUSTOMER → بياناته فقط ═══
     if (access.scope === "owner") {
       return order;
     }
 
-    // ═══ DELIVERY → بيانات توصيل فقط ═══
     if (access.scope === "delivery") {
       return {
         id: order.id,
@@ -254,5 +238,150 @@ export const AccessPolicyService = {
     }
 
     return null;
+  },
+
+  // ═══════════════════════════════════════════
+  // Fulfillment
+  // ═══════════════════════════════════════════
+  async canAccessFulfillment(
+    user: CurrentUser,
+    fulfillmentItemId: number
+  ): Promise<FulfillmentAccessResult> {
+    const item = await prisma.fulfillmentItem.findUnique({
+      where: { id: fulfillmentItemId },
+      select: { id: true, sellerId: true },
+    });
+
+    if (!item) {
+      return { allowed: false, reason: "العنصر غير موجود" };
+    }
+
+    if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+      return { allowed: true, role: user.role, scope: "full" };
+    }
+
+    if (user.role === "SELLER") {
+      if (!user.seller) {
+        return { allowed: false, reason: "لا يوجد متجر مرتبط" };
+      }
+
+      if (item.sellerId === user.seller.id) {
+        return {
+          allowed: true,
+          role: "SELLER",
+          scope: "owner",
+          sellerId: user.seller.id,
+        };
+      }
+
+      return { allowed: false, reason: "هذا العنصر لا يخص متجرك" };
+    }
+
+    return { allowed: false, reason: "غير مصرح" };
+  },
+
+  // ═══════════════════════════════════════════
+  // Shipment
+  // ═══════════════════════════════════════════
+  async canAccessShipment(
+    user: CurrentUser,
+    shipmentId: number
+  ): Promise<ShipmentAccessResult> {
+    const shipment = await prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      select: { id: true, deliveryPersonId: true },
+    });
+
+    if (!shipment) {
+      return { allowed: false, reason: "الشحنة غير موجودة" };
+    }
+
+    if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+      return { allowed: true, role: user.role, scope: "full" };
+    }
+
+    if (user.role === "DELIVERY") {
+      const person = await prisma.deliveryPerson.findUnique({
+        where: { userId: user.id },
+        select: { id: true, status: true, deletedAt: true },
+      });
+
+      if (!person || person.deletedAt || person.status !== "ACTIVE") {
+        return { allowed: false, reason: "الحساب غير نشط" };
+      }
+
+      // نبحث عن DeliveryAssignment نشط
+      const assignment = await prisma.deliveryAssignment.findFirst({
+        where: {
+          shipmentId,
+          deliveryPersonId: person.id,
+          status: {
+            in: ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"],
+          },
+        },
+        select: { id: true },
+      });
+
+      if (assignment) {
+        return {
+          allowed: true,
+          role: "DELIVERY",
+          scope: "assigned",
+          deliveryPersonId: person.id,
+          assignmentId: assignment.id,
+        };
+      }
+
+      // backward compat: لو الشحنة نفسها تحمل deliveryPersonId
+      if (shipment.deliveryPersonId === person.id) {
+        return {
+          allowed: true,
+          role: "DELIVERY",
+          scope: "assigned",
+          deliveryPersonId: person.id,
+          assignmentId: 0, // legacy
+        };
+      }
+
+      return { allowed: false, reason: "هذه الشحنة ليست مُسندة إليك" };
+    }
+
+    return { allowed: false, reason: "غير مصرح" };
+  },
+
+  // ═══════════════════════════════════════════
+  // Collection Assignment
+  // ═══════════════════════════════════════════
+  async canAccessCollectionAssignment(
+    user: CurrentUser,
+    assignmentId: number
+  ): Promise<boolean> {
+    if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+      return true;
+    }
+
+    if (user.role === "DELIVERY") {
+      const person = await prisma.deliveryPerson.findUnique({
+        where: { userId: user.id },
+        select: { id: true, status: true, deletedAt: true },
+      });
+
+      if (!person || person.deletedAt || person.status !== "ACTIVE") {
+        return false;
+      }
+
+      const assignment = await prisma.collectionAssignment.findFirst({
+        where: {
+          id: assignmentId,
+          deliveryPersonId: person.id,
+          status: { in: ["ASSIGNED", "IN_PROGRESS"] },
+        },
+        select: { id: true },
+      });
+
+      return !!assignment;
+    }
+
+    return false;
   },
 };

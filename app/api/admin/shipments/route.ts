@@ -4,20 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { PermissionService, PERMISSIONS } from "@/services/permission.service";
 import { AuditService } from "@/services/audit.service";
-import { ShipmentQRService } from "@/services/shipment-qr.service";
 import { ShipmentService } from "@/services/shipment.service";
 
 // ═══════ Schema ═══════
 const createSchema = z.object({
-  customerId: z.number().int().positive(),
-  items: z
-    .array(
-      z.object({
-        orderItemId: z.number().int().positive(),
-        quantity: z.number().int().positive().max(1000),
-      })
-    )
-    .min(1, "اختر عنصراً واحداً على الأقل"),
+  fulfillmentItemIds: z
+    .array(z.number().int().positive())
+    .min(1, "اختر عنصراً واحداً على الأقل")
+    .max(100, "الحد الأقصى 100 عنصر"),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -63,6 +57,7 @@ export async function GET(request: Request) {
         items: {
           select: { orderId: true, quantity: true },
         },
+        _count: { select: { items: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -74,7 +69,7 @@ export async function GET(request: Request) {
       status: s.status,
       totalCOD: Number(s.totalCOD),
       totalOrders: s.totalOrders,
-      totalItems: s.items.length,
+      totalItems: s._count.items,
       customer: s.customer
         ? {
             id: s.customer.id,
@@ -102,7 +97,7 @@ export async function GET(request: Request) {
   }
 }
 
-// ═══════ POST — إنشاء شحنة جديدة ═══════
+// ═══════ POST — إنشاء شحنة من FulfillmentItems ═══════
 export async function POST(request: Request) {
   try {
     const current = await SessionService.getCurrent();
@@ -113,7 +108,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ التحقق من الصلاحية ═══
     const canCreate = await PermissionService.hasPermission(
       current.user.id,
       PERMISSIONS.CREATE_SHIPMENT
@@ -140,240 +134,38 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // ═══ التحقق من العميل ═══
-    const customer = await prisma.user.findUnique({
-      where: { id: data.customerId },
-      select: { id: true, name: true },
-    });
-    if (!customer) {
-      return NextResponse.json(
-        { success: false, message: "العميل غير موجود" },
-        { status: 404 }
-      );
-    }
-
-    // ═══ جلب كل الـOrderItems المطلوبة ═══
-    const orderItemIds = data.items.map((i) => i.orderItemId);
-    const orderItems = await prisma.orderItem.findMany({
-      where: {
-        id: { in: orderItemIds },
-      },
-      include: {
-        order: {
-          select: {
-            id: true,
-            userId: true,
-            status: true,
-            source: true,
-          },
-        },
-        product: { select: { sellerId: true } },
-        shipmentItems: {
-          select: { quantity: true },
-        },
-      },
+    // ═══ ShipmentService يتولى كل الـValidation ═══
+    const result = await ShipmentService.createFromFulfillmentItems({
+      fulfillmentItemIds: data.fulfillmentItemIds,
+      createdById: current.user.id,
+      notes: data.notes || null,
     });
 
-    if (orderItems.length !== orderItemIds.length) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "بعض العناصر غير موجودة",
-        },
-        { status: 400 }
-      );
-    }
-
-    // ═══ التحقق: كل العناصر لعميل واحد ═══
-    for (const item of orderItems) {
-      if (item.order.userId !== data.customerId) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "كل العناصر يجب أن تكون لنفس العميل",
-          },
-          { status: 400 }
-        );
-      }
-
-      // ═══ التحقق: الطلب قيد المعالجة ═══
-      if (!["NEW", "PROCESSING", "SHIPPED"].includes(item.order.status)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `طلب ${item.order.id} ليس في حالة قابلة للشحن`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // ═══ التحقق: الكميات المتبقية ═══
-    for (const reqItem of data.items) {
-      const orderItem = orderItems.find((oi) => oi.id === reqItem.orderItemId);
-      if (!orderItem) continue;
-
-      const alreadyShipped = orderItem.shipmentItems.reduce(
-        (sum, si) => sum + si.quantity,
-        0
-      );
-      const remaining = orderItem.quantity - alreadyShipped;
-
-      if (reqItem.quantity > remaining) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `الكمية المطلوبة من "${orderItem.productName}" تتجاوز المتبقي (${remaining})`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // ═══ توليد Token وHash + تشفير للطباعة ═══
-    const rawToken = ShipmentQRService.generateToken();
-    const tokenHash = ShipmentQRService.hashToken(rawToken);
-    const tokenEncrypted = ShipmentQRService.encryptToken(rawToken);
-    const tokenPreview = ShipmentQRService.preview(rawToken);
-
-    // ═══ رقم الشحنة ═══
-    const shipmentNumber = await ShipmentService.generateShipmentNumber();
-
-    // ═══ حساب إجماليات من DB (Server-Side) ═══
-    // نسبة العنصر من Order.total
-    const codByOrder = new Map<number, number>();
-
-    for (const reqItem of data.items) {
-      const orderItem = orderItems.find((oi) => oi.id === reqItem.orderItemId);
-      if (!orderItem) continue;
-
-      const order = await prisma.order.findUnique({
-        where: { id: orderItem.orderId },
-        select: {
-          id: true,
-          total: true,
-          subtotal: true,
-          discount: true,
-          shippingCost: true,
-          items: { select: { id: true, total: true } },
-        },
-      });
-      if (!order) continue;
-
-      // حساب نسبة هذا العنصر من إجمالي الطلب
-      const orderItemsTotal = order.items.reduce(
-        (s, i) => s + Number(i.total),
-        0
-      );
-      const itemTotal = Number(orderItem.total);
-      const itemRatio = orderItemsTotal > 0 ? itemTotal / orderItemsTotal : 0;
-
-      const totalForThisItem = Number(order.total) * itemRatio;
-      const perUnit = totalForThisItem / orderItem.quantity;
-      const codForThis = perUnit * reqItem.quantity;
-
-      codByOrder.set(
-        order.id,
-        (codByOrder.get(order.id) || 0) + codForThis
-      );
-    }
-
-    const totalCOD = Array.from(codByOrder.values()).reduce(
-      (s, v) => s + v,
-      0
-    );
-
-    // ═══ عدد الطلبات الفريدة ═══
-    const uniqueOrders = new Set(orderItems.map((oi) => oi.orderId));
-
-    // ═══ Transaction ═══
-    const shipment = await prisma.$transaction(
-      async (tx) => {
-        const newShipment = await tx.shipment.create({
-          data: {
-            shipmentNumber,
-            qrTokenHash: tokenHash,
-            qrTokenEncrypted: tokenEncrypted,
-            qrTokenPreview: tokenPreview,
-            status: "DRAFT",
-            createdById: current.user.id,
-            packedById: current.user.id,
-            customerId: data.customerId,
-            totalCOD: Math.round(totalCOD * 100) / 100,
-            totalOrders: uniqueOrders.size,
-            notes: data.notes || null,
-          },
-        });
-
-        // ═══ ShipmentItems ═══
-        for (const reqItem of data.items) {
-          const orderItem = orderItems.find(
-            (oi) => oi.id === reqItem.orderItemId
-          );
-          if (!orderItem) continue;
-
-          // حساب COD لهذا العنصر
-          const order = await tx.order.findUnique({
-            where: { id: orderItem.orderId },
-            select: { total: true, items: { select: { id: true, total: true } } },
-          });
-          const orderItemsTotal = (order?.items || []).reduce(
-            (s, i) => s + Number(i.total),
-            0
-          );
-          const itemRatio =
-            orderItemsTotal > 0
-              ? Number(orderItem.total) / orderItemsTotal
-              : 0;
-          const codPerUnit =
-            orderItem.quantity > 0
-              ? (Number(order?.total || 0) * itemRatio) / orderItem.quantity
-              : 0;
-
-          await tx.shipmentItem.create({
-            data: {
-              shipmentId: newShipment.id,
-              orderId: orderItem.orderId,
-              orderItemId: orderItem.id,
-              productId: orderItem.productId,
-              variantId: orderItem.variantId,
-              sellerId: orderItem.product.sellerId,
-              quantity: reqItem.quantity,
-              codAmount: Math.round(codPerUnit * reqItem.quantity * 100) / 100,
-            },
-          });
-        }
-
-        // ═══ Audit Log ═══
-        const reqInfo = AuditService.getRequestInfo(request);
-        await AuditService.logInTransaction(tx, {
-          userId: current.user.id,
-          action: "SHIPMENT_CREATE",
-          entity: "Shipment",
-          entityId: newShipment.id,
-          newData: {
-            shipmentNumber,
-            totalCOD: newShipment.totalCOD,
-            totalOrders: newShipment.totalOrders,
-            itemsCount: data.items.length,
-          },
-          ipAddress: reqInfo.ipAddress,
-          userAgent: reqInfo.userAgent,
-        });
-
-        return newShipment;
+    // ═══ Audit مع معلومات الطلب ═══
+    const reqInfo = AuditService.getRequestInfo(request);
+    await AuditService.log({
+      userId: current.user.id,
+      action: "SHIPMENT_CREATE",
+      entity: "Shipment",
+      entityId: result.shipment.id,
+      newData: {
+        shipmentNumber: result.shipment.shipmentNumber,
+        totalCOD: Number(result.shipment.totalCOD),
+        totalOrders: result.shipment.totalOrders,
+        itemsCount: data.fulfillmentItemIds.length,
       },
-      { timeout: 20000 }
-    );
+      ipAddress: reqInfo.ipAddress,
+      userAgent: reqInfo.userAgent,
+    });
 
     return NextResponse.json(
       {
         success: true,
         shipment: {
-          id: shipment.id,
-          shipmentNumber: shipment.shipmentNumber,
-          rawToken, // ← يُعرض مرة واحدة فقط للطباعة
-          totalCOD: Number(shipment.totalCOD),
+          id: result.shipment.id,
+          shipmentNumber: result.shipment.shipmentNumber,
+          rawToken: result.rawToken,
+          totalCOD: Number(result.shipment.totalCOD),
         },
       },
       { status: 201 }
@@ -384,7 +176,7 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : "حدث خطأ";
     return NextResponse.json(
       { success: false, message },
-      { status: 500 }
+      { status: 400 }
     );
   }
 }

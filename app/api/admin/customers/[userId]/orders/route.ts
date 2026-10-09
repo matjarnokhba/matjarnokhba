@@ -16,7 +16,6 @@ export async function GET(
       );
     }
 
-    // ═══ التحقق من الصلاحية ═══
     const canView = await PermissionService.hasPermission(
       current.user.id,
       PERMISSIONS.VIEW_CONSOLIDATED_ORDERS
@@ -56,86 +55,135 @@ export async function GET(
       );
     }
 
-    // ═══ الطلبات القابلة للتجميع ═══
-    // (NEW / PROCESSING / SHIPPED — ليس DELIVERED أو CANCELLED)
-    const orders = await prisma.order.findMany({
+    // ═══ FulfillmentItems المتاحة للشحن ═══
+    const items = await prisma.fulfillmentItem.findMany({
       where: {
-        userId: customerId,
-        status: { in: ["NEW", "PROCESSING", "SHIPPED"] },
-        source: { in: ["ONLINE", "IN_STORE"] },
+        status: "AVAILABLE_FOR_SHIPMENT",
+        orderItem: {
+          order: {
+            userId: customerId,
+            status: { in: ["NEW", "PROCESSING", "SHIPPED"] },
+            source: { in: ["ONLINE", "IN_STORE"] },
+          },
+        },
       },
       include: {
-        seller: { select: { id: true, storeName: true } },
-        items: {
-          include: {
-            product: { select: { id: true, sellerId: true } },
-          },
+        seller: {
+          select: { id: true, storeName: true, slug: true },
         },
-        shipmentItems: {
-          select: {
-            id: true,
-            shipmentId: true,
-            quantity: true,
-            orderItemId: true,
+        orderItem: {
+          include: {
+            order: {
+              select: {
+                id: true,
+                orderNumber: true,
+                source: true,
+                status: true,
+                total: true,
+                createdAt: true,
+                items: { select: { id: true, total: true } },
+              },
+            },
+            product: {
+              select: { id: true, name: true },
+            },
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ readyAt: "asc" }, { createdAt: "asc" }],
+      take: 200,
     });
 
-    // ═══ بناء الاستجابة (مع حساب العناصر المتبقية) ═══
-    const formatted = orders.map((o) => {
-      const items = o.items.map((i) => {
-        const shippedQty = o.shipmentItems
-          .filter((si) => si.orderItemId === i.id)
-          .reduce((sum, si) => sum + si.quantity, 0);
-
-        const remainingQty = i.quantity - shippedQty;
-
-        return {
-          id: i.id,
-          productName: i.productName,
-          variantName: i.variantName,
-          sku: i.sku,
-          imageUrl: i.imageUrl,
-          quantity: i.quantity,
-          shippedQuantity: shippedQty,
-          remainingQuantity: remainingQty,
-          unitPrice: Number(i.unitPrice),
-          total: Number(i.total),
-          sellerId: i.product.sellerId,
-        };
-      });
-
-      // لو كل العناصر مشحونة → لا نُظهر الطلب
-      const hasRemaining = items.some((i) => i.remainingQuantity > 0);
+    // ═══ حساب COD لكل عنصر (Server-Side) ═══
+    const formatted = items.map((item) => {
+      const order = item.orderItem.order;
+      const orderItemsTotal = order.items.reduce(
+        (s, i) => s + Number(i.total),
+        0
+      );
+      const itemRatio =
+        orderItemsTotal > 0
+          ? Number(item.orderItem.total) / orderItemsTotal
+          : 0;
+      const totalForThisItem = Number(order.total) * itemRatio;
+      const perUnit = totalForThisItem / item.orderItem.quantity;
+      const codAmount =
+        Math.round(perUnit * item.quantity * 100) / 100;
 
       return {
-        id: o.id,
-        orderNumber: o.orderNumber,
-        status: o.status,
-        source: o.source,
-        total: Number(o.total),
-        createdAt: o.createdAt,
-        seller: o.seller
-          ? { id: o.seller.id, storeName: o.seller.storeName }
-          : null,
-        items,
-        hasRemaining,
+        id: item.id,
+        orderItemId: item.orderItem.id,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        orderSource: order.source,
+        orderStatus: order.status,
+        orderCreatedAt: order.createdAt,
+        sellerId: item.sellerId,
+        sellerName: item.seller.storeName,
+        sellerSlug: item.seller.slug,
+        productName: item.orderItem.productName,
+        variantName: item.orderItem.variantName,
+        sku: item.orderItem.sku,
+        imageUrl: item.orderItem.imageUrl,
+        quantity: item.quantity,
+        status: item.status,
+        verifiedAt: item.verifiedAt,
+        codAmount,
       };
     });
 
-    // نُظهر فقط الطلبات التي بها عناصر متبقية
-    const available = formatted.filter((o) => o.hasRemaining);
+    // ═══ تجميع حسب الطلب ═══
+    const ordersMap = new Map<
+      number,
+      {
+        orderId: number;
+        orderNumber: string;
+        source: string;
+        status: string;
+        createdAt: Date;
+        totalCOD: number;
+        items: typeof formatted;
+      }
+    >();
+
+    for (const item of formatted) {
+      if (!ordersMap.has(item.orderId)) {
+        ordersMap.set(item.orderId, {
+          orderId: item.orderId,
+          orderNumber: item.orderNumber,
+          source: item.orderSource,
+          status: item.orderStatus,
+          createdAt: item.orderCreatedAt,
+          totalCOD: 0,
+          items: [],
+        });
+      }
+      const group = ordersMap.get(item.orderId)!;
+      group.items.push(item);
+      group.totalCOD =
+        Math.round((group.totalCOD + item.codAmount) * 100) / 100;
+    }
+
+    const orders = Array.from(ordersMap.values());
+
+    const totalCOD =
+      Math.round(
+        formatted.reduce((s, i) => s + i.codAmount, 0) * 100
+      ) / 100;
 
     return NextResponse.json({
       success: true,
       customer,
-      orders: available,
-      totalOrders: available.length,
+      availableItems: formatted,
+      orders,
+      summary: {
+        totalItems: formatted.length,
+        totalOrders: orders.length,
+        totalCOD,
+      },
     });
   } catch (error) {
-    console.error("Consolidated orders error:", error);
+    console.error("Available items error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },
       { status: 500 }

@@ -41,24 +41,77 @@ enum DeliveryPersonStatus {
 
 /// نوع محاولة التوصيل
 enum DeliveryAttemptType {
-  DELIVERED   // تم التسليم
-  DEFERRED    // تأجيل
-  REJECTED    // رفض العميل
-  RETURNED    // إرجاع
+  DELIVERED
+  DEFERRED
+  REJECTED
+  RETURNED
+}
+
+/// حالة تجهيز OrderItem
+enum FulfillmentStatus {
+  PENDING
+  PREPARING
+  READY_FOR_COLLECTION
+  COLLECTED
+  IN_TRANSIT_TO_WAREHOUSE
+  RECEIVED
+  VERIFIED
+  AVAILABLE_FOR_SHIPMENT
+  ALLOCATED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+/// حالة تكليف الجمع
+enum CollectionStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// حالة استلام المستودع
+enum WarehouseReceiptStatus {
+  RECEIVED
+  VERIFIED
+  DAMAGED
+  REJECTED
+}
+
+/// قرار تجميع طلبات العميل
+enum GroupingDecision {
+  WAIT_FOR_MORE
+  SHIP_AVAILABLE_NOW
+}
+
+/// حالة تكليف التوصيل
+enum DeliveryAssignmentStatus {
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+  REASSIGNED
 }
 
 /// حالة الشحنة
 enum ShipmentStatus {
-  DRAFT               // قيد الإنشاء
-  READY               // جاهزة للتسليم
-  ASSIGNED            // مُسندة لسائق
-  IN_TRANSIT          // مع السائق
-  DELIVERED           // تم التوصيل
-  PARTIALLY_DELIVERED // تسليم جزئي
-  POSTPONED           // مؤجل
-  REFUSED             // مرفوض
-  RETURNED            // مُرجع
-  CANCELLED           // ملغى
+  DRAFT
+  WAITING_FOR_ITEMS
+  READY
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  IN_TRANSIT
+  DELIVERED
+  PARTIALLY_DELIVERED
+  POSTPONED
+  REFUSED
+  RETURNED
+  CANCELLED
 }
 
 /// فئة الصلاحية
@@ -190,6 +243,18 @@ enum AuditAction {
   SHIPMENT_UPDATE
   DELIVERY_ASSIGN
   DELIVERY_ACTION
+  FULFILLMENT_PREPARE
+  FULFILLMENT_READY
+  COLLECTION_ASSIGN
+  COLLECTION_PICKUP
+  COLLECTION_DEPART
+  WAREHOUSE_RECEIVE
+  WAREHOUSE_VERIFY
+  GROUPING_DECISION
+  SHIPMENT_ITEM_ADD
+  SHIPMENT_ITEM_REMOVE
+  SHIPMENT_PICKUP
+  DELIVERY_ATTEMPT
 }
 
 /// نوع حركة نقاط الولاء
@@ -354,6 +419,8 @@ model Seller {
   payouts              SellerPayout[]
   editLogs             ProductEditLog[]
   attributeValues      CategoryAttributeValue[]
+  fulfillmentItems     FulfillmentItem[]
+  orderItems           OrderItem[]            @relation("OrderItemSeller")
 
   @@index([status])
   @@index([deletedAt])
@@ -599,8 +666,9 @@ model Order {
   deliveryToken           String?       @unique @default(uuid())
   deliveryPersonId        Int?
   assignedAt              DateTime?
-  status                  OrderStatus   @default(NEW)
-  paymentMethod           PaymentMethod @default(COD)
+  status                  OrderStatus        @default(NEW)
+  fulfillmentStatus       FulfillmentStatus  @default(PENDING)
+  paymentMethod           PaymentMethod      @default(COD)
   paymentStatus           PaymentStatus @default(PENDING)
   subtotal                Decimal       @db.Decimal(10, 2)
   taxAmount               Decimal       @default(0) @db.Decimal(10, 2)
@@ -656,6 +724,7 @@ model OrderItem {
   orderId     Int
   productId   Int
   variantId   Int?
+  sellerId    Int?
   productName String
   variantName String?
   sku         String
@@ -666,16 +735,19 @@ model OrderItem {
   taxRate     Decimal  @default(0) @db.Decimal(5, 2)
   taxAmount   Decimal  @default(0) @db.Decimal(10, 2)
 
-  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product       Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
-  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
-  reviews       Review[]
-  returnItems   ReturnItem[]
-  shipmentItems ShipmentItem[]  @relation("OrderItemShipmentItems")
+  order            Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant          ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  seller           Seller?             @relation("OrderItemSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  reviews          Review[]
+  returnItems      ReturnItem[]
+  shipmentItems    ShipmentItem[]      @relation("OrderItemShipmentItems")
+  fulfillmentItems FulfillmentItem[]
 
   @@index([orderId])
   @@index([productId])
   @@index([variantId])
+  @@index([sellerId])
 }
 
 model OrderStatusHistory {
@@ -1458,10 +1530,12 @@ model DeliveryPerson {
   updatedAt            DateTime               @updatedAt
   deletedAt            DateTime?
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  assignedOrders    Order[]            @relation("OrderDeliveryPerson")
-  deliveryAttempts  DeliveryAttempt[]
-  shipments         Shipment[]         @relation("ShipmentDeliveryPerson")
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedOrders        Order[]                @relation("OrderDeliveryPerson")
+  deliveryAttempts      DeliveryAttempt[]
+  shipments             Shipment[]             @relation("ShipmentDeliveryPerson")
+  collectionAssignments CollectionAssignment[]
+  deliveryAssignments   DeliveryAssignment[]
 
   @@index([status])
   @@index([city])
@@ -1474,16 +1548,24 @@ model DeliveryPerson {
 
 model DeliveryAttempt {
   id               Int                 @id @default(autoincrement())
-  orderId          Int
+  orderId          Int?
+  shipmentId       Int?
   deliveryPersonId Int
   type             DeliveryAttemptType
+  attemptNumber    Int                 @default(1)
+  previousState    String?
+  newState         String?
   reason           String?
+  notes            String?
+  performedByRole  String?
   createdAt        DateTime            @default(now())
 
-  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  deliveryPerson DeliveryPerson @relation(fields: [deliveryPersonId], references: [id], onDelete: Cascade)
+  order          Order?          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shipment       Shipment?       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  deliveryPerson DeliveryPerson  @relation(fields: [deliveryPersonId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+  @@index([shipmentId])
   @@index([deliveryPersonId])
   @@index([type])
   @@index([createdAt])
@@ -1562,9 +1644,11 @@ model Shipment {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  deliveryPerson DeliveryPerson? @relation("ShipmentDeliveryPerson", fields: [deliveryPersonId], references: [id], onDelete: SetNull)
-  customer       User?           @relation("CustomerShipments", fields: [customerId], references: [id], onDelete: SetNull)
-  items          ShipmentItem[]
+  deliveryPerson      DeliveryPerson?      @relation("ShipmentDeliveryPerson", fields: [deliveryPersonId], references: [id], onDelete: SetNull)
+  customer            User?                @relation("CustomerShipments", fields: [customerId], references: [id], onDelete: SetNull)
+  items               ShipmentItem[]
+  deliveryAttempts    DeliveryAttempt[]
+  deliveryAssignments DeliveryAssignment[]
 
   @@index([status])
   @@index([deliveryPersonId])
@@ -1574,24 +1658,210 @@ model Shipment {
 }
 
 model ShipmentItem {
-  id           Int      @id @default(autoincrement())
-  shipmentId   Int
-  orderId      Int
-  orderItemId  Int
-  productId    Int
-  variantId    Int?
-  sellerId     Int
-  quantity     Int
-  codAmount    Decimal  @db.Decimal(10, 2)
-  createdAt    DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  shipmentId         Int
+  orderId            Int
+  orderItemId        Int
+  fulfillmentItemId  Int?
+  productId          Int
+  variantId          Int?
+  sellerId           Int
+  quantity           Int
+  codAmount          Decimal  @db.Decimal(10, 2)
+  createdAt          DateTime @default(now())
 
-  shipment  Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  order     Order     @relation("OrderShipmentItems", fields: [orderId], references: [id], onDelete: Restrict)
-  orderItem OrderItem @relation("OrderItemShipmentItems", fields: [orderItemId], references: [id], onDelete: Restrict)
+  shipment        Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  order           Order            @relation("OrderShipmentItems", fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem       OrderItem        @relation("OrderItemShipmentItems", fields: [orderItemId], references: [id], onDelete: Restrict)
+  fulfillmentItem FulfillmentItem? @relation(fields: [fulfillmentItemId], references: [id], onDelete: SetNull)
 
   @@unique([shipmentId, orderItemId])
   @@index([shipmentId])
   @@index([orderId])
   @@index([orderItemId])
   @@index([sellerId])
+  @@index([fulfillmentItemId])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 87 — FULFILLMENT SYSTEM
+// ═══════════════════════════════════════════
+
+model FulfillmentItem {
+  id                    Int                @id @default(autoincrement())
+  orderItemId           Int
+  sellerId              Int
+  quantity              Int
+  status                FulfillmentStatus  @default(PENDING)
+  deadline              DateTime?
+  preparedAt            DateTime?
+  preparedById          Int?
+  readyAt               DateTime?
+  collectedAt           DateTime?
+  collectedById         Int?
+  departedAt            DateTime?
+  warehouseReceivedAt   DateTime?
+  warehouseReceivedById Int?
+  verifiedAt            DateTime?
+  verifiedById          Int?
+  notes                 String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  orderItem         OrderItem                  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  seller            Seller                     @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  history           FulfillmentStatusHistory[]
+  collectionItems   CollectionAssignmentItem[]
+  warehouseReceipts WarehouseReceipt[]
+  shipmentItems     ShipmentItem[]
+
+  @@index([orderItemId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([sellerId, status])
+  @@index([deadline])
+  @@index([createdAt])
+}
+
+model FulfillmentStatusHistory {
+  id                Int                @id @default(autoincrement())
+  fulfillmentItemId Int
+  fromStatus        FulfillmentStatus?
+  toStatus          FulfillmentStatus
+  changedById       Int
+  note              String?
+  createdAt         DateTime           @default(now())
+
+  fulfillmentItem FulfillmentItem @relation(fields: [fulfillmentItemId], references: [id], onDelete: Cascade)
+
+  @@index([fulfillmentItemId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 88 — COLLECTION SYSTEM
+// ═══════════════════════════════════════════
+
+model CollectionAssignment {
+  id               Int              @id @default(autoincrement())
+  assignmentNumber String           @unique
+  deliveryPersonId Int
+  assignedById     Int
+  status           CollectionStatus @default(PENDING)
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  deliveryPerson DeliveryPerson             @relation(fields: [deliveryPersonId], references: [id], onDelete: Restrict)
+  items          CollectionAssignmentItem[]
+
+  @@index([deliveryPersonId])
+  @@index([status])
+  @@index([deliveryPersonId, status])
+  @@index([createdAt])
+}
+
+model CollectionAssignmentItem {
+  id                Int       @id @default(autoincrement())
+  assignmentId      Int
+  fulfillmentItemId Int
+  sellerId          Int
+  quantity          Int
+  collectedAt       DateTime?
+  collectedById     Int?
+  notes             String?
+  createdAt         DateTime  @default(now())
+
+  assignment      CollectionAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  fulfillmentItem FulfillmentItem      @relation(fields: [fulfillmentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, fulfillmentItemId])
+  @@index([assignmentId])
+  @@index([fulfillmentItemId])
+  @@index([sellerId])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 89 — WAREHOUSE SYSTEM
+// ═══════════════════════════════════════════
+
+model WarehouseReceipt {
+  id                Int                    @id @default(autoincrement())
+  receiptNumber     String                 @unique
+  fulfillmentItemId Int
+  quantity          Int
+  status            WarehouseReceiptStatus @default(RECEIVED)
+  receivedById      Int
+  receivedAt        DateTime               @default(now())
+  verifiedAt        DateTime?
+  verifiedById      Int?
+  damagedQuantity   Int                    @default(0)
+  rejectionReason   String?
+  notes             String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  fulfillmentItem FulfillmentItem @relation(fields: [fulfillmentItemId], references: [id], onDelete: Restrict)
+
+  @@index([fulfillmentItemId])
+  @@index([status])
+  @@index([receivedById])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 90 — GROUPING DECISIONS
+// ═══════════════════════════════════════════
+
+model ShipmentGroupingDecision {
+  id               Int              @id @default(autoincrement())
+  customerId       Int
+  decision         GroupingDecision
+  decidedById      Int
+  decidedAt        DateTime         @default(now())
+  selectedOrderIds Json
+  reason           String?
+  shipmentId       Int?
+  notes            String?
+  createdAt        DateTime         @default(now())
+
+  @@index([customerId])
+  @@index([decidedById])
+  @@index([decidedAt])
+}
+
+// ═══════════════════════════════════════════
+// SECTION 91 — DELIVERY ASSIGNMENTS
+// ═══════════════════════════════════════════
+
+model DeliveryAssignment {
+  id               Int                      @id @default(autoincrement())
+  shipmentId       Int
+  deliveryPersonId Int
+  assignedById     Int
+  status           DeliveryAssignmentStatus @default(ASSIGNED)
+  assignedAt       DateTime                 @default(now())
+  pickedUpAt       DateTime?
+  outForDeliveryAt DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  reassignedFromId Int?
+  notes            String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  shipment       Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  deliveryPerson DeliveryPerson @relation(fields: [deliveryPersonId], references: [id], onDelete: Restrict)
+
+  @@index([shipmentId])
+  @@index([deliveryPersonId])
+  @@index([status])
+  @@index([deliveryPersonId, status])
+  @@index([assignedAt])
 }
