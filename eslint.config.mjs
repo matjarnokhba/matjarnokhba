@@ -9,38 +9,57 @@ const eslintConfig = defineConfig([
   {
     rules: {
       // ═══════════════════════════════════════════
-      // Turn OFF no-undef — TypeScript handles this
-      // (Next.js team officially recommends this)
+      // no-undef — TypeScript handles this
       // ═══════════════════════════════════════════
       "no-undef": "off",
 
       // ═══════════════════════════════════════════
-      // Disable stylistic / opinionated rules
+      // TypeScript — rules enforced as WARNINGS
+      // (visible in CI, don't break build yet)
       // ═══════════════════════════════════════════
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": "off",
-      "@typescript-eslint/no-empty-object-type": "off",
-      "@typescript-eslint/no-unused-expressions": "off",
-      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+      "@typescript-eslint/no-empty-object-type": "warn",
+      "@typescript-eslint/no-unused-expressions": "warn",
+      "@typescript-eslint/ban-ts-comment": "warn",
 
+      // ═══════════════════════════════════════════
+      // React Hooks — critical rules ON
+      // ═══════════════════════════════════════════
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+
+      // Experimental hooks rules — still off
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/purity": "off",
-      "react-hooks/exhaustive-deps": "off",
-      "react-hooks/rules-of-hooks": "error",
       "react-hooks/refs": "off",
       "react-hooks/immutability": "off",
       "react-hooks/globals": "off",
       "react-hooks/unsupported-syntax": "off",
 
+      // ═══════════════════════════════════════════
+      // React — noise reduction for Arabic content
+      // ═══════════════════════════════════════════
       "react/no-unescaped-entities": "off",
       "react/display-name": "off",
 
-      "@next/next/no-img-element": "off",
+      // ═══════════════════════════════════════════
+      // Next.js
+      // ═══════════════════════════════════════════
+      "@next/next/no-img-element": "warn",
       "@next/next/no-html-link-for-pages": "off",
-      "@next/next/no-sync-scripts": "off",
+      "@next/next/no-sync-scripts": "error",
 
       // ═══════════════════════════════════════════
-      // Reduce noise from unused eslint-disable comments
+      // Cleanliness
       // ═══════════════════════════════════════════
       "eslint-comments/no-unused-disable": "off",
     },
