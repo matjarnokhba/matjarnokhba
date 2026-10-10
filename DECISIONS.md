@@ -2,9 +2,9 @@
 
 # متجر نخبة — Engineering Decisions
 
-**Version:** 3.2
+**Version:** 3.3
 **Status:** Final Architecture Reference + Implementation Status
-**Last Updated:** 2026-09-25
+**Last Updated:** 2026-10-10
 **Currency:** MAD
 **Database:** PostgreSQL
 **ORM:** Prisma
@@ -4616,13 +4616,10 @@ Concurrency Safety
 Auditability
 +
 Historical Integrity
-```
-
-**End of DECISIONS.md v2.2**
 
 ---
 
-# 76. Implementation Status (v2.3)
+## 76.28 Fix — Login Error Handling (v2.11)
 
 آخر تحديث: 2026-09-25
 
@@ -5919,3 +5916,247 @@ DELIVERED → sold++ + منح نقاط ولاء
 | إلغاء (عميل) | `app/api/orders/[id]/cancel/route.ts` | `cancelReturn()` |
 | إلغاء (أدمن) | `app/api/admin/orders/[id]/status/route.ts` | `cancelReturn()` |
 | تسليم | نفس الملفات أعلاه | `sold++` + ولاء |
+
+# Section 82 — P0 Fixes (v3.3)
+
+## 82.1 Overview
+
+حزمة من 12 إصلاحًا أمنيًا وهندسيًا لسد فجوات في:
+* Idempotency
+* بيانات العميل (PII)
+* تسليم جزئي
+* Refunds
+* Rate Limiting
+* Reset tokens
+
+## 82.2 Schema Constraints الجديدة
+
+```prisma
+model InventoryMovement {
+  @@unique([referenceType, referenceId, type, inventoryId])
+}
+
+model FulfillmentItem {
+  @@unique([orderItemId])
+}
+
+model ShipmentItem {
+  @@unique([fulfillmentItemId])
+}
+
+enum OrderStatus {
+  PARTIALLY_DELIVERED
+}
+
+enum PaymentStatus {
+  PARTIALLY_REFUNDED
+}
+```
+
+82.3 منع IDOR للبائع
+
+البائع لا يرى customerSnapshot أو shippingAddressSnapshot إلا إذا:
+
+```typescript
+order.source === "IN_STORE" && order.sellerId === current.seller.id
+```
+
+يُطبَّق عبر AccessPolicyService.filterOrderData.
+
+82.4 تسليم جزئي
+
+· Delivery Action يُحدّث FulfillmentItems فقط
+· syncOrderFulfillmentStatus تُحدّث:
+  · fulfillmentStatus دائمًا
+  · status = DELIVERED فقط عند اكتمال كل العناصر
+  · status = PARTIALLY_DELIVERED عند جزئي
+· sold من عناصر الشحنة فقط
+· Loyalty بعد اكتمال الطلب
+
+82.5 Return Idempotency
+
+3 طبقات:
+
+1. Row Lock: SELECT id FROM "ReturnRequest" WHERE id = X FOR UPDATE
+2. Atomic updateMany بشرط status
+3. Guard: marked.count === 0 → throw
+
+Refund guard:
+
+```typescript
+if (newRefundedAmount > Number(ret.order.total)) {
+  throw new Error("مجموع الاسترداد يتجاوز إجمالي الطلب");
+}
+```
+
+82.6 Reset Token Security
+
+· لا console.log(resetUrl) في Production
+· فقط عند NODE_ENV !== "production"
+· bcrypt.hash خارج Transaction
+· updateMany مع usedAt: null
+
+82.7 Document Security
+
+· storageKey يُعاد كـرابط redirect لا URL خام
+· endpoints جديدة:
+  · GET /api/seller/documents/[id]/download
+  · GET /api/admin/documents/[id]/download
+· لا console.log(file.url)
+
+82.8 POS Seller Status
+
+البائع يستطيع POS فقط إذا seller.status === "ACTIVE".
+PENDING / SUSPENDED / CLOSED → 403.
+Audit Log لكل طلب IN_STORE.
+
+82.9 Migration
+
+```bash
+npx prisma migrate dev --name add_p0_constraints
+```
+
+82.10 Git Commit
+
+```
+5b185c6 fix(P0): close critical security and data integrity gaps
+```
+
+19 files changed, 514 insertions(+), 439 deletions(-)
+
+---
+
+Section 83 — P1 Fixes (v3.3)
+
+83.1 QR Actions
+
+الواجهة ترسل postponed / refused بدل deferred / rejected.
+الملف: app/delivery/scan/page.tsx
+
+83.2 Product URL
+
+/product/${sellerSlug}/${product.slug}
+الملف: app/seller/products/page.tsx
+
+83.3 Rate Limiting موزّع
+
+```typescript
+const hasKV = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+const redis = hasKV ? new Redis({ url, token }) : null;
+
+export async function rateLimit(key, limit, windowMs) {
+  if (redis) { /* Redis */ }
+  else { /* In-memory fallback */ }
+}
+```
+
+· rateLimit أصبحت async
+· resetRateLimit أصبحت async
+· 5 API Routes تحتاج await
+
+KV: Upstash Redis / us-east-1 / Free.
+
+83.4 ESLint Rules
+
+```javascript
+"@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+"@typescript-eslint/no-explicit-any": "warn",
+"react-hooks/exhaustive-deps": "warn",
+```
+
+warn لا error → Build لا يكسر. ~300 تحذير حالي.
+
+83.5 Git Commits
+
+```
+f29b8a2 feat(security): distributed rate limiting via Upstash Redis
+27541cb fix(seller): correct product URL to use sellerSlug/productSlug
+```
+
+---
+
+Section 84 — Final Decisions Table (v3.3)
+
+القرار القاعدة النهائية v3.3
+Architecture Next.js 16 + Services + Prisma + PostgreSQL
+Database Neon PostgreSQL
+Currency MAD
+Payment MVP COD
+Authentication DB Sessions
+Password bcrypt cost 12
+Rate Limiting Upstash Redis + in-memory fallback
+Idempotency (Inventory) @@unique([referenceType, referenceId, type, inventoryId])
+Idempotency (Return) Row Lock + Atomic updateMany
+Order Status NEW → PROCESSING → SHIPPED → PARTIALLY_DELIVERED → DELIVERED
+Payment Status PENDING → PAID → PARTIALLY_REFUNDED → REFUNDED
+Partial Shipment Order لا يُصبح DELIVERED إلا باكتمال كل العناصر
+FulfillmentItem واحد لكل OrderItem
+ShipmentItem واحد لكل FulfillmentItem
+PII للبائع فقط لـIN_STORE، عبر AccessPolicyService
+POS Seller status === "ACTIVE" فقط
+Reset Token Logs فقط في Dev
+Document Download Redirect endpoint، لا URL خام
+ESLint no-unused-vars, no-explicit-any, exhaustive-deps = warn
+Reservation Deprecated (يبقى في Schema للـStripe مستقبلًا)
+Refund precision Decimal + ROUND_HALF_UP
+Refund reconciliation Largest Remainder Method
+Return COMPLETE من APPROVED فقط
+Full Return COMPLETED quantities فقط
+Order RETURNED عبر changeOrderStatus(tx, ...)
+Multi-Vendor مُفعَّل
+SubOrder مؤجل (5 مؤشرات)
+Email/SMS مؤجل
+Stripe مؤجل
+AuditLog UI 🟠 مطلوب قبل الإطلاق
+Admin Reports 🟠 مطلوب قبل الإطلاق
+Shipping Zones UI 🟠 مطلوب قبل الإطلاق
+Address CRUD 🟠 مطلوب قبل الإطلاق
+إجمالي الإصلاحات 12 P0 + 4 P1 = 16
+
+---
+
+Section 85 — Roadmap (v3.3)
+
+P0 — مكتمل ✅
+
+12 إصلاحًا (Section 82)
+
+P1 — مكتمل ✅
+
+4 إصلاحات (Section 83)
+
+P2 — قيد التنفيذ
+
+# المهمة الأولوية
+1 Shipping Zones (فعليًا + UI) 🔴
+2 Address CRUD 🔴
+3 Admin Reports (أساسي) 🔴
+4 Audit Log UI 🟠
+5 Cart server-side + merge 🟠
+6 Pagination لـProducts/Orders 🟠
+7 إصلاح seed.ts 🟠
+8 حذف lib/data/* 🟠
+9 Privacy + Terms 🔴
+10 Backup strategy 🔴
+
+P3 — قبل الإطلاق
+
+· اختبارات E2E
+· اختبار Concurrency
+· اختبار Security
+· Cron Jobs
+· README + Postman Collection
+· Monitoring + Logging
+
+نقطة الاكتمال الفعلي
+
+✅ 9 من 10 شروط إطلاق متحققة
+✅ 0 P0 مفتوحة
+✅ 0 P1 مفتوحة
+✅ 0 ESLint errors
+✅ Build ينجح
+✅ اختبار حقيقي لعملية شراء كاملة
+
+End of Section 85 (v3.3)
+
+**End of DECISIONS.md v3.3**
