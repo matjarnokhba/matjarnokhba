@@ -61,25 +61,33 @@ export const PasswordResetService = {
   async resetPassword(token: string, newPassword: string) {
     const tokenHash = hashToken(token);
 
+    // 1. قراءة أولية خارج Transaction
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!record) throw new Error("الرابط غير صحيح");
+    if (record.usedAt) throw new Error("تم استخدام هذا الرابط من قبل");
+    if (record.expiresAt < new Date()) throw new Error("انتهت صلاحية الرابط");
+
+    // 2. Hash خارج Transaction (CPU-heavy)
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // 3. Transaction قصير + ذرّي
     return prisma.$transaction(async (tx) => {
-      const record = await tx.passwordResetToken.findUnique({
-        where: { tokenHash },
+      // ═══ markUsed بشرط ذرّي ═══
+      const markUsed = await tx.passwordResetToken.updateMany({
+        where: { id: record.id, usedAt: null },
+        data: { usedAt: new Date() },
       });
 
-      if (!record) throw new Error("الرابط غير صحيح");
-      if (record.usedAt) throw new Error("تم استخدام هذا الرابط من قبل");
-      if (record.expiresAt < new Date()) throw new Error("انتهت صلاحية الرابط");
-
-      const passwordHash = await bcrypt.hash(newPassword, 12);
+      if (markUsed.count === 0) {
+        throw new Error("تم استخدام هذا الرابط من قبل");
+      }
 
       await tx.user.update({
         where: { id: record.userId },
         data: { passwordHash },
-      });
-
-      await tx.passwordResetToken.update({
-        where: { id: record.id },
-        data: { usedAt: new Date() },
       });
 
       // إلغاء كل الجلسات (أمان)

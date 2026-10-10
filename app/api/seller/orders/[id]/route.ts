@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { AccessPolicyService } from "@/services/access-policy.service";
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();
@@ -31,11 +32,25 @@ export async function GET(
       );
     }
 
-    const order = await prisma.order.findFirst({
-      where: {
-        id: orderId,
-        sellerId: auth.seller.id,
+    // ═══ فحص الوصول عبر AccessPolicyService ═══
+    const access = await AccessPolicyService.canAccessOrder(
+      {
+        id: auth.user.id,
+        role: auth.user.role,
+        seller: { id: auth.seller.id },
       },
+      orderId
+    );
+
+    if (!access.allowed) {
+      return NextResponse.json(
+        { success: false, message: access.reason },
+        { status: 403 }
+      );
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
       include: {
         items: true,
         statusHistory: { orderBy: { createdAt: "desc" } },
@@ -49,7 +64,10 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, order });
+    // ═══ تصفية PII حسب السياسة ═══
+    const safeOrder = AccessPolicyService.filterOrderData(order, access);
+
+    return NextResponse.json({ success: true, order: safeOrder });
   } catch (error) {
     console.error("Seller order GET error:", error);
     return NextResponse.json(

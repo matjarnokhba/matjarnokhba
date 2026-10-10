@@ -197,12 +197,12 @@ export const AccessPolicyService = {
       const sellerId = access.sellerId;
 
       const filteredItems = (order.items || []).filter(
-        (item: any) => item.product?.sellerId === sellerId
+        (item: any) => item.sellerId === sellerId
       );
 
       const isInStore = order.source === "IN_STORE";
 
-      return {
+      const result: any = {
         ...order,
         items: filteredItems,
         customerSnapshot: isInStore ? order.customerSnapshot : null,
@@ -210,8 +210,13 @@ export const AccessPolicyService = {
           ? order.shippingAddressSnapshot
           : null,
         userId: isInStore ? order.userId : null,
-        ...(isInStore ? {} : { user: undefined }),
       };
+
+      if (!isInStore) {
+        delete result.user;
+      }
+
+      return result;
     }
 
     if (access.scope === "owner") {

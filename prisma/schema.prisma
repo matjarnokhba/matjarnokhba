@@ -163,6 +163,7 @@ enum OrderStatus {
   NEW
   PROCESSING
   SHIPPED
+  PARTIALLY_DELIVERED
   DELIVERED
   CANCELLED
   RETURNED
@@ -177,6 +178,7 @@ enum PaymentMethod {
 enum PaymentStatus {
   PENDING
   PAID
+  PARTIALLY_REFUNDED
   REFUNDED
 }
 
@@ -613,6 +615,7 @@ model InventoryMovement {
 
   inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
 
+  @@unique([referenceType, referenceId, type, inventoryId])
   @@index([inventoryId])
   @@index([referenceType, referenceId])
   @@index([performedById])
@@ -1676,6 +1679,7 @@ model ShipmentItem {
   fulfillmentItem FulfillmentItem? @relation(fields: [fulfillmentItemId], references: [id], onDelete: SetNull)
 
   @@unique([shipmentId, orderItemId])
+  @@unique([fulfillmentItemId])
   @@index([shipmentId])
   @@index([orderId])
   @@index([orderItemId])
@@ -1715,6 +1719,7 @@ model FulfillmentItem {
   warehouseReceipts WarehouseReceipt[]
   shipmentItems     ShipmentItem[]
 
+  @@unique([orderItemId])
   @@index([orderItemId])
   @@index([sellerId])
   @@index([status])

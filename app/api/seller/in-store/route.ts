@@ -3,16 +3,17 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
+import { AuditService } from "@/services/audit.service";
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  if (
-    current.user.seller.status === "SUSPENDED" ||
-    current.user.seller.status === "CLOSED"
-  ) {
-    return { error: "متجرك معطّل", status: 403 };
+  if (current.user.seller.status !== "ACTIVE") {
+    return {
+      error: "متجرك غير نشط حالياً — البيع المباشر متاح للمتاجر المعتمدة فقط",
+      status: 403,
+    };
   }
   return { user: current.user, seller: current.user.seller };
 }
@@ -245,6 +246,23 @@ export async function POST(request: Request) {
             data: { sold: { increment: qty } },
           });
         }
+
+        // 5. Audit Log
+        const reqInfo = AuditService.getRequestInfo(request);
+        await AuditService.logInTransaction(tx, {
+          userId: auth.user.id,
+          action: "CREATE",
+          entity: "Order",
+          entityId: String(newOrder.id),
+          newData: {
+            source: "IN_STORE",
+            orderNumber: newOrder.orderNumber,
+            total: Number(newOrder.total),
+            itemsCount: itemsWithPrice.length,
+          },
+          ipAddress: reqInfo.ipAddress,
+          userAgent: reqInfo.userAgent,
+        });
 
         return newOrder;
       },

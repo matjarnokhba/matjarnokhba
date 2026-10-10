@@ -38,9 +38,22 @@ export async function GET(request: Request) {
     const [orders, stats] = await Promise.all([
       prisma.order.findMany({
         where,
-        include: {
-          items: { take: 3 },
-          user: { select: { name: true, email: true } },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          source: true,
+          total: true,
+          createdAt: true,
+          customerSnapshot: true,
+          items: {
+            take: 3,
+            select: {
+              productName: true,
+              imageUrl: true,
+              quantity: true,
+            },
+          },
           _count: { select: { items: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -57,6 +70,7 @@ export async function GET(request: Request) {
       NEW: 0,
       PROCESSING: 0,
       SHIPPED: 0,
+      PARTIALLY_DELIVERED: 0,
       DELIVERED: 0,
       CANCELLED: 0,
       RETURNED: 0,
@@ -69,6 +83,8 @@ export async function GET(request: Request) {
 
     const formatted = orders.map((o) => {
       const customer = o.customerSnapshot as any;
+      const isInStore = o.source === "IN_STORE";
+
       return {
         id: o.id,
         orderNumber: o.orderNumber,
@@ -77,9 +93,10 @@ export async function GET(request: Request) {
         total: Number(o.total),
         createdAt: o.createdAt,
         itemsCount: o._count.items,
-        customerName: customer?.name || o.user.name,
-        customerPhone: customer?.phone || null,
-        customerCity: customer?.city || null,
+        // ═══ PII فقط للطلبات IN_STORE ═══
+        customerName: isInStore ? customer?.name || null : null,
+        customerPhone: isInStore ? customer?.phone || null : null,
+        customerCity: isInStore ? customer?.city || null : null,
         items: o.items.map((i) => ({
           productName: i.productName,
           imageUrl: i.imageUrl,

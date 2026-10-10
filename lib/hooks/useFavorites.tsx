@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { Product } from "@/lib/data/products";
 
 type FavoritesContextValue = {
@@ -25,6 +26,7 @@ type FavoritesContextValue = {
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 
 export function FavoritesProvider(props: { children: React.ReactNode }) {
+  const router = useRouter();
   const [favorites, setFavorites] = useState<Product[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
@@ -75,7 +77,7 @@ export function FavoritesProvider(props: { children: React.ReactNode }) {
   const addFavorite = useCallback(
     async (product: Product) => {
       if (!userId) {
-        window.location.href = "/login";
+        router.push("/login");
         return;
       }
       if (pendingRef.current.has(product.id)) return;
@@ -101,7 +103,7 @@ export function FavoritesProvider(props: { children: React.ReactNode }) {
         pendingRef.current.delete(product.id);
       }
     },
-    [userId, favorites]
+    [userId, favorites, router]
   );
 
   const removeFavorite = useCallback(

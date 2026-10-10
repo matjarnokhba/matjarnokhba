@@ -50,9 +50,13 @@ export async function POST(request: Request) {
       const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
       resetUrl = `${baseUrl}/reset-password?token=${token}`;
-      console.log("\n🔑 PASSWORD RESET LINK:");
-      console.log(resetUrl);
-      console.log("");
+
+      // ═══ Logs فقط في بيئة التطوير ═══
+      if (process.env.NODE_ENV !== "production") {
+        console.log("\n🔑 PASSWORD RESET LINK (DEV ONLY):");
+        console.log(resetUrl);
+        console.log("");
+      }
     }
 
     return NextResponse.json({

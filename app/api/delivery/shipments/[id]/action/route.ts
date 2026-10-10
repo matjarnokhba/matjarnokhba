@@ -135,12 +135,13 @@ const actionSchema = z.discriminatedUnion("action", [
             data: { status: "DELIVERED" },
           });
 
+          // 1. FulfillmentItems → DELIVERED
           for (const shipmentItem of shipment.items) {
             if (!shipmentItem.fulfillmentItemId) continue;
 
             const fi = await tx.fulfillmentItem.findUnique({
               where: { id: shipmentItem.fulfillmentItemId },
-              select: { status: true, orderItemId: true },
+              select: { status: true },
             });
 
             if (!fi) continue;
@@ -162,57 +163,44 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
 
+          // 2. syncOrderFulfillmentStatus لكل orderItem في الشحنة
+          const uniqueOrderItemIds = Array.from(
+            new Set(shipment.items.map((i) => i.orderItemId))
+          );
+          for (const oiId of uniqueOrderItemIds) {
+            await FulfillmentService.syncOrderFulfillmentStatus(tx, oiId);
+          }
+
+          // 3. sold — عناصر الشحنة فقط
+          const soldByProduct = new Map<number, number>();
+          for (const si of shipment.items) {
+            soldByProduct.set(
+              si.productId,
+              (soldByProduct.get(si.productId) || 0) + si.quantity
+            );
+          }
+          for (const [pid, qty] of soldByProduct) {
+            await tx.product.update({
+              where: { id: pid },
+              data: { sold: { increment: qty } },
+            });
+          }
+
+          // 4. Loyalty + Referral + Notification — للطلبات التي أصبحت DELIVERED فقط
           for (const orderId of orderIds) {
-            const ord = orderMap.get(orderId);
-            if (!ord) continue;
-            if (ord.status === "DELIVERED" || ord.status === "RETURNED") {
-              continue;
-            }
-
-            await tx.order.update({
+            const fresh = await tx.order.findUnique({
               where: { id: orderId },
-              data: {
-                status: "DELIVERED",
-                deliveredAt: new Date(),
-                paymentStatus: "PAID",
-              },
+              select: { status: true, userId: true, total: true },
             });
-
-            await tx.orderStatusHistory.create({
-              data: {
-                orderId,
-                fromStatus: ord.status as any,
-                toStatus: "DELIVERED",
-                changedById: auth.user.id,
-                note: `تم التسليم عبر الشحنة ${shipment.shipmentNumber}`,
-              },
-            });
-
-            const soldByProduct = new Map<number, number>();
-            const orderItems = await tx.orderItem.findMany({
-              where: { orderId },
-              select: { productId: true, quantity: true },
-            });
-            for (const oi of orderItems) {
-              soldByProduct.set(
-                oi.productId,
-                (soldByProduct.get(oi.productId) || 0) + oi.quantity
-              );
-            }
-            for (const [pid, qty] of soldByProduct) {
-              await tx.product.update({
-                where: { id: pid },
-                data: { sold: { increment: qty } },
-              });
-            }
+            if (!fresh) continue;
+            if (fresh.status !== "DELIVERED") continue;
 
             try {
               const award = await LoyaltyService.awardForOrder(tx, {
-                userId: ord.userId,
+                userId: fresh.userId,
                 orderId,
-                orderTotal: Number(ord.total),
+                orderTotal: Number(fresh.total),
               });
-
               if (award.pointsAwarded > 0) {
                 await tx.order.update({
                   where: { id: orderId },
@@ -227,14 +215,14 @@ const actionSchema = z.discriminatedUnion("action", [
             }
 
             try {
-              await ReferralService.awardOnFirstOrder(tx, ord.userId, orderId);
+              await ReferralService.awardOnFirstOrder(tx, fresh.userId, orderId);
             } catch (refErr) {
               console.error("Referral award failed:", refErr);
             }
 
             await tx.notification.create({
               data: {
-                userId: ord.userId,
+                userId: fresh.userId,
                 type: "ORDER_STATUS_CHANGED",
                 title: "تم توصيل طلبك",
                 message: "طلبك تم تسليمه بنجاح. شكراً لثقتك!",
@@ -243,14 +231,6 @@ const actionSchema = z.discriminatedUnion("action", [
                 severity: "INFO",
               },
             });
-          }
-
-          const allOrderItemIds = await tx.orderItem.findMany({
-            where: { orderId: { in: orderIds } },
-            select: { id: true },
-          });
-          for (const oi of allOrderItemIds) {
-            await FulfillmentService.syncOrderFulfillmentStatus(tx, oi.id);
           }
 
           await tx.deliveryPerson.update({
@@ -328,12 +308,13 @@ const actionSchema = z.discriminatedUnion("action", [
             data: { status: newStatus },
           });
 
+          // 1. FulfillmentItems → RETURNED
           for (const shipmentItem of shipment.items) {
             if (!shipmentItem.fulfillmentItemId) continue;
 
             const fi = await tx.fulfillmentItem.findUnique({
               where: { id: shipmentItem.fulfillmentItemId },
-              select: { status: true, orderItemId: true },
+              select: { status: true },
             });
 
             if (!fi) continue;
@@ -355,54 +336,40 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
 
+          // 2. إرجاع للمخزون — عناصر الشحنة فقط (idempotent)
+          for (const si of shipment.items) {
+            if (!si.variantId) continue;
+            await InventoryService.returnStock(
+              tx,
+              si.variantId,
+              si.quantity,
+              shipmentId,
+              returnReason,
+              "RETURN"
+            );
+          }
+
+          // 3. syncOrderFulfillmentStatus لكل orderItem في الشحنة
+          const uniqueOrderItemIds = Array.from(
+            new Set(shipment.items.map((i) => i.orderItemId))
+          );
+          for (const oiId of uniqueOrderItemIds) {
+            await FulfillmentService.syncOrderFulfillmentStatus(tx, oiId);
+          }
+
+          // 4. OrderStatusHistory + Notifications — للطلبات التي أصبحت RETURNED
           for (const orderId of orderIds) {
-            const ord = orderMap.get(orderId);
-            if (!ord) continue;
-            if (ord.status === "RETURNED" || ord.status === "DELIVERED") {
-              continue;
-            }
-
-            const alreadyReturned = await tx.inventoryMovement.findFirst({
-              where: {
-                referenceType: "ORDER",
-                referenceId: BigInt(orderId),
-                type: "RETURN",
-                reason: returnReason,
-              },
-            });
-
-            if (!alreadyReturned) {
-              const orderItems = await tx.orderItem.findMany({
-                where: { orderId },
-                select: { variantId: true, quantity: true },
-              });
-              const sorted = orderItems
-                .filter(
-                  (i): i is { variantId: number; quantity: number } =>
-                    i.variantId !== null
-                )
-                .sort((a, b) => a.variantId - b.variantId);
-
-              for (const oi of sorted) {
-                await InventoryService.cancelReturn(
-                  tx,
-                  oi.variantId,
-                  oi.quantity,
-                  orderId,
-                  returnReason
-                );
-              }
-            }
-
-            await tx.order.update({
+            const fresh = await tx.order.findUnique({
               where: { id: orderId },
-              data: { status: "RETURNED" },
+              select: { status: true, userId: true },
             });
+            if (!fresh) continue;
+            if (fresh.status !== "RETURNED") continue;
 
             await tx.orderStatusHistory.create({
               data: {
                 orderId,
-                fromStatus: ord.status as any,
+                fromStatus: fresh.status as any,
                 toStatus: "RETURNED",
                 changedById: auth.user.id,
                 note: `${isRejected ? "رفض" : "إرجاع"} عبر الشحنة ${shipment.shipmentNumber} — ${data.reason}`,
@@ -411,7 +378,7 @@ const actionSchema = z.discriminatedUnion("action", [
 
             await tx.notification.create({
               data: {
-                userId: ord.userId,
+                userId: fresh.userId,
                 type: "ORDER_STATUS_CHANGED",
                 title: isRejected ? "تم رفض استلام طلبك" : "تم إرجاع طلبك",
                 message: `طلبك — ${data.reason}`,
@@ -420,14 +387,6 @@ const actionSchema = z.discriminatedUnion("action", [
                 severity: "WARNING",
               },
             });
-          }
-
-          const allOrderItemIds = await tx.orderItem.findMany({
-            where: { orderId: { in: orderIds } },
-            select: { id: true },
-          });
-          for (const oi of allOrderItemIds) {
-            await FulfillmentService.syncOrderFulfillmentStatus(tx, oi.id);
           }
 
           await tx.deliveryPerson.update({

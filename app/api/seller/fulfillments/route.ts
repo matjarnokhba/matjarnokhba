@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const statusFilter = url.searchParams.get("status") || "ACTIVE";
 
-    let where: any = { sellerId: auth.seller.id };
+    const where: any = { sellerId: auth.seller.id };
 
     if (statusFilter === "ACTIVE") {
       where.status = {

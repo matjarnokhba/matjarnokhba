@@ -38,7 +38,8 @@ function calcRawRefund(
   subtotal: number
 ): number {
   if (subtotal === 0) return 0;
-  return unitPrice * quantity * (1 - discount / subtotal);
+  const raw = unitPrice * quantity * (1 - discount / subtotal);
+  return Math.max(0, raw);
 }
 
 // ═══════════════════════════════════════════
@@ -55,7 +56,9 @@ export const ReturnService = {
     }
 
     return prisma.$transaction(async (tx) => {
-      // 1. Lock + تحقق من Order
+      // 1. Lock Order
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${data.orderId} FOR UPDATE`;
+
       const order = await tx.order.findUnique({
         where: { id: data.orderId },
       });
@@ -183,12 +186,14 @@ export const ReturnService = {
       }
 
       return returnRequest;
-    });
+    }, { timeout: 30000 });
   },
 
   // ═══════ الموافقة على الإرجاع (Admin) ═══════
   async approve(returnId: number, adminId: number) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "ReturnRequest" WHERE id = ${returnId} FOR UPDATE`;
+
       const ret = await tx.returnRequest.findUnique({
         where: { id: returnId },
         include: { order: true, items: true },
@@ -199,7 +204,6 @@ export const ReturnService = {
         throw new Error("لا يمكن الموافقة إلا على طلبات PENDING");
       }
 
-      // تحقق نهائي من الكميات (قد يكون تغير)
       for (const item of ret.items) {
         const orderItem = await tx.orderItem.findUnique({
           where: { id: item.orderItemId },
@@ -223,14 +227,18 @@ export const ReturnService = {
         }
       }
 
-      await tx.returnRequest.update({
-        where: { id: returnId },
+      const updated = await tx.returnRequest.updateMany({
+        where: { id: returnId, status: "PENDING" },
         data: {
           status: "APPROVED",
           processedAt: new Date(),
           processedById: adminId,
         },
       });
+
+      if (updated.count === 0) {
+        throw new Error("تم تغيير حالة الطلب من عملية أخرى");
+      }
 
       await tx.notification.create({
         data: {
@@ -243,7 +251,7 @@ export const ReturnService = {
       });
 
       return { success: true };
-    });
+    }, { timeout: 30000 });
   },
 
   // ═══════ رفض الإرجاع (Admin) ═══════
@@ -286,7 +294,9 @@ export const ReturnService = {
   // ═══════ إكمال الإرجاع (Admin) — الجزء الأهم ═══════
   async complete(returnId: number, adminId: number) {
     return prisma.$transaction(async (tx) => {
-      // 1. Lock ReturnRequest
+      // 1. Lock ReturnRequest (FOR UPDATE)
+      await tx.$queryRaw`SELECT id FROM "ReturnRequest" WHERE id = ${returnId} FOR UPDATE`;
+
       const ret = await tx.returnRequest.findUnique({
         where: { id: returnId },
         include: {
@@ -310,15 +320,19 @@ export const ReturnService = {
       const subtotal = Number(ret.order.subtotal);
       const discount = Number(ret.order.discount);
 
-      // 3. Update ReturnRequest = COMPLETED
-      await tx.returnRequest.update({
-        where: { id: returnId },
+      // 3. Update ReturnRequest = COMPLETED (ذرّي)
+      const marked = await tx.returnRequest.updateMany({
+        where: { id: returnId, status: "APPROVED" },
         data: {
           status: "COMPLETED",
           processedAt: new Date(),
           processedById: adminId,
         },
       });
+
+      if (marked.count === 0) {
+        throw new Error("تم تغيير حالة الطلب من عملية أخرى");
+      }
 
       // 4. إرجاع المخزون + حساب Refund لكل item
       for (const item of ret.items) {
@@ -327,7 +341,9 @@ export const ReturnService = {
             tx,
             item.orderItem.variantId,
             item.quantity,
-            returnId
+            returnId,
+            "إرجاع منتج",
+            "RETURN"
           );
         }
 
@@ -372,13 +388,22 @@ export const ReturnService = {
       const newRefundedAmount =
         Number(ret.order.refundedAmount) + thisReturnSum + addShipping;
 
-      // 9. PaymentStatus الجديد
+      // 9. حماية: لا يتجاوز الإجمالي
+      if (newRefundedAmount > Number(ret.order.total)) {
+        throw new Error(
+          `مجموع الاسترداد (${newRefundedAmount}) يتجاوز إجمالي الطلب (${Number(ret.order.total)})`
+        );
+      }
+
+      // 10. PaymentStatus الجديد
       let newPaymentStatus = ret.order.paymentStatus;
       if (newRefundedAmount >= Number(ret.order.total)) {
         newPaymentStatus = "REFUNDED";
+      } else if (newRefundedAmount > 0) {
+        newPaymentStatus = "PARTIALLY_REFUNDED";
       }
 
-      // 10. Update Order
+      // 11. Update Order
       await tx.order.update({
         where: { id: ret.orderId },
         data: {
@@ -388,7 +413,7 @@ export const ReturnService = {
         },
       });
 
-      // 11. إذا full → Order = RETURNED
+      // 12. إذا full → Order = RETURNED
       if (isFull) {
         await tx.order.update({
           where: { id: ret.orderId },
@@ -406,7 +431,7 @@ export const ReturnService = {
         });
       }
 
-      // ═══ 12. سحب نقاط الولاء المقابلة للمبلغ المسترد ═══
+      // ═══ 13. سحب نقاط الولاء المقابلة للمبلغ المسترد ═══
       try {
         const totalRefundThisTime = thisReturnSum + addShipping;
 
@@ -417,7 +442,6 @@ export const ReturnService = {
         });
 
         if (revokeResult.pointsRevoked > 0) {
-          // تحديث Order بحقول الولاء
           await tx.order.update({
             where: { id: ret.orderId },
             data: {
@@ -427,7 +451,6 @@ export const ReturnService = {
             },
           });
 
-          // إشعار للعميل
           await tx.notification.create({
             data: {
               userId: ret.userId,
@@ -447,12 +470,11 @@ export const ReturnService = {
           });
         }
       } catch (loyaltyErr) {
-        // لا نُفشل الإرجاع إن فشل الولاء
         console.error("Loyalty revoke failed during return:", loyaltyErr);
       }
 
       return { success: true, isFullReturn: isFull };
-    });
+    }, { timeout: 30000 });
   },
 
   // ═══════ قراءات ═══════

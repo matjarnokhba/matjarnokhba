@@ -24,6 +24,26 @@ export const InventoryService = {
     return rows[0];
   },
 
+  // ═══════ فحص Idempotency ═══════
+  async hasMovement(
+    tx: any,
+    referenceType: string,
+    referenceId: number,
+    type: string,
+    inventoryId: number
+  ): Promise<boolean> {
+    const existing = await tx.inventoryMovement.findFirst({
+      where: {
+        referenceType,
+        referenceId: BigInt(referenceId),
+        type,
+        inventoryId,
+      },
+      select: { id: true },
+    });
+    return !!existing;
+  },
+
   // ═══════ بيع مباشر (COD — بدون حجز مسبق) ═══════
   async saleDirect(
     tx: any,
@@ -34,6 +54,12 @@ export const InventoryService = {
     if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
 
     const inv = await this.lockInventory(tx, variantId);
+
+    // ═══ Idempotency: هل سبق البيع لنفس الطلب؟ ═══
+    const already = await this.hasMovement(tx, "ORDER", orderId, "SALE", inv.id);
+    if (already) {
+      return { inventoryId: inv.id, sold: 0, idempotent: true };
+    }
 
     const beforeQty = inv.quantity;
     const afterQty = beforeQty - quantity;
@@ -63,10 +89,62 @@ export const InventoryService = {
       },
     });
 
-    return { inventoryId: inv.id, sold: quantity };
+    return { inventoryId: inv.id, sold: quantity, idempotent: false };
   },
 
-  // ═══════ إرجاع بسبب إلغاء الطلب (COD) ═══════
+  // ═══════ إرجاع للمخزون (Return / Refuse / Cancel) ═══════
+  async returnStock(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    referenceId: number,
+    reason: string = "إرجاع منتج",
+    referenceType: "ORDER" | "RETURN" = "RETURN"
+  ) {
+    if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    // ═══ Idempotency ═══
+    const already = await this.hasMovement(
+      tx,
+      referenceType,
+      referenceId,
+      "RETURN",
+      inv.id
+    );
+    if (already) {
+      return { inventoryId: inv.id, returned: 0, idempotent: true };
+    }
+
+    const beforeQty = inv.quantity;
+    const afterQty = beforeQty + quantity;
+
+    await tx.inventory.update({
+      where: { id: inv.id },
+      data: { quantity: afterQty },
+    });
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "RETURN",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason,
+        referenceType,
+        referenceId: BigInt(referenceId),
+      },
+    });
+
+    return { inventoryId: inv.id, returned: quantity, idempotent: false };
+  },
+
+  // ═══════ إرجاع بسبب إلغاء الطلب (COD) — alias للتوافق ═══════
   async cancelReturn(
     tx: any,
     variantId: number,
@@ -74,210 +152,7 @@ export const InventoryService = {
     orderId: number,
     reason: string = "إلغاء الطلب — إرجاع للمخزون"
   ) {
-    if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
-
-    const inv = await this.lockInventory(tx, variantId);
-
-    const beforeQty = inv.quantity;
-    const afterQty = beforeQty + quantity;
-
-    await tx.inventory.update({
-      where: { id: inv.id },
-      data: { quantity: afterQty },
-    });
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: inv.id,
-        type: "RETURN",
-        beforeQuantity: beforeQty,
-        afterQuantity: afterQty,
-        quantityChange: quantity,
-        beforeReserved: inv.reservedQuantity,
-        afterReserved: inv.reservedQuantity,
-        reservedChange: 0,
-        reason,
-        referenceType: "ORDER",
-        referenceId: BigInt(orderId),
-      },
-    });
-
-    return { inventoryId: inv.id, returned: quantity };
-  },
-
-  // ═══════ حجز مخزون (للمستقبل — الدفع الإلكتروني) ═══════
-  async reserve(
-    tx: any,
-    variantId: number,
-    quantity: number,
-    orderId: number
-  ) {
-    if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
-
-    const inv = await this.lockInventory(tx, variantId);
-    const available = inv.quantity - inv.reservedQuantity;
-
-    if (available < quantity) {
-      throw new Error("الكمية المطلوبة غير متوفرة في المخزون");
-    }
-
-    const beforeReserved = inv.reservedQuantity;
-    const afterReserved = beforeReserved + quantity;
-
-    await tx.inventory.update({
-      where: { id: inv.id },
-      data: { reservedQuantity: afterReserved },
-    });
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: inv.id,
-        type: "RESERVE",
-        beforeQuantity: inv.quantity,
-        afterQuantity: inv.quantity,
-        quantityChange: 0,
-        beforeReserved,
-        afterReserved,
-        reservedChange: quantity,
-        reason: "حجز مؤقت عند الطلب",
-        referenceType: "ORDER",
-        referenceId: BigInt(orderId),
-      },
-    });
-
-    return { inventoryId: inv.id, reserved: quantity };
-  },
-
-  // ═══════ تحرير الحجز (للمستقبل) ═══════
-  async unreserve(
-    tx: any,
-    variantId: number,
-    quantity: number,
-    orderId: number,
-    reason: string
-  ) {
-    const inv = await this.lockInventory(tx, variantId);
-
-    const beforeReserved = inv.reservedQuantity;
-
-    if (quantity > beforeReserved) {
-      throw new Error(
-        "محاولة تحرير " + quantity + " من أصل " + beforeReserved + " محجوز فقط"
-      );
-    }
-
-    const afterReserved = beforeReserved - quantity;
-
-    await tx.inventory.update({
-      where: { id: inv.id },
-      data: { reservedQuantity: afterReserved },
-    });
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: inv.id,
-        type: "UNRESERVE",
-        beforeQuantity: inv.quantity,
-        afterQuantity: inv.quantity,
-        quantityChange: 0,
-        beforeReserved,
-        afterReserved,
-        reservedChange: -quantity,
-        reason,
-        referenceType: "ORDER",
-        referenceId: BigInt(orderId),
-      },
-    });
-
-    return { inventoryId: inv.id, released: quantity };
-  },
-
-  // ═══════ تأكيد البيع (للمستقبل — عند تحويل Reservation إلى Sale) ═══════
-  async commitSale(
-    tx: any,
-    variantId: number,
-    quantity: number,
-    orderId: number
-  ) {
-    const inv = await this.lockInventory(tx, variantId);
-
-    const beforeQty = inv.quantity;
-    const afterQty = beforeQty - quantity;
-    if (afterQty < 0) {
-      throw new Error("لا يمكن بيع أكثر من الكمية المتوفرة");
-    }
-
-    const beforeReserved = inv.reservedQuantity;
-
-    if (quantity > beforeReserved) {
-      throw new Error(
-        "محاولة بيع " + quantity + " من أصل " + beforeReserved + " محجوز فقط"
-      );
-    }
-
-    const afterReserved = beforeReserved - quantity;
-
-    await tx.inventory.update({
-      where: { id: inv.id },
-      data: {
-        quantity: afterQty,
-        reservedQuantity: afterReserved,
-      },
-    });
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: inv.id,
-        type: "SALE",
-        beforeQuantity: beforeQty,
-        afterQuantity: afterQty,
-        quantityChange: -quantity,
-        beforeReserved,
-        afterReserved,
-        reservedChange: -quantity,
-        reason: "تأكيد البيع",
-        referenceType: "ORDER",
-        referenceId: BigInt(orderId),
-      },
-    });
-
-    return { inventoryId: inv.id, sold: quantity };
-  },
-
-  // ═══════ إرجاع للمخزون (Return) ═══════
-  async returnStock(
-    tx: any,
-    variantId: number,
-    quantity: number,
-    returnRequestId: number
-  ) {
-    const inv = await this.lockInventory(tx, variantId);
-
-    const beforeQty = inv.quantity;
-    const afterQty = beforeQty + quantity;
-
-    await tx.inventory.update({
-      where: { id: inv.id },
-      data: { quantity: afterQty },
-    });
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: inv.id,
-        type: "RETURN",
-        beforeQuantity: beforeQty,
-        afterQuantity: afterQty,
-        quantityChange: quantity,
-        beforeReserved: inv.reservedQuantity,
-        afterReserved: inv.reservedQuantity,
-        reservedChange: 0,
-        reason: "إرجاع منتج",
-        referenceType: "RETURN",
-        referenceId: BigInt(returnRequestId),
-      },
-    });
-
-    return { inventoryId: inv.id, returned: quantity };
+    return this.returnStock(tx, variantId, quantity, orderId, reason, "ORDER");
   },
 
   // ═══════ إضافة مخزون (Admin / Stock In) ═══════

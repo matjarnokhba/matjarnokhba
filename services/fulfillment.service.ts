@@ -78,10 +78,9 @@ export const FulfillmentService = {
       const sellerId = item.sellerId ?? item.product?.sellerId ?? order.seller?.id;
 
       if (!sellerId) {
-        console.warn(
-          `⚠️ لا يمكن تحديد sellerId للـOrderItem ${item.id}`
+        throw new Error(
+          `لا يمكن تحديد sellerId للـOrderItem ${item.id} — بيانات ناقصة`
         );
-        continue;
       }
 
       // ═══ هل يوجد FulfillmentItem لهذا العنصر؟ ═══
@@ -296,26 +295,9 @@ export const FulfillmentService = {
     fromStatus: FulfillmentStatus;
     toStatus: FulfillmentStatus;
   }> {
-    const item = await prisma.fulfillmentItem.findUnique({
-      where: { id: input.fulfillmentItemId },
-    });
-
-    if (!item) {
-      throw new Error("عنصر التجهيز غير موجود");
-    }
-
-    const allowed = ALLOWED_TRANSITIONS[item.status] || [];
-
-    if (!allowed.includes(input.toStatus)) {
-      throw new Error(
-        `لا يمكن الانتقال من ${item.status} إلى ${input.toStatus}`
-      );
-    }
-
     const now = new Date();
     const updates: any = { status: input.toStatus };
 
-    // ═══ طوابع زمنية حسب الحالة ═══
     switch (input.toStatus) {
       case "PREPARING":
         updates.preparedAt = now;
@@ -341,12 +323,30 @@ export const FulfillmentService = {
         break;
     }
 
-    // ═══ تنفيذ التغيير ═══
-    const result = await prisma.$transaction(async (tx) => {
-      const updated = await tx.fulfillmentItem.update({
+    return prisma.$transaction(async (tx) => {
+      const item = await tx.fulfillmentItem.findUnique({
         where: { id: input.fulfillmentItemId },
+        select: { status: true, orderItemId: true },
+      });
+
+      if (!item) throw new Error("عنصر التجهيز غير موجود");
+
+      const allowed = ALLOWED_TRANSITIONS[item.status] || [];
+      if (!allowed.includes(input.toStatus)) {
+        throw new Error(
+          `لا يمكن الانتقال من ${item.status} إلى ${input.toStatus}`
+        );
+      }
+
+      // ═══ updateMany مع شرط الحالة (ذرّي) ═══
+      const updated = await tx.fulfillmentItem.updateMany({
+        where: { id: input.fulfillmentItemId, status: item.status },
         data: updates,
       });
+
+      if (updated.count === 0) {
+        throw new Error("تم تغيير الحالة من عملية أخرى، أعد المحاولة");
+      }
 
       await tx.fulfillmentStatusHistory.create({
         data: {
@@ -358,20 +358,14 @@ export const FulfillmentService = {
         },
       });
 
-      // ═══ مزامنة Order.fulfillmentStatus ═══
-      await FulfillmentService.syncOrderFulfillmentStatus(
-        tx,
-        item.orderItemId
-      );
+      await FulfillmentService.syncOrderFulfillmentStatus(tx, item.orderItemId);
 
-      return updated;
+      return {
+        success: true as const,
+        fromStatus: item.status as FulfillmentStatus,
+        toStatus: input.toStatus,
+      };
     });
-
-    return {
-      success: true,
-      fromStatus: item.status as FulfillmentStatus,
-      toStatus: result.status as FulfillmentStatus,
-    };
   },
 
   // ═══════════════════════════════════════════
@@ -385,50 +379,61 @@ export const FulfillmentService = {
       where: { id: orderItemId },
       select: { orderId: true },
     });
-
     if (!orderItem) return;
 
     const allItems = await tx.fulfillmentItem.findMany({
-      where: {
-        orderItem: { orderId: orderItem.orderId },
-      },
+      where: { orderItem: { orderId: orderItem.orderId } },
       select: { status: true },
     });
-
     if (allItems.length === 0) return;
 
-    // ═══ تحديد الحالة المشتركة ═══
-    const statuses = allItems.map((i: any) => i.status);
+    const statuses: string[] = allItems.map((i: any) => i.status);
+    const current = await tx.order.findUnique({
+      where: { id: orderItem.orderId },
+      select: { status: true, deliveredAt: true },
+    });
+    if (!current) return;
 
-    // أولوية: لو الكل DELIVERED → DELIVERED
-    // لو الكل SHIPPED → SHIPPED
-    // لو الكل CANCELLED → CANCELLED
-    // وإلا: نأخذ أدنى حالة متقدمة مشتركة
-
-    const allDelivered = statuses.every((s: string) => s === "DELIVERED");
-    const allShipped = statuses.every((s: string) =>
+    const allDelivered = statuses.every((s) => s === "DELIVERED");
+    const allReturned = statuses.every((s) => s === "RETURNED");
+    const allCancelled = statuses.every((s) => s === "CANCELLED");
+    const allFailed = statuses.every((s) =>
+      ["RETURNED", "CANCELLED"].includes(s)
+    );
+    const allShipped = statuses.every((s) =>
       ["SHIPPED", "DELIVERED"].includes(s)
     );
-    const allCancelled = statuses.every((s: string) => s === "CANCELLED");
-    const allReady = statuses.every((s: string) =>
-      ["READY_FOR_COLLECTION", "COLLECTED", "IN_TRANSIT_TO_WAREHOUSE",
-       "RECEIVED", "VERIFIED", "AVAILABLE_FOR_SHIPMENT", "ALLOCATED",
-       "SHIPPED", "DELIVERED"].includes(s)
+    const anyShipped = statuses.some((s) =>
+      ["SHIPPED", "DELIVERED"].includes(s)
     );
 
-    let orderFulfillmentStatus: FulfillmentStatus;
+    const orderUpdate: any = {};
 
     if (allDelivered) {
-      orderFulfillmentStatus = "DELIVERED";
+      orderUpdate.fulfillmentStatus = "DELIVERED";
+      if (current.status !== "DELIVERED" && current.status !== "RETURNED") {
+        orderUpdate.status = "DELIVERED";
+        orderUpdate.deliveredAt = current.deliveredAt ?? new Date();
+        orderUpdate.paymentStatus = "PAID";
+      }
+    } else if (allFailed) {
+      orderUpdate.fulfillmentStatus = allReturned ? "RETURNED" : "CANCELLED";
+      if (current.status !== "DELIVERED" && current.status !== "RETURNED") {
+        orderUpdate.status = "RETURNED";
+      }
     } else if (allShipped) {
-      orderFulfillmentStatus = "SHIPPED";
-    } else if (allCancelled) {
-      orderFulfillmentStatus = "CANCELLED";
-    } else if (allReady) {
-      orderFulfillmentStatus = "AVAILABLE_FOR_SHIPMENT";
+      orderUpdate.fulfillmentStatus = "SHIPPED";
+    } else if (anyShipped) {
+      orderUpdate.fulfillmentStatus = "SHIPPED";
+      if (
+        current.status !== "DELIVERED" &&
+        current.status !== "RETURNED" &&
+        current.status !== "PARTIALLY_DELIVERED"
+      ) {
+        orderUpdate.status = "PARTIALLY_DELIVERED";
+      }
     } else {
-      // أدنى حالة (الأقل تقدمًا)
-      const order = [
+      const orderedStatuses = [
         "PENDING",
         "PREPARING",
         "READY_FOR_COLLECTION",
@@ -441,19 +446,23 @@ export const FulfillmentService = {
         "SHIPPED",
         "DELIVERED",
       ];
-
-      let minIndex = order.length - 1;
-      for (const s of statuses) {
-        const idx = order.indexOf(s);
+      const active = statuses.filter(
+        (s) => !["RETURNED", "CANCELLED"].includes(s)
+      );
+      let minIndex = orderedStatuses.length - 1;
+      for (const s of active) {
+        const idx = orderedStatuses.indexOf(s);
         if (idx >= 0 && idx < minIndex) minIndex = idx;
       }
-      orderFulfillmentStatus = order[minIndex] as FulfillmentStatus;
+      orderUpdate.fulfillmentStatus = orderedStatuses[minIndex];
     }
 
-    await tx.order.update({
-      where: { id: orderItem.orderId },
-      data: { fulfillmentStatus: orderFulfillmentStatus },
-    });
+    if (Object.keys(orderUpdate).length > 0) {
+      await tx.order.update({
+        where: { id: orderItem.orderId },
+        data: orderUpdate,
+      });
+    }
   },
 
   // ═══════════════════════════════════════════

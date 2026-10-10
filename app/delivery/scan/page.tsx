@@ -78,8 +78,8 @@ type ScanResult =
 
 type ActionModal =
   | { type: "delivered"; target: "order" | "shipment" }
-  | { type: "deferred"; target: "order" | "shipment" }
-  | { type: "rejected"; target: "order" | "shipment" }
+  | { type: "postponed"; target: "order" | "shipment" }
+  | { type: "refused"; target: "order" | "shipment" }
   | { type: "returned"; target: "order" | "shipment" }
   | null;
 
@@ -154,7 +154,7 @@ export default function DeliveryScanPage() {
   async function handleScanResult(text: string) {
     await stopScanner();
 
-    let token = text.trim();
+    const token = text.trim();
 
     // ═══ حالة رابط كامل ═══
     if (token.includes("/d/")) {
@@ -306,7 +306,7 @@ export default function DeliveryScanPage() {
   }
 
   function openActionModal(
-    type: "delivered" | "deferred" | "rejected" | "returned"
+    type: "delivered" | "postponed" | "refused" | "returned"
   ) {
     if (!result) return;
     setReason("");
@@ -462,9 +462,9 @@ export default function DeliveryScanPage() {
               <>
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-black">
-                    {actionModal.type === "deferred"
+                    {actionModal.type === "postponed"
                       ? "تأجيل التوصيل"
-                      : actionModal.type === "rejected"
+                      : actionModal.type === "refused"
                         ? "رفض العميل"
                         : "إرجاع"}
                   </h3>
@@ -490,9 +490,9 @@ export default function DeliveryScanPage() {
                     }
                     disabled={submitting || reason.trim().length < 3}
                     className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white disabled:opacity-50 ${
-                      actionModal.type === "deferred"
+                      actionModal.type === "postponed"
                         ? "bg-amber-500"
-                        : actionModal.type === "rejected"
+                        : actionModal.type === "refused"
                           ? "bg-red-500"
                           : "bg-gray-700"
                     }`}
@@ -529,7 +529,7 @@ function OrderDetails({
 }: {
   order: OrderData;
   onClose: () => void;
-  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  onAction: (t: "delivered" | "postponed" | "refused" | "returned") => void;
   submitting: boolean;
 }) {
   return (
@@ -584,7 +584,7 @@ function ShipmentDetails({
 }: {
   shipment: ShipmentData;
   onClose: () => void;
-  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  onAction: (t: "delivered" | "postponed" | "refused" | "returned") => void;
   submitting: boolean;
 }) {
   const firstOrder = shipment.orders[0];
@@ -772,7 +772,7 @@ function ActionButtons({
   onAction,
   submitting,
 }: {
-  onAction: (t: "delivered" | "deferred" | "rejected" | "returned") => void;
+  onAction: (t: "delivered" | "postponed" | "refused" | "returned") => void;
   submitting: boolean;
 }) {
   return (
@@ -787,7 +787,7 @@ function ActionButtons({
       </button>
 
       <button
-        onClick={() => onAction("deferred")}
+        onClick={() => onAction("postponed")}
         disabled={submitting}
         className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-500 bg-amber-50 py-3.5 text-sm font-bold text-amber-700 disabled:opacity-50"
       >
@@ -797,7 +797,7 @@ function ActionButtons({
 
       <div className="grid grid-cols-2 gap-2">
         <button
-          onClick={() => onAction("rejected")}
+          onClick={() => onAction("refused")}
           disabled={submitting}
           className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 disabled:opacity-50"
         >

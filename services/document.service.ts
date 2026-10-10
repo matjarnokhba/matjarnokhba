@@ -44,12 +44,12 @@ export const DocumentService = {
       type: d.type,
       typeLabel: DOCUMENT_LABELS[d.type] || d.type,
       status: d.status,
-      storageKey: d.storageKey,
       mimeType: d.mimeType,
       sizeBytes: d.sizeBytes,
       rejectionReason: d.rejectionReason,
       reviewedAt: d.reviewedAt,
       createdAt: d.createdAt,
+      downloadUrl: `/api/seller/documents/${d.id}/download`,
     }));
   },
 
@@ -136,13 +136,13 @@ export const DocumentService = {
       type: d.type,
       typeLabel: DOCUMENT_LABELS[d.type] || d.type,
       status: d.status,
-      storageKey: d.storageKey,
       mimeType: d.mimeType,
       sizeBytes: d.sizeBytes,
       rejectionReason: d.rejectionReason,
       reviewedAt: d.reviewedAt,
       createdAt: d.createdAt,
       seller: d.seller,
+      downloadUrl: `/api/admin/documents/${d.id}/download`,
     }));
   },
 
@@ -201,5 +201,21 @@ export const DocumentService = {
         },
       });
     });
+  },
+
+  // ═══ جلب وثيقة للتنزيل (بعد فحص الصلاحية في الـroute) ═══
+  async getForDownload(documentId: number) {
+    const doc = await prisma.sellerDocument.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        sellerId: true,
+        storageKey: true,
+        mimeType: true,
+        deletedAt: true,
+      },
+    });
+    if (!doc || doc.deletedAt) return null;
+    return doc;
   },
 };
