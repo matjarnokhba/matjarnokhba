@@ -35,6 +35,7 @@ const STATUS_INFO: Record<string, { label: string; color: string; bg: string }> 
 
 export default function SellerProductsPage() {
   const [products, setProducts] = useState<SellerProduct[]>([]);
+  const [sellerSlug, setSellerSlug] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -42,12 +43,21 @@ export default function SellerProductsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/seller/products");
-      const data = await res.json();
+      const [productsRes, profileRes] = await Promise.all([
+        fetch("/api/seller/products"),
+        fetch("/api/seller/profile"),
+      ]);
 
-      if (!res.ok || !data.success) {
+      const data = await productsRes.json();
+      const profileData = await profileRes.json();
+
+      if (!productsRes.ok || !data.success) {
         setError(data.message || "فشل التحميل");
         return;
+      }
+
+      if (profileRes.ok && profileData.success && profileData.seller) {
+        setSellerSlug(profileData.seller.slug || "");
       }
 
       setProducts(data.products);
@@ -128,6 +138,11 @@ export default function SellerProductsPage() {
           {products.map((product) => {
             const statusInfo =
               STATUS_INFO[product.status] || STATUS_INFO.DRAFT;
+
+            const productHref = sellerSlug
+              ? `/product/${sellerSlug}/${product.slug}`
+              : "#";
+
             return (
               <div
                 key={product.id}
@@ -190,7 +205,7 @@ export default function SellerProductsPage() {
                   {/* أزرار */}
                   <div className="flex shrink-0 gap-1">
                     <Link
-                      href={`/product/${product.slug}`}
+                      href={productHref}
                       target="_blank"
                       className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-50"
                       aria-label="عرض"
