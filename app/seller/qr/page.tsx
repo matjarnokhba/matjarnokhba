@@ -62,10 +62,10 @@ export default function SellerQRPage() {
     load();
   }, []);
 
-  // ═══ 2. توليد QR (بعد أن يصبح canvas موجوداً في DOM) ═══
+  // ═══ 2. توليد QR ═══
   useEffect(() => {
     if (loading || !seller || !storeUrl || !canvasRef.current) return;
-    if (qrDataUrl) return; // لا تُعِد التوليد
+    if (qrDataUrl) return;
 
     async function generate() {
       setGeneratingQR(true);
@@ -239,8 +239,8 @@ export default function SellerQRPage() {
   }
 
   return (
-    <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      {/* ═══ الـCanvas — دائماً موجود في DOM بعد انتهاء التحميل ═══ */}
+    <div className="w-full max-w-full overflow-x-hidden p-4 pt-16 lg:p-8 lg:pt-8">
+      {/* ═══ الـCanvas — دائماً موجود في DOM ═══ */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
       <Link
@@ -262,30 +262,40 @@ export default function SellerQRPage() {
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid w-full min-w-0 gap-5 lg:grid-cols-2">
         {/* ═══ بطاقة QR للعرض ═══ */}
-        <div className="rounded-2xl border-4 border-[#ff5c00] bg-white p-8 text-center shadow-lg">
+        <div className="min-w-0 overflow-hidden rounded-2xl border-4 border-[#ff5c00] bg-white p-6 text-center shadow-lg sm:p-8">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-orange-500 text-2xl font-black text-white">
             ن
           </div>
-          <h2 className="text-xl font-black text-gray-900">
+          <h2 className="break-words text-xl font-black text-gray-900">
             {seller.storeName}
           </h2>
           <p className="mt-1 text-xs text-gray-500">
             امسح الرمز لزيارة متجرنا
           </p>
 
-          {qrDataUrl ? (
-            <img
-              src={qrDataUrl}
-              alt="QR Code"
-              className="mx-auto my-6 w-full max-w-[280px] rounded-xl"
-            />
-          ) : (
-            <div className="mx-auto my-6 flex h-[280px] w-[280px] items-center justify-center rounded-xl bg-gray-100">
-              <Loader2 className="h-8 w-8 animate-spin text-[#ff5c00]" />
-            </div>
-          )}
+          {/* ═══ QR — بعرض محدد ومضمون ═══ */}
+          <div
+            className="mx-auto my-6 flex justify-center"
+            style={{ maxWidth: "280px", width: "100%" }}
+          >
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="QR Code"
+                className="block h-auto w-full rounded-xl"
+                style={{ maxWidth: "100%" }}
+              />
+            ) : (
+              <div
+                className="flex items-center justify-center rounded-xl bg-gray-100"
+                style={{ width: "100%", aspectRatio: "1 / 1" }}
+              >
+                <Loader2 className="h-8 w-8 animate-spin text-[#ff5c00]" />
+              </div>
+            )}
+          </div>
 
           <div className="rounded-xl bg-[#fff4ed] px-4 py-3 text-xs font-bold text-[#ff5c00]">
             📱 افتح كاميرا هاتفك وامسح الرمز
@@ -293,16 +303,16 @@ export default function SellerQRPage() {
         </div>
 
         {/* ═══ الإجراءات ═══ */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* رابط المتجر */}
-          <div className="rounded-xl bg-white p-5 shadow-sm">
+          <div className="min-w-0 rounded-xl bg-white p-5 shadow-sm">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-black text-gray-700">
               <Store className="h-4 w-4 text-[#ff5c00]" />
               رابط متجرك
             </h3>
-            <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
               <span
-                className="flex-1 truncate font-mono text-[11px] text-gray-700"
+                className="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-700"
                 dir="ltr"
               >
                 {storeUrl}
