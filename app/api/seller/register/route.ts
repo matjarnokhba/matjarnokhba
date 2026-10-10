@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   try {
     // ═══ Rate Limit ═══
     const ip = getClientIp(request);
-    const limit = rateLimit(`seller-register:${ip}`, 3, 60 * 60 * 1000);
+    const limit = await rateLimit(`seller-register:${ip}`, 3, 60 * 60 * 1000);
     if (!limit.success) {
       return NextResponse.json(
         {

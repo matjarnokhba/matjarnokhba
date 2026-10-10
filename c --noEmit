@@ -1,0 +1,13 @@
+[35mapp/api/auth/forgot-password/route.ts[m[36m:[m[32m4[m[36m:[mimport { [1;31mrateLimit[m, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
+[35mapp/api/auth/forgot-password/route.ts[m[36m:[m[32m14[m[36m:[m    const limit = [1;31mrateLimit[m(`forgot:${ip}`, 3, 30 * 60 * 1000); // 3 محاولات / 30 دقيقة
+[35mapp/api/auth/login/route.ts[m[36m:[m[32m4[m[36m:[m  [1;31mrateLimit[m,
+[35mapp/api/auth/login/route.ts[m[36m:[m[32m17[m[36m:[m    const [1;31mrateLimit[mKey = `login:${ip}`;
+[35mapp/api/auth/login/route.ts[m[36m:[m[32m20[m[36m:[m    const limit = [1;31mrateLimit[m([1;31mrateLimit[mKey, MAX_ATTEMPTS, WINDOW_MS);
+[35mapp/api/auth/login/route.ts[m[36m:[m[32m82[m[36m:[m    resetRateLimit([1;31mrateLimit[mKey);
+[35mapp/api/auth/register/route.ts[m[36m:[m[32m4[m[36m:[mimport { [1;31mrateLimit[m, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
+[35mapp/api/auth/register/route.ts[m[36m:[m[32m10[m[36m:[m    const limit = [1;31mrateLimit[m(`register:${ip}`, 3, 60 * 60 * 1000); // 3 محاولات/ساعة
+[35mapp/api/orders/route.ts[m[36m:[m[32m5[m[36m:[mimport { [1;31mrateLimit[m, formatRetryAfter } from "@/lib/rate-limit";
+[35mapp/api/orders/route.ts[m[36m:[m[32m18[m[36m:[m    const limit = [1;31mrateLimit[m(`orders:${current.user.id}`, 5, 60 * 1000);
+[35mapp/api/seller/register/route.ts[m[36m:[m[32m6[m[36m:[mimport { [1;31mrateLimit[m, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
+[35mapp/api/seller/register/route.ts[m[36m:[m[32m39[m[36m:[m    const limit = [1;31mrateLimit[m(`seller-register:${ip}`, 3, 60 * 60 * 1000);
+[35mlib/rate-limit.ts[m[36m:[m[32m38[m[36m:[mexport async function [1;31mrateLimit[m(

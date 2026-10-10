@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   try {
     // ═══════ Rate Limit ═══════
     const ip = getClientIp(request);
-    const limit = rateLimit(`register:${ip}`, 3, 60 * 60 * 1000); // 3 محاولات/ساعة
+    const limit = await rateLimit(`register:${ip}`, 3, 60 * 60 * 1000); // 3 محاولات/ساعة
 
     if (!limit.success) {
       return NextResponse.json(

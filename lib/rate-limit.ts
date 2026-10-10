@@ -1,25 +1,19 @@
+import { Redis } from "@upstash/redis";
+
 // ═══════════════════════════════════════════
-// Rate Limiter بسيط (in-memory)
-// ⚠️ ملاحظة: لا يعمل بشكل مثالي مع Serverless (Vercel)
-// سيُستبدل بـRedis / Vercel KV عند النشر
+// Rate Limiter — Vercel KV (Redis) + In-memory Fallback
 // ═══════════════════════════════════════════
 
-type Entry = {
-  count: number;
-  resetAt: number;
-};
+const hasKV = !!(
+  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
+);
 
-const store = new Map<string, Entry>();
-
-// تنظيف دوري (كل 5 دقائق)
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store.entries()) {
-      if (entry.resetAt < now) store.delete(key);
-    }
-  }, 5 * 60 * 1000);
-}
+const redis: Redis | null = hasKV
+  ? new Redis({
+      url: process.env.KV_REST_API_URL as string,
+      token: process.env.KV_REST_API_TOKEN as string,
+    })
+  : null;
 
 export type RateLimitResult = {
   success: boolean;
@@ -28,24 +22,62 @@ export type RateLimitResult = {
   retryAfterMs: number;
 };
 
-/**
- * التحقق من Rate Limit
- * @param key مفتاح فريد (مثلاً: `login:${ip}`)
- * @param limit عدد المحاولات المسموحة
- * @param windowMs النافذة الزمنية بالميلي ثانية
- */
-export function rateLimit(
+// ═══ In-memory fallback (للتطوير المحلي) ═══
+type Entry = { count: number; resetAt: number };
+const memoryStore = new Map<string, Entry>();
+
+if (!redis && typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of memoryStore.entries()) {
+      if (entry.resetAt < now) memoryStore.delete(key);
+    }
+  }, 5 * 60 * 1000);
+}
+
+export async function rateLimit(
   key: string,
   limit: number,
   windowMs: number
-): RateLimitResult {
+): Promise<RateLimitResult> {
   const now = Date.now();
-  const entry = store.get(key);
 
-  // لا يوجد entry → ننشئ
+  // ═══ Redis (Production) ═══
+  if (redis) {
+    const redisKey = `rl:${key}`;
+    const windowSec = Math.ceil(windowMs / 1000);
+
+    const count = await redis.incr(redisKey);
+    if (count === 1) {
+      await redis.expire(redisKey, windowSec);
+    }
+
+    const ttl = await redis.ttl(redisKey);
+    const resetAt = now + (ttl > 0 ? ttl * 1000 : windowMs);
+
+    if (count > limit) {
+      return {
+        success: false,
+        remaining: 0,
+        resetAt,
+        retryAfterMs: Math.max(0, resetAt - now),
+      };
+    }
+
+    return {
+      success: true,
+      remaining: Math.max(0, limit - count),
+      resetAt,
+      retryAfterMs: 0,
+    };
+  }
+
+  // ═══ In-memory (Development) ═══
+  const entry = memoryStore.get(key);
+
   if (!entry || entry.resetAt < now) {
     const resetAt = now + windowMs;
-    store.set(key, { count: 1, resetAt });
+    memoryStore.set(key, { count: 1, resetAt });
     return {
       success: true,
       remaining: limit - 1,
@@ -54,7 +86,6 @@ export function rateLimit(
     };
   }
 
-  // تجاوز الحد
   if (entry.count >= limit) {
     return {
       success: false,
@@ -64,7 +95,6 @@ export function rateLimit(
     };
   }
 
-  // زيادة العدّاد
   entry.count++;
   return {
     success: true,
@@ -74,31 +104,23 @@ export function rateLimit(
   };
 }
 
-/**
- * استخراج IP من الطلب
- */
+export async function resetRateLimit(key: string): Promise<void> {
+  if (redis) {
+    await redis.del(`rl:${key}`);
+    return;
+  }
+  memoryStore.delete(key);
+}
+
 export function getClientIp(request: Request): string {
   const headers = request.headers;
-
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
-
   const realIp = headers.get("x-real-ip");
   if (realIp) return realIp;
-
   return "unknown";
 }
 
-/**
- * إعادة تعيين Rate Limit (يُستخدم عند النجاح)
- */
-export function resetRateLimit(key: string) {
-  store.delete(key);
-}
-
-/**
- * تنسيق الوقت المتبقي
- */
 export function formatRetryAfter(ms: number): string {
   const seconds = Math.ceil(ms / 1000);
   if (seconds < 60) return `${seconds} ثانية`;

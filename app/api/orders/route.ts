@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
 
     // ═══ Rate Limit: 5 طلبات/دقيقة لكل مستخدم ═══
-    const limit = rateLimit(`orders:${current.user.id}`, 5, 60 * 1000);
+    const limit = await rateLimit(`orders:${current.user.id}`, 5, 60 * 1000);
     if (!limit.success) {
       return NextResponse.json(
         {

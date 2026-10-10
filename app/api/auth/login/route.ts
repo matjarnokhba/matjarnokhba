@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const rateLimitKey = `login:${ip}`;
 
     // ═══════ فحص Rate Limit ═══════
-    const limit = rateLimit(rateLimitKey, MAX_ATTEMPTS, WINDOW_MS);
+    const limit = await rateLimit(rateLimitKey, MAX_ATTEMPTS, WINDOW_MS);
 
     if (!limit.success) {
       return NextResponse.json(
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     }
 
     // ═══════ نجاح → صفّر العدّاد ═══════
-    resetRateLimit(rateLimitKey);
+    await resetRateLimit(rateLimitKey);
 
     // ═══════ إنشاء الجلسة ═══════
     const { SessionService } = await import("@/services/session.service");
