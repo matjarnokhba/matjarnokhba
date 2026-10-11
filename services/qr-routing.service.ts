@@ -31,6 +31,10 @@ type CurrentSession = {
   user: CurrentUser;
 } | null;
 
+// ═══════════════════════════════════════════
+// Actions per role/state
+// ═══════════════════════════════════════════
+
 function getCustomerActions(order: any): string[] {
   const actions: string[] = [];
   if (order.status === "DELIVERED") {
@@ -67,7 +71,7 @@ function getDeliveryActions(entity: any): string[] {
 }
 
 function getCollectorActions(_order: any): string[] {
-  return ["view_fulfillment"];
+  return ["view_fulfillment", "collect", "arrive"];
 }
 
 function getWarehouseActions(_order: any): string[] {
@@ -78,11 +82,19 @@ function getAdminActions(_order: any): string[] {
   return ["view_admin", "change_status"];
 }
 
+// ═══════════════════════════════════════════
+// Main Service
+// ═══════════════════════════════════════════
+
 export const QRRoutingService = {
+  // ═══════════════════════════════════════════
+  // Resolve Order Token
+  // ═══════════════════════════════════════════
   async resolveOrderToken(
     token: string,
     current: CurrentSession
   ): Promise<QRRouteResult> {
+    // 1. Guest
     if (!current) {
       return {
         view: "guest",
@@ -91,6 +103,7 @@ export const QRRoutingService = {
       };
     }
 
+    // 2. جلب الطلب مع fulfillmentItems (تحتاجها واجهة Collector)
     const order = await prisma.order.findFirst({
       where: { deliveryToken: token },
       include: {
@@ -98,6 +111,16 @@ export const QRRoutingService = {
           include: {
             product: {
               select: { id: true, sellerId: true, name: true },
+            },
+            fulfillmentItems: {
+              select: {
+                id: true,
+                status: true,
+                sellerId: true,
+                readyAt: true,
+                collectedAt: true,
+                departedAt: true,
+              },
             },
           },
         },
@@ -135,6 +158,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ ADMIN / SUPER_ADMIN ═══
     if (
       current.user.role === "ADMIN" ||
       current.user.role === "SUPER_ADMIN"
@@ -146,6 +170,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ CUSTOMER ═══
     if (current.user.role === "CUSTOMER") {
       if (order.userId === current.user.id) {
         return {
@@ -161,6 +186,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ SELLER ═══
     if (current.user.role === "SELLER") {
       if (!current.user.seller) {
         return {
@@ -198,35 +224,17 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ DELIVERY ═══
+    // ⚠️ DELIVERY لا يتفاعل مع الطلبات الفردية — فقط الشحنات
     if (current.user.role === "DELIVERY") {
-      const person = await prisma.deliveryPerson.findUnique({
-        where: { userId: current.user.id },
-        select: { id: true, status: true, deletedAt: true },
-      });
-
-      if (!person || person.deletedAt || person.status !== "ACTIVE") {
-        return {
-          view: "delivery_other",
-          redirect: "/",
-          actions: [],
-        };
-      }
-
-      if (order.deliveryPersonId === person.id) {
-        return {
-          view: "delivery_assigned",
-          order,
-          actions: getDeliveryActions(order),
-        };
-      }
-
       return {
         view: "delivery_other",
-        redirect: "/delivery",
+        redirect: "/delivery/shipments",
         actions: [],
       };
     }
 
+    // ═══ COLLECTOR ═══
     if (current.user.role === "COLLECTOR") {
       return {
         view: "collector",
@@ -235,6 +243,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ WAREHOUSE_MANAGER ═══
     if (current.user.role === "WAREHOUSE_MANAGER") {
       return {
         view: "warehouse_manager",
@@ -243,6 +252,7 @@ export const QRRoutingService = {
       };
     }
 
+    // Fallback
     return {
       view: "guest",
       redirect: "/",
@@ -250,10 +260,14 @@ export const QRRoutingService = {
     };
   },
 
+  // ═══════════════════════════════════════════
+  // Resolve Shipment Token
+  // ═══════════════════════════════════════════
   async resolveShipmentToken(
     token: string,
     current: CurrentSession
   ): Promise<QRRouteResult> {
+    // 1. Guest
     if (!current) {
       return {
         view: "guest",
@@ -262,6 +276,7 @@ export const QRRoutingService = {
       };
     }
 
+    // 2. جلب الشحنة عبر ShipmentQRService
     const { ShipmentQRService } = await import("./shipment-qr.service");
     const shipment = await ShipmentQRService.findByToken(token);
 
@@ -273,6 +288,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ ADMIN ═══
     if (
       current.user.role === "ADMIN" ||
       current.user.role === "SUPER_ADMIN"
@@ -284,6 +300,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ DELIVERY ═══
     if (current.user.role === "DELIVERY") {
       const person = await prisma.deliveryPerson.findUnique({
         where: { userId: current.user.id },
@@ -324,6 +341,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ CUSTOMER ═══
     if (current.user.role === "CUSTOMER") {
       const ownedOrder = await prisma.order.findFirst({
         where: {
@@ -350,6 +368,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ WAREHOUSE_MANAGER ═══
     if (current.user.role === "WAREHOUSE_MANAGER") {
       return {
         view: "warehouse_manager",
@@ -358,6 +377,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ SELLER ═══
     if (current.user.role === "SELLER") {
       if (!current.user.seller) {
         return {
@@ -370,7 +390,7 @@ export const QRRoutingService = {
       const sellerId = current.user.seller.id;
 
       const hasItems = shipment.items.some(
-        (item) => item.sellerId === sellerId
+        (item: any) => item.sellerId === sellerId
       );
 
       if (!hasItems) {
@@ -388,6 +408,7 @@ export const QRRoutingService = {
       };
     }
 
+    // ═══ COLLECTOR ═══
     if (current.user.role === "COLLECTOR") {
       return {
         view: "collector",
