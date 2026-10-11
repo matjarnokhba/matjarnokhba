@@ -39,20 +39,43 @@ export async function GET() {
       },
       include: {
         seller: {
-          select: { id: true, storeName: true, city: true },
+          select: { id: true, storeName: true, city: true, region: true },
         },
         orderItem: {
           select: {
             orderId: true,
             order: {
-              select: { id: true, orderNumber: true },
+              select: {
+                id: true,
+                orderNumber: true,
+                shippingAddressSnapshot: true,
+              },
             },
           },
         },
       },
       orderBy: [{ createdAt: "asc" }],
-      take: 500,
+      take: 1000,
     });
+
+    // ═══ جلب أسماء الجامعين مرة واحدة ═══
+    const collectorIds = Array.from(
+      new Set(
+        items
+          .map((i) => i.assignedCollectorId)
+          .filter((id): id is number => id !== null)
+      )
+    );
+
+    const collectors =
+      collectorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: collectorIds } },
+            select: { id: true, name: true, phone: true },
+          })
+        : [];
+
+    const collectorMap = new Map(collectors.map((c) => [c.id, c]));
 
     const priority: Record<string, number> = {
       READY_FOR_COLLECTION: 0,
@@ -68,20 +91,35 @@ export async function GET() {
       {
         orderId: number;
         orderNumber: string;
-        seller: { id: number; storeName: string; city: string | null };
+        seller: {
+          id: number;
+          storeName: string;
+          city: string | null;
+          region: string | null;
+        };
+        pickupCity: string | null;
+        deliveryCity: string | null;
+        deliveryDistrict: string | null;
         itemsCount: number;
         status: string;
         readyAt: Date | null;
         assignedCollectorId: number | null;
+        assignedCollectorName: string | null;
+        assignedCollectorPhone: string | null;
         assignedAt: Date | null;
       }
     >();
 
     for (const item of items) {
       const order = item.orderItem.order;
+      const address = (order.shippingAddressSnapshot || {}) as any;
       const existing = grouped.get(order.id);
 
       if (!existing) {
+        const collector = item.assignedCollectorId
+          ? collectorMap.get(item.assignedCollectorId)
+          : null;
+
         grouped.set(order.id, {
           orderId: order.id,
           orderNumber: order.orderNumber,
@@ -89,11 +127,17 @@ export async function GET() {
             id: item.seller.id,
             storeName: item.seller.storeName,
             city: item.seller.city,
+            region: item.seller.region,
           },
+          pickupCity: item.seller.city,
+          deliveryCity: address.city || null,
+          deliveryDistrict: address.district || null,
           itemsCount: item.quantity,
           status: item.status,
           readyAt: item.readyAt,
           assignedCollectorId: item.assignedCollectorId,
+          assignedCollectorName: collector?.name || null,
+          assignedCollectorPhone: collector?.phone || null,
           assignedAt: item.assignedAt,
         });
       } else {
@@ -109,10 +153,6 @@ export async function GET() {
     const readyForCollection = all.filter(
       (t) => t.status === "READY_FOR_COLLECTION"
     );
-    const assigned = all.filter(
-      (t) =>
-        t.status === "COLLECTED" || t.status === "IN_TRANSIT_TO_WAREHOUSE"
-    );
     const incoming = all.filter(
       (t) => t.status === "IN_TRANSIT_TO_WAREHOUSE"
     );
@@ -125,7 +165,6 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       readyForCollection,
-      assigned,
       incoming,
       received,
       ready,
