@@ -367,72 +367,72 @@ export default function SellerOrderDetailPage() {
         </div>
       )}
 
-      {/* PROCESSING → الملصق + الماسح */}
-      {order.status === "PROCESSING" && (
-        <>
-          <div className="mt-4 rounded-2xl border-2 border-[#ff5c00] bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <QrCode className="h-5 w-5 text-[#ff5c00]" />
-              <h2 className="text-base font-black">ملصق الطلبية</h2>
-            </div>
-
-            <p className="mb-4 text-xs text-gray-600">
-              اطبع الملصق وضعه على الطرد. يحتوي على رمز QR المرتبط بالطلبية.
-            </p>
-
-            <div className="mb-4 flex items-center justify-between rounded-xl bg-[#fff4ed] px-4 py-3">
-              <span className="text-xs font-bold text-gray-700">
-                المبلغ المطلوب من العميل
-              </span>
-              <span className="text-lg font-black text-[#ff5c00]">
-                {Number(order.total).toFixed(2)} {CURRENCY}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Link
-                href={`/seller/orders/${orderId}/label`}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
-              >
-                <Printer className="h-4 w-4" />
-                طباعة الملصق
-              </Link>
-
-              <Link
-                href={`/seller/orders/${orderId}/invoice`}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
-              >
-                <Printer className="h-4 w-4" />
-                الفاتورة
-              </Link>
-            </div>
+      {/* ═══ الملصق + الفاتورة — متاح في كل الحالات (ما عدا NEW/CANCELLED) ═══ */}
+      {order.status !== "NEW" && order.status !== "CANCELLED" && (
+        <div className="mt-4 rounded-2xl border-2 border-[#ff5c00] bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <QrCode className="h-5 w-5 text-[#ff5c00]" />
+            <h2 className="text-base font-black">ملصق الطلبية</h2>
           </div>
 
-          {/* زر الماسح */}
-          <div className="mt-4 rounded-2xl border-2 border-dashed border-purple-300 bg-purple-50 p-5">
-            <div className="mb-4 flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
-                <ScanLine className="h-5 w-5 text-purple-700" />
-              </div>
-              <div>
-                <div className="text-base font-black text-purple-900">
-                  عند اكتمال التجهيز
-                </div>
-                <p className="mt-1 text-xs text-purple-700">
-                  امسح ملصق الطلبية لإبلاغ النظام بأنها جاهزة للشحن.
-                </p>
-              </div>
-            </div>
+          <p className="mb-4 text-xs text-gray-600">
+            يحتوي على رمز QR المرتبط بالطلبية. يمكنك إعادة طباعته في أي وقت.
+          </p>
+
+          <div className="mb-4 flex items-center justify-between rounded-xl bg-[#fff4ed] px-4 py-3">
+            <span className="text-xs font-bold text-gray-700">
+              المبلغ المطلوب من العميل
+            </span>
+            <span className="text-lg font-black text-[#ff5c00]">
+              {Number(order.total).toFixed(2)} {CURRENCY}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              href={`/seller/orders/${orderId}/label`}
+              className="flex items-center justify-center gap-2 rounded-xl border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+            >
+              <Printer className="h-4 w-4" />
+              طباعة الملصق
+            </Link>
 
             <Link
-              href={`/seller/scanner?orderToken=${order.deliveryToken || ""}&orderId=${orderId}`}
-              className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-purple-700"
+              href={`/seller/orders/${orderId}/invoice`}
+              className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
             >
-              <ScanLine className="h-5 w-5" />
-              فتح الماسح لإكمال التجهيز
+              <Printer className="h-4 w-4" />
+              الفاتورة
             </Link>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* ═══ زر الماسح — فقط PROCESSING ═══ */}
+      {order.status === "PROCESSING" && (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-purple-300 bg-purple-50 p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
+              <ScanLine className="h-5 w-5 text-purple-700" />
+            </div>
+            <div>
+              <div className="text-base font-black text-purple-900">
+                عند اكتمال التجهيز
+              </div>
+              <p className="mt-1 text-xs text-purple-700">
+                امسح ملصق الطلبية لإبلاغ النظام بأنها جاهزة للشحن.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href={`/seller/scanner?orderToken=${order.deliveryToken || ""}&orderId=${orderId}`}
+            className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-purple-700"
+          >
+            <ScanLine className="h-5 w-5" />
+            فتح الماسح لإكمال التجهيز
+          </Link>
+        </div>
       )}
 
       {/* SHIPPED → بانتظار الجامع */}
