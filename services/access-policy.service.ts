@@ -11,7 +11,13 @@ export type OrderAccessResult =
 
 export type ShipmentAccessResult =
   | { allowed: true; role: "ADMIN" | "SUPER_ADMIN"; scope: "full" }
-  | { allowed: true; role: "DELIVERY"; scope: "assigned"; deliveryPersonId: number; assignmentId: number }
+  | {
+      allowed: true;
+      role: "DELIVERY";
+      scope: "assigned";
+      deliveryPersonId: number;
+      assignmentId: number;
+    }
   | { allowed: false; reason: string };
 
 export type FulfillmentAccessResult =
@@ -152,10 +158,7 @@ export const AccessPolicyService = {
       if (!order) return false;
 
       // IN_STORE من التاجر نفسه → يستطيع
-      if (
-        order.source === "IN_STORE" &&
-        order.sellerId === user.seller.id
-      ) {
+      if (order.source === "IN_STORE" && order.sellerId === user.seller.id) {
         return true;
       }
 
@@ -196,9 +199,13 @@ export const AccessPolicyService = {
     if (access.scope === "seller") {
       const sellerId = access.sellerId;
 
-      const filteredItems = (order.items || []).filter(
-        (item: any) => item.sellerId === sellerId
-      );
+      // ═══ يدعم الحالتين:
+      // 1. OrderItem.sellerId موجود (الطلبات الحديثة)
+      // 2. OrderItem.product.sellerId (الطلبات القديمة)
+      const filteredItems = (order.items || []).filter((item: any) => {
+        const itemSellerId = item.sellerId ?? item.product?.sellerId;
+        return itemSellerId === sellerId;
+      });
 
       const isInStore = order.source === "IN_STORE";
 
@@ -344,7 +351,7 @@ export const AccessPolicyService = {
           role: "DELIVERY",
           scope: "assigned",
           deliveryPersonId: person.id,
-          assignmentId: 0, // legacy
+          assignmentId: 0,
         };
       }
 

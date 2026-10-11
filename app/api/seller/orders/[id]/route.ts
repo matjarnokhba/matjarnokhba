@@ -52,7 +52,11 @@ export async function GET(
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: { select: { sellerId: true } },
+          },
+        },
         statusHistory: { orderBy: { createdAt: "desc" } },
       },
     });

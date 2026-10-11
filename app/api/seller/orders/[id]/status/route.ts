@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { LoyaltyService } from "@/services/loyalty.service";
-import { ReferralService } from "@/services/referral.service";
 
+// ═══════════════════════════════════════════
+// التاجر يتوقف عند SHIPPED
+// DELIVERED يحدث حصريًا عبر:
+// - السائق (delivery action)
+// - الأدمن (في الحالات الاستثنائية)
+// ═══════════════════════════════════════════
 const SELLER_ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING"],
   PROCESSING: ["SHIPPED"],
-  SHIPPED: ["DELIVERED"],
+  SHIPPED: [],
   DELIVERED: [],
   CANCELLED: [],
   RETURNED: [],
@@ -69,23 +73,20 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-          message: `لا يمكن الانتقال من ${oldStatus} إلى ${newStatus}`,
+          message:
+            oldStatus === "SHIPPED"
+              ? "لا يمكنك إتمام التوصيل. التسليم يتم عبر السائق أو الإدارة."
+              : `لا يمكن الانتقال من ${oldStatus} إلى ${newStatus}`,
         },
         { status: 400 }
       );
     }
 
-    // ═══ Transaction ═══
     await prisma.$transaction(async (tx) => {
       // 1. تحديث الحالة
       await tx.order.update({
         where: { id: orderId },
-        data: {
-          status: newStatus,
-          ...(newStatus === "DELIVERED"
-            ? { deliveredAt: new Date(), paymentStatus: "PAID" }
-            : {}),
-        },
+        data: { status: newStatus },
       });
 
       // 2. سجل الحالة
@@ -99,89 +100,7 @@ export async function PATCH(
         },
       });
 
-      // ═══ 3. DELIVERED: زيادة المبيعات + منح نقاط الولاء + مكافأة الإحالة ═══
-      if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
-        // 3a. زيادة sold
-        const soldByProduct = new Map<number, number>();
-        for (const item of order.items) {
-          soldByProduct.set(
-            item.productId,
-            (soldByProduct.get(item.productId) || 0) + item.quantity
-          );
-        }
-        for (const [productId, qty] of soldByProduct) {
-          await tx.product.update({
-            where: { id: productId },
-            data: { sold: { increment: qty } },
-          });
-        }
-
-        // 3b. منح نقاط الولاء
-        try {
-          const award = await LoyaltyService.awardForOrder(tx, {
-            userId: order.userId,
-            orderId: order.id,
-            orderTotal: Number(order.total),
-          });
-
-          if (award.pointsAwarded > 0) {
-            await tx.order.update({
-              where: { id: orderId },
-              data: {
-                loyaltyPointsAwarded: award.pointsAwarded,
-                loyaltyAwardedAt: new Date(),
-              },
-            });
-
-            await tx.notification.create({
-              data: {
-                userId: order.userId,
-                type: "ORDER_STATUS_CHANGED",
-                title: "🎁 ربحت نقاط ولاء!",
-                message: `حصلت على ${award.pointsAwarded} نقطة من الطلب ${order.orderNumber}. رصيدك الآن: ${award.balanceAfter} نقطة.`,
-                link: `/loyalty`,
-                category: "ORDER",
-                severity: "INFO",
-                metadata: {
-                  orderId: order.id,
-                  pointsAwarded: award.pointsAwarded,
-                  balanceAfter: award.balanceAfter,
-                },
-              },
-            });
-          }
-
-          for (const tier of award.unlockedTiers) {
-            await tx.notification.create({
-              data: {
-                userId: order.userId,
-                type: "ORDER_STATUS_CHANGED",
-                title: `${tier.icon || "🎁"} مبروك! فتحت ${tier.name}`,
-                message: `وصلت إلى مستوى "${tier.name}". اختر فئة الهدية المفضلة لديك!`,
-                link: `/loyalty`,
-                category: "ORDER",
-                severity: "INFO",
-                metadata: {
-                  tierId: tier.tierId,
-                  rewardId: tier.rewardId,
-                  tierName: tier.name,
-                },
-              },
-            });
-          }
-        } catch (loyaltyErr) {
-          console.error("Loyalty award failed:", loyaltyErr);
-        }
-
-        // 3c. مكافأة الإحالة عند أول طلب مؤهل
-        try {
-          await ReferralService.awardOnFirstOrder(tx, order.userId, order.id);
-        } catch (refErr) {
-          console.error("Referral award failed:", refErr);
-        }
-      }
-
-      // ═══ 4. إشعار للعميل ═══
+      // 3. إشعار للعميل
       await tx.notification.create({
         data: {
           userId: order.userId,
@@ -200,7 +119,7 @@ export async function PATCH(
         },
       });
 
-      // ═══ 5. إشعار للأدمن ═══
+      // 4. إشعار للأدمن
       const admins = await tx.user.findMany({
         where: {
           role: { in: ["ADMIN", "SUPER_ADMIN"] },
