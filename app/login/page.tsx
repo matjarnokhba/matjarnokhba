@@ -4,6 +4,27 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+// ═══════════════════════════════════════════
+// Redirect by role
+// ═══════════════════════════════════════════
+function getDashboardPath(role: string): string {
+  switch (role) {
+    case "SELLER":
+      return "/seller";
+    case "ADMIN":
+    case "SUPER_ADMIN":
+      return "/admin";
+    case "WAREHOUSE_MANAGER":
+      return "/warehouse";
+    case "COLLECTOR":
+      return "/collector";
+    case "DELIVERY":
+      return "/delivery";
+    default:
+      return "/";
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -31,18 +52,14 @@ export default function LoginPage() {
         return;
       }
 
-      // ⭐ إخبار جميع Providers بتغيير الحساب — قبل أي redirect
+      // ⭐ إخبار جميع Providers بتغيير الحساب
       window.dispatchEvent(new CustomEvent("nokhba:auth-changed"));
 
-      const role = data.user?.role;
+      // ⭐ Redirect حسب الدور
+      const role = data.user?.role || "CUSTOMER";
+      const target = getDashboardPath(role);
 
-      if (role === "SELLER") {
-        router.push("/seller");
-      } else if (role === "ADMIN" || role === "SUPER_ADMIN") {
-        router.push("/admin");
-      } else {
-        router.push("/");
-      }
+      router.push(target);
       router.refresh();
     } catch (err) {
       setError("حدث خطأ في الاتصال");
@@ -51,7 +68,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4" dir="rtl">
+    <div
+      className="min-h-screen flex items-center justify-center bg-gray-50 p-4"
+      dir="rtl"
+    >
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
         <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">
           تسجيل الدخول
@@ -115,7 +135,10 @@ export default function LoginPage() {
 
         <p className="text-center text-sm text-gray-500 mt-6">
           لا تملك حساباً؟{" "}
-          <Link href="/register" className="text-yellow-600 hover:underline font-medium">
+          <Link
+            href="/register"
+            className="text-yellow-600 hover:underline font-medium"
+          >
             أنشئ حساباً جديداً
           </Link>
         </p>
