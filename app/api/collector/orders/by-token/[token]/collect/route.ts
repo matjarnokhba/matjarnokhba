@@ -43,7 +43,11 @@ export async function POST(
           select: {
             id: true,
             fulfillmentItems: {
-              select: { id: true, status: true },
+              select: {
+                id: true,
+                status: true,
+                assignedCollectorId: true,
+              },
             },
           },
         },
@@ -66,9 +70,27 @@ export async function POST(
       );
     }
 
+    // ═══ التحقق: هل الجامع مُسند لهذا الطلب؟ ═══
+    const assignedToOther = allItems.some(
+      (i) =>
+        i.assignedCollectorId !== null &&
+        i.assignedCollectorId !== auth.user.id
+    );
+
+    if (assignedToOther) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "هذا الطلب مُسند لجامع آخر",
+        },
+        { status: 403 }
+      );
+    }
+
     // ═══ idempotent: كل العناصر COLLECTED → مسح مكرر ═══
     const allCollected = allItems.every(
-      (i) => i.status === "COLLECTED" || i.status === "IN_TRANSIT_TO_WAREHOUSE"
+      (i) =>
+        i.status === "COLLECTED" || i.status === "IN_TRANSIT_TO_WAREHOUSE"
     );
 
     if (allCollected) {

@@ -1710,6 +1710,9 @@ model FulfillmentItem {
   preparedAt            DateTime?
   preparedById          Int?
   readyAt               DateTime?
+  assignedCollectorId   Int?
+  assignedAt            DateTime?
+  assignedById          Int?
   collectedAt           DateTime?
   collectedById         Int?
   departedAt            DateTime?
@@ -1735,6 +1738,8 @@ model FulfillmentItem {
   @@index([sellerId, status])
   @@index([deadline])
   @@index([createdAt])
+  @@index([assignedCollectorId])
+  @@index([assignedCollectorId, status])
 }
 
 model FulfillmentStatusHistory {

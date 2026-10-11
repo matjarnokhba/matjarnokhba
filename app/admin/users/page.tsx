@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Users,
   Loader2,
@@ -12,6 +13,10 @@ import {
   ShoppingBag,
   Crown,
   Store,
+  UserPlus,
+  Warehouse,
+  UserCheck,
+  Truck,
 } from "lucide-react";
 
 type User = {
@@ -29,10 +34,21 @@ type Stats = {
   SELLER: number;
   ADMIN: number;
   SUPER_ADMIN: number;
+  COLLECTOR: number;
+  WAREHOUSE_MANAGER: number;
+  DELIVERY: number;
   total: number;
 };
 
-type RoleFilter = "ALL" | "CUSTOMER" | "SELLER" | "ADMIN" | "SUPER_ADMIN";
+type RoleFilter =
+  | "ALL"
+  | "CUSTOMER"
+  | "SELLER"
+  | "ADMIN"
+  | "SUPER_ADMIN"
+  | "COLLECTOR"
+  | "WAREHOUSE_MANAGER"
+  | "DELIVERY";
 
 const ROLE_INFO: Record<
   string,
@@ -62,9 +78,26 @@ const ROLE_INFO: Record<
     bg: "bg-amber-100",
     icon: Crown,
   },
+  COLLECTOR: {
+    label: "جامع",
+    color: "text-purple-700",
+    bg: "bg-purple-100",
+    icon: UserCheck,
+  },
+  WAREHOUSE_MANAGER: {
+    label: "مستودع",
+    color: "text-teal-700",
+    bg: "bg-teal-100",
+    icon: Warehouse,
+  },
+  DELIVERY: {
+    label: "سائق",
+    color: "text-orange-700",
+    bg: "bg-orange-100",
+    icon: Truck,
+  },
 };
 
-// ═══ Fallback آمن ═══
 const DEFAULT_ROLE_INFO = {
   label: "مستخدم",
   color: "text-gray-700",
@@ -79,6 +112,9 @@ export default function AdminUsersPage() {
     SELLER: 0,
     ADMIN: 0,
     SUPER_ADMIN: 0,
+    COLLECTOR: 0,
+    WAREHOUSE_MANAGER: 0,
+    DELIVERY: 0,
     total: 0,
   });
   const [filter, setFilter] = useState<RoleFilter>("ALL");
@@ -110,7 +146,6 @@ export default function AdminUsersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
-  // بحث مع تأخير (debounce)
   useEffect(() => {
     const t = setTimeout(() => {
       if (search !== "") loadData();
@@ -121,15 +156,28 @@ export default function AdminUsersPage() {
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-black text-gray-900">المستخدمون</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          عرض وإدارة جميع مستخدمي المتجر
-        </p>
+      {/* ═══ Header ═══ */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
+            <Users className="h-6 w-6 text-[#ff5c00]" />
+            المستخدمون
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            عرض وإدارة جميع مستخدمي المتجر
+          </p>
+        </div>
+        <Link
+          href="/admin/users/new"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
+        >
+          <UserPlus className="h-4 w-4" />
+          إنشاء موظف
+        </Link>
       </div>
 
       {/* ═══ الإحصائيات ═══ */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <div className="text-2xl font-black text-gray-900">
             {stats.total}
@@ -147,6 +195,24 @@ export default function AdminUsersPage() {
             {stats.SELLER}
           </div>
           <div className="mt-1 text-xs text-gray-500">تجار</div>
+        </div>
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="text-2xl font-black text-purple-700">
+            {stats.COLLECTOR}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">جامعون</div>
+        </div>
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="text-2xl font-black text-teal-700">
+            {stats.WAREHOUSE_MANAGER}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">مستودع</div>
+        </div>
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="text-2xl font-black text-orange-700">
+            {stats.DELIVERY}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">سائقون</div>
         </div>
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <div className="text-2xl font-black text-purple-700">
@@ -179,7 +245,16 @@ export default function AdminUsersPage() {
       {/* ═══ الفلاتر ═══ */}
       <div className="mb-4 flex flex-wrap gap-2">
         {(
-          ["ALL", "CUSTOMER", "SELLER", "ADMIN", "SUPER_ADMIN"] as RoleFilter[]
+          [
+            "ALL",
+            "CUSTOMER",
+            "SELLER",
+            "COLLECTOR",
+            "WAREHOUSE_MANAGER",
+            "DELIVERY",
+            "ADMIN",
+            "SUPER_ADMIN",
+          ] as RoleFilter[]
         ).map((f) => (
           <button
             key={f}
@@ -193,6 +268,9 @@ export default function AdminUsersPage() {
             {f === "ALL" && "الكل"}
             {f === "CUSTOMER" && "العملاء"}
             {f === "SELLER" && "التجار"}
+            {f === "COLLECTOR" && "الجامعون"}
+            {f === "WAREHOUSE_MANAGER" && "المستودع"}
+            {f === "DELIVERY" && "السائقون"}
             {f === "ADMIN" && "المدراء"}
             {f === "SUPER_ADMIN" && "المدير العام"}
           </button>
@@ -224,12 +302,10 @@ export default function AdminUsersPage() {
                 className="rounded-xl bg-white p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-center gap-4">
-                  {/* الأفاتار */}
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-lg font-black text-white">
                     {user.name.charAt(0)}
                   </div>
 
-                  {/* المعلومات */}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-black text-gray-900">

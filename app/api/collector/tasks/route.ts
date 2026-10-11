@@ -27,6 +27,8 @@ export async function GET() {
     // ═══ 1. جلب FulfillmentItems بحالة READY أو COLLECTED أو IN_TRANSIT ═══
     const items = await prisma.fulfillmentItem.findMany({
       where: {
+        // ═══ فقط المهام المُسندة لهذا الجامع ═══
+        assignedCollectorId: auth.user.id,
         status: {
           in: [
             "READY_FOR_COLLECTION",

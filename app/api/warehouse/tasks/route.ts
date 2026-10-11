@@ -28,6 +28,8 @@ export async function GET() {
       where: {
         status: {
           in: [
+            "READY_FOR_COLLECTION",
+            "COLLECTED",
             "IN_TRANSIT_TO_WAREHOUSE",
             "RECEIVED",
             "VERIFIED",
@@ -52,12 +54,13 @@ export async function GET() {
       take: 500,
     });
 
-    // ═══ تجميع حسب Order + الحالة الأدنى ═══
     const priority: Record<string, number> = {
-      IN_TRANSIT_TO_WAREHOUSE: 0,
-      RECEIVED: 1,
-      VERIFIED: 2,
-      AVAILABLE_FOR_SHIPMENT: 3,
+      READY_FOR_COLLECTION: 0,
+      COLLECTED: 1,
+      IN_TRANSIT_TO_WAREHOUSE: 2,
+      RECEIVED: 3,
+      VERIFIED: 4,
+      AVAILABLE_FOR_SHIPMENT: 5,
     };
 
     const grouped = new Map<
@@ -69,6 +72,8 @@ export async function GET() {
         itemsCount: number;
         status: string;
         readyAt: Date | null;
+        assignedCollectorId: number | null;
+        assignedAt: Date | null;
       }
     >();
 
@@ -88,6 +93,8 @@ export async function GET() {
           itemsCount: item.quantity,
           status: item.status,
           readyAt: item.readyAt,
+          assignedCollectorId: item.assignedCollectorId,
+          assignedAt: item.assignedAt,
         });
       } else {
         existing.itemsCount += item.quantity;
@@ -99,6 +106,13 @@ export async function GET() {
 
     const all = Array.from(grouped.values());
 
+    const readyForCollection = all.filter(
+      (t) => t.status === "READY_FOR_COLLECTION"
+    );
+    const assigned = all.filter(
+      (t) =>
+        t.status === "COLLECTED" || t.status === "IN_TRANSIT_TO_WAREHOUSE"
+    );
     const incoming = all.filter(
       (t) => t.status === "IN_TRANSIT_TO_WAREHOUSE"
     );
@@ -110,6 +124,8 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
+      readyForCollection,
+      assigned,
       incoming,
       received,
       ready,
