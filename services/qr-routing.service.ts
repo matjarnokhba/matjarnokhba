@@ -53,19 +53,16 @@ function getSellerActions(order: any): string[] {
 
 function getDeliveryActions(entity: any): string[] {
   const actions: string[] = [];
-  if (entity.status === "DELIVERED" || entity.status === "RETURNED") {
-    return actions;
-  }
-  if (
-    entity.status === "SHIPPED" ||
-    entity.status === "PROCESSING" ||
-    entity.status === "NEW" ||
-    entity.status === "PARTIALLY_DELIVERED"
-  ) {
+
+  // ═══ للأغراض الشحنات (Shipment) فقط ═══
+  // الطلبات الفردية لا يستطيع DELIVERY التصرف عليها مباشرة
+  // التدفق: SHIPPED → Collector → Warehouse → Shipment → DELIVERY
+  if (entity.status === "OUT_FOR_DELIVERY" || entity.status === "PICKED_UP") {
     actions.push("delivered");
     actions.push("postponed");
     actions.push("refused");
   }
+
   return actions;
 }
 

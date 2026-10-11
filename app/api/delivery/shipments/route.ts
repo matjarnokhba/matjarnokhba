@@ -55,29 +55,49 @@ export async function GET(request: Request) {
           select: { id: true, name: true, phone: true },
         },
         items: {
-          select: { orderId: true, quantity: true },
+          select: {
+            orderId: true,
+            quantity: true,
+            order: {
+              select: {
+                shippingAddressSnapshot: true,
+              },
+            },
+          },
         },
       },
       orderBy: { assignedAt: "desc" },
       take: 100,
     });
 
-    const formatted = shipments.map((s) => ({
-      id: s.id,
-      shipmentNumber: s.shipmentNumber,
-      status: s.status,
-      totalCOD: Number(s.totalCOD),
-      totalOrders: s.totalOrders,
-      totalItems: s.items.length,
-      customer: s.customer
-        ? {
-            name: s.customer.name,
-            phone: s.customer.phone,
-          }
-        : null,
-      assignedAt: s.assignedAt,
-      createdAt: s.createdAt,
-    }));
+    const formatted = shipments.map((s) => {
+      // ═══ استخراج المدينة من أول طلب ═══
+      let city: string | null = null;
+      if (s.items.length > 0) {
+        const firstAddress = s.items[0]?.order
+          ?.shippingAddressSnapshot as any;
+        city = firstAddress?.city || null;
+      }
+
+      return {
+        id: s.id,
+        shipmentNumber: s.shipmentNumber,
+        status: s.status,
+        totalCOD: Number(s.totalCOD),
+        totalOrders: s.totalOrders,
+        totalItems: s.items.length,
+        customer: s.customer
+          ? {
+              name: s.customer.name,
+              phone: s.customer.phone,
+            }
+          : null,
+        city,
+        assignedAt: s.assignedAt,
+        completedAt: s.status === "DELIVERED" ? s.updatedAt : null,
+        createdAt: s.createdAt,
+      };
+    });
 
     return NextResponse.json({ success: true, shipments: formatted });
   } catch (error) {
