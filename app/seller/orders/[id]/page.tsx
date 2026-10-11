@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -21,6 +21,8 @@ import {
   DollarSign,
   Printer,
   Shield,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 
 type OrderItem = {
@@ -56,6 +58,7 @@ type Order = {
   sellerPayout: string | null;
   createdAt: string;
   deliveredAt: string | null;
+  deliveryToken: string | null;
   shippingAddressSnapshot: AddressSnapshot | null;
   customerSnapshot: any | null;
   items: OrderItem[];
@@ -71,7 +74,7 @@ type Order = {
 const STATUS_FLOW = [
   { key: "NEW", label: "جديد", icon: Clock },
   { key: "PROCESSING", label: "قيد التجهيز", icon: Package },
-  { key: "SHIPPED", label: "تم الشحن", icon: Truck },
+  { key: "SHIPPED", label: "جاهز/مشحون", icon: Truck },
   { key: "DELIVERED", label: "تم التوصيل", icon: CheckCircle2 },
 ];
 
@@ -123,45 +126,21 @@ const STATUS_INFO: Record<
   },
 };
 
-const NEXT_ACTIONS: Record<
-  string,
-  { next: string; label: string; color: string; icon: any } | null
-> = {
-  NEW: {
-    next: "PROCESSING",
-    label: "قبول وبدء التجهيز",
-    color: "bg-blue-600 hover:bg-blue-700",
-    icon: Package,
-  },
-  PROCESSING: {
-    next: "SHIPPED",
-    label: "تم الشحن",
-    color: "bg-purple-600 hover:bg-purple-700",
-    icon: Truck,
-  },
-  SHIPPED: {
-    next: "DELIVERED",
-    label: "تم التوصيل للعميل",
-    color: "bg-green-600 hover:bg-green-700",
-    icon: CheckCircle2,
-  },
-  DELIVERED: null,
-  CANCELLED: null,
-  RETURNED: null,
-};
-
 const CURRENCY = "د.م";
 
 export default function SellerOrderDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const orderId = params.id as string;
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+
+  // Modals
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   async function loadOrder() {
     try {
@@ -188,13 +167,13 @@ export default function SellerOrderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
-  async function handleChangeStatus(nextStatus: string) {
+  async function handleTransition(nextStatus: string, note?: string) {
     setChanging(true);
     try {
       const res = await fetch(`/api/seller/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus, note }),
       });
       const data = await res.json();
 
@@ -203,7 +182,9 @@ export default function SellerOrderDetailPage() {
         return;
       }
 
-      setShowConfirm(false);
+      setShowApproveModal(false);
+      setShowRejectModal(false);
+      setRejectReason("");
       await loadOrder();
     } catch {
       alert("فشل الاتصال");
@@ -244,7 +225,6 @@ export default function SellerOrderDetailPage() {
   const address = order.shippingAddressSnapshot;
   const isInStore = order.source === "IN_STORE";
   const showPII = isInStore && !!address;
-  const nextAction = NEXT_ACTIONS[order.status];
 
   const sellerPayout = order.sellerPayout
     ? Number(order.sellerPayout)
@@ -285,20 +265,6 @@ export default function SellerOrderDetailPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start">
-            <Link
-              href={`/seller/orders/${orderId}/invoice`}
-              className="flex items-center gap-1.5 rounded-full border border-[#ff5c00] bg-white px-3 py-2 text-xs font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              الفاتورة
-            </Link>
-            <Link
-              href={`/seller/orders/${orderId}/label`}
-              className="flex items-center gap-1.5 rounded-full border border-[#0a1f44] bg-white px-3 py-2 text-xs font-bold text-[#0a1f44] transition hover:bg-[#0a1f44]/5"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              ملصق الشحن
-            </Link>
             <div
               className={`flex items-center gap-2 rounded-full px-4 py-2 ${statusInfo.bg}`}
             >
@@ -360,33 +326,145 @@ export default function SellerOrderDetailPage() {
         </div>
       )}
 
-      {/* ═══ زر الإجراء ═══ */}
-      {nextAction && (
-        <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
-          <button
-            onClick={() => setShowConfirm(true)}
-            disabled={changing}
-            className={`flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white shadow-md transition disabled:opacity-50 ${nextAction.color}`}
-          >
-            <nextAction.icon className="h-4 w-4" />
-            {nextAction.label}
-          </button>
+      {/* ═══ قسم الإجراء (حسب الحالة) ═══ */}
+
+      {/* NEW → قبول / رفض */}
+      {order.status === "NEW" && (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50 p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+              <Clock className="h-5 w-5 text-blue-700" />
+            </div>
+            <div>
+              <div className="text-base font-black text-blue-900">
+                طلب جديد بانتظار قرارك
+              </div>
+              <p className="mt-1 text-xs text-blue-700">
+                راجع المنتجات والكميات، ثم اقبل الطلب لبدء التجهيز أو ارفضه بسبب واضح.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowApproveModal(true)}
+              disabled={changing}
+              className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-green-700 disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-5 w-5" />
+              قبول الطلب
+            </button>
+
+            <button
+              onClick={() => setShowRejectModal(true)}
+              disabled={changing}
+              className="flex items-center justify-center gap-2 rounded-xl bg-red-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
+            >
+              <XCircle className="h-5 w-5" />
+              رفض الطلب
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* PROCESSING → الملصق + الماسح */}
+      {order.status === "PROCESSING" && (
+        <>
+          <div className="mt-4 rounded-2xl border-2 border-[#ff5c00] bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <QrCode className="h-5 w-5 text-[#ff5c00]" />
+              <h2 className="text-base font-black">ملصق الطلبية</h2>
+            </div>
+
+            <p className="mb-4 text-xs text-gray-600">
+              اطبع الملصق وضعه على الطرد. يحتوي على رمز QR المرتبط بالطلبية.
+            </p>
+
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-[#fff4ed] px-4 py-3">
+              <span className="text-xs font-bold text-gray-700">
+                المبلغ المطلوب من العميل
+              </span>
+              <span className="text-lg font-black text-[#ff5c00]">
+                {Number(order.total).toFixed(2)} {CURRENCY}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Link
+                href={`/seller/orders/${orderId}/label`}
+                className="flex items-center justify-center gap-2 rounded-xl border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+              >
+                <Printer className="h-4 w-4" />
+                طباعة الملصق
+              </Link>
+
+              <Link
+                href={`/seller/orders/${orderId}/invoice`}
+                className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+              >
+                <Printer className="h-4 w-4" />
+                الفاتورة
+              </Link>
+            </div>
+          </div>
+
+          {/* زر الماسح */}
+          <div className="mt-4 rounded-2xl border-2 border-dashed border-purple-300 bg-purple-50 p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
+                <ScanLine className="h-5 w-5 text-purple-700" />
+              </div>
+              <div>
+                <div className="text-base font-black text-purple-900">
+                  عند اكتمال التجهيز
+                </div>
+                <p className="mt-1 text-xs text-purple-700">
+                  امسح ملصق الطلبية لإبلاغ النظام بأنها جاهزة للشحن.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href={`/seller/scanner?orderToken=${order.deliveryToken || ""}&orderId=${orderId}`}
+              className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-purple-700"
+            >
+              <ScanLine className="h-5 w-5" />
+              فتح الماسح لإكمال التجهيز
+            </Link>
+          </div>
+        </>
+      )}
+
+      {/* SHIPPED → بانتظار الجامع */}
+      {order.status === "SHIPPED" && (
+        <div className="mt-4 rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+              <Truck className="h-5 w-5 text-indigo-700" />
+            </div>
+            <div>
+              <div className="text-base font-black text-indigo-900">
+                بانتظار جمع الطرد
+              </div>
+              <p className="mt-1 text-xs text-indigo-700">
+                تم تجهيز طلبك. سيأتي مسؤول الجمع المعيّن من المستودع لاستلامه.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
       {/* ═══ أرباحك ═══ */}
       {order.status === "DELIVERED" && (
         <div className="mt-4 rounded-2xl bg-gradient-to-l from-green-500 to-emerald-500 p-5 text-white shadow-md">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
-                <DollarSign className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-xs opacity-90">أرباحك من هذا الطلب</div>
-                <div className="text-2xl font-black">
-                  {sellerPayout.toFixed(2)} {CURRENCY}
-                </div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
+              <DollarSign className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs opacity-90">أرباحك من هذا الطلب</div>
+              <div className="text-2xl font-black">
+                {sellerPayout.toFixed(2)} {CURRENCY}
               </div>
             </div>
           </div>
@@ -449,7 +527,7 @@ export default function SellerOrderDetailPage() {
         </div>
       </div>
 
-      {/* ═══ بيانات العميل / الشحن ═══ */}
+      {/* ═══ بيانات العميل ═══ */}
       {showPII && address ? (
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
@@ -484,8 +562,8 @@ export default function SellerOrderDetailPage() {
                 بيانات العميل محمية
               </div>
               <p className="mt-1 text-xs text-blue-800">
-                لأسباب أمنية وخصوصية، لا تتوفر بيانات الشحن الإلكترونية للتاجر.
-                تُعرض فقط للطلبات المُسجَّلة في المتجر.
+                لأسباب أمنية وخصوصية، لا تتوفر بيانات الشحن الإلكترونية
+                للتاجر. تُعرض فقط للطلبات المُسجَّلة في المتجر.
               </p>
             </div>
           </div>
@@ -575,35 +653,101 @@ export default function SellerOrderDetailPage() {
         </div>
       )}
 
-      {/* ═══ Modal تأكيد ═══ */}
-      {showConfirm && nextAction && (
+      {/* ═══ Modal: قبول ═══ */}
+      {showApproveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
-            <div
-              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${statusInfo.bg}`}
-            >
-              <nextAction.icon className={`h-7 w-7 ${statusInfo.color}`} />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle2 className="h-7 w-7 text-green-600" />
             </div>
-            <h3 className="mt-4 text-lg font-black">تأكيد التحديث</h3>
+            <h3 className="mt-4 text-lg font-black">تأكيد قبول الطلب</h3>
             <p className="mt-2 text-sm text-gray-600">
-              سيتم تحديث حالة الطلب إلى: <strong>{nextAction.label}</strong>
+              سيتم تحويل الطلب إلى <strong>قيد التجهيز</strong>، وسيظهر لك
+              الملصق والماسح.
             </p>
 
             <div className="mt-6 flex gap-2">
               <button
-                onClick={() => handleChangeStatus(nextAction.next)}
+                onClick={() => handleTransition("PROCESSING")}
                 disabled={changing}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white transition disabled:opacity-50 ${nextAction.color}`}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-600 py-2.5 text-sm font-bold text-white transition hover:bg-green-700 disabled:opacity-50"
               >
                 {changing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <CheckCircle2 className="h-4 w-4" />
                 )}
-                نعم، حدّث
+                نعم، اقبل
               </button>
               <button
-                onClick={() => setShowConfirm(false)}
+                onClick={() => setShowApproveModal(false)}
+                disabled={changing}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modal: رفض ═══ */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-black text-red-700">
+                رفض الطلب
+              </h3>
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason("");
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-800">
+              ⚠️ سيُلغى الطلب وتُرجع الكميات إلى المخزون، وسيُبلّغ العميل
+              بالسبب.
+            </div>
+
+            <label className="mb-2 block text-xs font-bold text-gray-700">
+              سبب الرفض (إجباري)
+            </label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+              placeholder="مثال: المنتج غير متوفر، العميل خارج التغطية، إلخ."
+              className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:bg-white"
+              autoFocus
+            />
+            <div className="mt-1 text-[10px] text-gray-500">
+              {rejectReason.trim().length} / 5 حرفًا على الأقل
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => handleTransition("CANCELLED", rejectReason)}
+                disabled={changing || rejectReason.trim().length < 5}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                {changing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                تأكيد الرفض
+              </button>
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason("");
+                }}
                 disabled={changing}
                 className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
               >
