@@ -110,13 +110,40 @@ function ScannerContent() {
   const scannerRef = useRef<any>(null);
   const scannerDivId = "qr-reader";
 
-  // ═══ Auto-scan on mount if orderToken given ═══
+  // ═══ لا تنفيذ تلقائي — فقط عرض ملخص الطلب (بدون إجراء) ═══
+  const [orderSummary, setOrderSummary] = useState<{
+    id: number;
+    orderNumber: string;
+    itemsCount: number;
+    total: string;
+  } | null>(null);
+
   useEffect(() => {
-    if (initialOrderToken && mode === "order" && !orderResult) {
-      handleOrderToken(initialOrderToken);
+    if (!initialOrderId) return;
+
+    let cancelled = false;
+    async function loadSummary() {
+      try {
+        const res = await fetch(`/api/seller/orders/${initialOrderId}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data.success && data.order) {
+          setOrderSummary({
+            id: data.order.id,
+            orderNumber: data.order.orderNumber,
+            itemsCount: data.order.items?.length ?? 0,
+            total: data.order.total,
+          });
+        }
+      } catch {
+        // silent — summary is optional
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialOrderToken]);
+    loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialOrderId]);
 
   // ═══ Cleanup on unmount ═══
   useEffect(() => {
@@ -603,6 +630,32 @@ function ScannerContent() {
       {/* ═══ ORDER MODE UI ═══ */}
       {mode === "order" && !orderResult && (
         <div className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-sm">
+          {/* ═══ Order Summary (if navigated from order page) ═══ */}
+          {orderSummary && (
+            <div className="mb-4 rounded-xl border-2 border-[#ff5c00] bg-[#fff4ed] p-4">
+              <div className="text-xs font-bold text-gray-700">
+                الطلب الذي ستُجهّزه
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-mono text-lg font-black text-[#ff5c00]">
+                    {orderSummary.orderNumber}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-gray-600">
+                    {orderSummary.itemsCount} منتج —{" "}
+                    {Number(orderSummary.total).toFixed(2)} د.م
+                  </div>
+                </div>
+                <Link
+                  href={`/seller/orders/${orderSummary.id}`}
+                  className="text-[11px] font-bold text-[#ff5c00] underline"
+                >
+                  عرض
+                </Link>
+              </div>
+            </div>
+          )}
+
           <div className="mb-5 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50 p-4">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
@@ -613,7 +666,8 @@ function ScannerContent() {
                   امسح ملصق الطلبية
                 </div>
                 <p className="mt-1 text-xs text-purple-700">
-                  امسح QR الموجود على ملصق الطرد لإبلاغ النظام بأنه جاهز للشحن.
+                  امسح QR الموجود على ملصق الطرد المطبوع لإبلاغ النظام بأنه
+                  جاهز للشحن.
                 </p>
               </div>
             </div>
