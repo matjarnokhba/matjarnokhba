@@ -110,13 +110,7 @@ function ViewHeader({
 }
 
 // ═══ Order Card ═══
-function OrderCard({
-  order,
-  showPII,
-}: {
-  order: any;
-  showPII: boolean;
-}) {
+function OrderCard({ order, showPII }: { order: any; showPII: boolean }) {
   const customer = order.customerSnapshot || {};
   const address = order.shippingAddressSnapshot || {};
 
@@ -239,7 +233,7 @@ function ActionButton({
 }
 
 // ═══════════════════════════════════════════
-// Collector View — with actions
+// Collector View
 // ═══════════════════════════════════════════
 function CollectorView({ order }: { order: any }) {
   const [submitting, setSubmitting] = useState(false);
@@ -248,7 +242,6 @@ function CollectorView({ order }: { order: any }) {
     text: string;
   } | null>(null);
 
-  // ═══ استخراج كل fulfillmentItems ═══
   const allItems: any[] = (order.items || []).flatMap(
     (i: any) => i.fulfillmentItems || []
   );
@@ -262,7 +255,6 @@ function CollectorView({ order }: { order: any }) {
     (i) => i.status === "IN_TRANSIT_TO_WAREHOUSE"
   ).length;
 
-  // ═══ تحديد الإجراء المتاح ═══
   let action: "collect" | "arrive" | "wait" | "done" = "wait";
 
   if (totalItems > 0) {
@@ -330,7 +322,6 @@ function CollectorView({ order }: { order: any }) {
 
       <OrderCard order={order} showPII={false} />
 
-      {/* ═══ حالة العناصر ═══ */}
       <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
         <h3 className="mb-3 text-sm font-black text-gray-700">
           حالة العناصر ({totalItems})
@@ -363,7 +354,6 @@ function CollectorView({ order }: { order: any }) {
         </div>
       </div>
 
-      {/* ═══ رسالة ═══ */}
       {message && (
         <div
           className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
@@ -378,7 +368,6 @@ function CollectorView({ order }: { order: any }) {
         </div>
       )}
 
-      {/* ═══ الإجراء ═══ */}
       {action === "collect" && (
         <div className="mt-4 rounded-2xl border-2 border-dashed border-purple-300 bg-purple-50 p-5">
           <div className="mb-4 text-center text-sm font-black text-purple-900">
@@ -433,6 +422,199 @@ function CollectorView({ order }: { order: any }) {
       {action === "wait" && (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-800">
           ⏳ بعض العناصر لم تُجهَّز بعد — تواصل مع التاجر
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Warehouse View — with actions
+// ═══════════════════════════════════════════
+function WarehouseOrderView({ order }: { order: any }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
+
+  const allItems: any[] = (order.items || []).flatMap(
+    (i: any) => i.fulfillmentItems || []
+  );
+
+  const totalItems = allItems.length;
+  const inTransitCount = allItems.filter(
+    (i) => i.status === "IN_TRANSIT_TO_WAREHOUSE"
+  ).length;
+  const receivedCount = allItems.filter((i) => i.status === "RECEIVED").length;
+  const verifiedCount = allItems.filter(
+    (i) => i.status === "VERIFIED" || i.status === "AVAILABLE_FOR_SHIPMENT"
+  ).length;
+
+  let action: "receive" | "verify" | "wait" | "done" = "wait";
+
+  if (totalItems > 0) {
+    if (verifiedCount === totalItems) {
+      action = "done";
+    } else if (receivedCount === totalItems) {
+      action = "verify";
+    } else if (inTransitCount === totalItems) {
+      action = "receive";
+    } else {
+      action = "wait";
+    }
+  }
+
+  async function handleAction(endpoint: "receive" | "verify") {
+    setSubmitting(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(
+        `/api/warehouse/orders/by-token/${order.deliveryToken}/${endpoint}`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setMessage({
+          type: "error",
+          text: data.message || "فشل التنفيذ",
+        });
+        return;
+      }
+
+      if (data.alreadyReceived || data.alreadyVerified) {
+        setMessage({ type: "info", text: "تم تنفيذ هذا الإجراء مسبقًا" });
+      } else {
+        setMessage({
+          type: "success",
+          text:
+            endpoint === "receive"
+              ? "✅ تم تسجيل استلام الطرد في المستودع"
+              : "✅ تم فحص الطرد بنجاح",
+        });
+      }
+
+      setTimeout(() => window.location.reload(), 1500);
+    } catch {
+      setMessage({ type: "error", text: "فشل الاتصال" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl p-4 pt-16 lg:p-8 lg:pt-8">
+      <ViewHeader
+        title="عملية مستودع"
+        subtitle="استلام وفحص الطرد"
+        color="linear-gradient(135deg, #0f766e, #115e59)"
+        icon={Warehouse}
+      />
+
+      <OrderCard order={order} showPII={false} />
+
+      <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+        <h3 className="mb-3 text-sm font-black text-gray-700">
+          حالة العناصر ({totalItems})
+        </h3>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-lg bg-blue-50 p-3">
+            <div className="text-2xl font-black text-blue-700">
+              {inTransitCount}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-blue-700">
+              في الطريق
+            </div>
+          </div>
+          <div className="rounded-lg bg-amber-50 p-3">
+            <div className="text-2xl font-black text-amber-700">
+              {receivedCount}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-amber-700">
+              بانتظار الفحص
+            </div>
+          </div>
+          <div className="rounded-lg bg-green-50 p-3">
+            <div className="text-2xl font-black text-green-700">
+              {verifiedCount}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-green-700">
+              تم الفحص
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {message && (
+        <div
+          className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
+            message.type === "success"
+              ? "bg-green-50 text-green-700"
+              : message.type === "error"
+                ? "bg-red-50 text-red-700"
+                : "bg-blue-50 text-blue-700"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      {action === "receive" && (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50 p-5">
+          <div className="mb-4 text-center text-sm font-black text-teal-900">
+            هل وصل الطرد إلى المستودع فعليًا؟
+          </div>
+          <button
+            onClick={() => handleAction("receive")}
+            disabled={submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50"
+          >
+            {submitting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Check className="h-5 w-5" />
+            )}
+            نعم — استلمت الطرد
+          </button>
+        </div>
+      )}
+
+      {action === "verify" && (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-5">
+          <div className="mb-4 text-center text-sm font-black text-amber-900">
+            تم فحص المنتجات؟ الحالة سليمة؟
+          </div>
+          <button
+            onClick={() => handleAction("verify")}
+            disabled={submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-50"
+          >
+            {submitting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Check className="h-5 w-5" />
+            )}
+            نعم — تم الفحص
+          </button>
+        </div>
+      )}
+
+      {action === "done" && (
+        <div className="mt-4 rounded-2xl border-2 border-green-200 bg-green-50 p-5 text-center">
+          <div className="text-base font-black text-green-900">
+            ✅ الطرد جاهز للشحن
+          </div>
+          <p className="mt-1 text-xs text-green-700">
+            بانتظار تجميع في شحنة (Phase C)
+          </p>
+        </div>
+      )}
+
+      {action === "wait" && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-800">
+          ⏳ بانتظار اكتمال وصول كل العناصر
         </div>
       )}
     </div>
@@ -537,32 +719,25 @@ export default function OrderQRView({ result }: { result: QRRouteResult }) {
   }
 
   // ═══ Warehouse Manager ═══
-  if (view === "warehouse_manager" && (order || result.shipment)) {
-    const entity = order || result.shipment;
+  if (view === "warehouse_manager" && order) {
+    return <WarehouseOrderView order={order} />;
+  }
+
+  if (view === "warehouse_manager" && result.shipment) {
+    const entity = result.shipment;
     return (
       <div className="mx-auto max-w-2xl p-4 pt-16 lg:p-8 lg:pt-8">
         <ViewHeader
-          title="عملية مستودع"
-          subtitle="بيانات للفرز والتجميع"
+          title="شحنة"
+          subtitle="تفاصيل الشحنة المجمّعة"
           color="linear-gradient(135deg, #0f766e, #115e59)"
           icon={Warehouse}
         />
-
-        {order ? (
-          <OrderCard order={order} showPII={false} />
-        ) : (
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <div className="text-base font-black">
-              شحنة {entity.shipmentNumber}
-            </div>
-            <div className="mt-2 text-xs text-gray-600">
-              الحالة: {statusLabel(entity.status)}
-            </div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="text-base font-black">{entity.shipmentNumber}</div>
+          <div className="mt-2 text-xs text-gray-600">
+            الحالة: {statusLabel(entity.status)}
           </div>
-        )}
-
-        <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 p-4 text-xs text-teal-800">
-          ⚠️ إجراءات الاستلام والفرز ستُفعَّل في المرحلة B.3.
         </div>
       </div>
     );
