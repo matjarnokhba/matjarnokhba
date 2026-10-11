@@ -1,0 +1,408 @@
+import { prisma } from "@/lib/prisma";
+import { AccessPolicyService } from "./access-policy.service";
+
+export type QRRoutingView =
+  | "guest"
+  | "customer_owner"
+  | "customer_other"
+  | "seller"
+  | "collector"
+  | "warehouse_manager"
+  | "delivery_assigned"
+  | "delivery_other"
+  | "admin";
+
+export type QRRouteResult = {
+  view: QRRoutingView;
+  redirect?: string;
+  order?: any;
+  shipment?: any;
+  actions: string[];
+};
+
+type CurrentUser = {
+  id: number;
+  name: string;
+  role: string;
+  seller?: { id: number; slug: string } | null;
+};
+
+type CurrentSession = {
+  user: CurrentUser;
+} | null;
+
+function getCustomerActions(order: any): string[] {
+  const actions: string[] = [];
+  if (order.status === "DELIVERED") {
+    actions.push("review");
+    actions.push("return");
+  }
+  if (order.status === "NEW" || order.status === "PROCESSING") {
+    actions.push("cancel");
+  }
+  return actions;
+}
+
+function getSellerActions(order: any): string[] {
+  const actions: string[] = [];
+  if (order.source === "IN_STORE") {
+    actions.push("view_invoice");
+  }
+  return actions;
+}
+
+function getDeliveryActions(entity: any): string[] {
+  const actions: string[] = [];
+  if (entity.status === "DELIVERED" || entity.status === "RETURNED") {
+    return actions;
+  }
+  if (
+    entity.status === "SHIPPED" ||
+    entity.status === "PROCESSING" ||
+    entity.status === "NEW" ||
+    entity.status === "PARTIALLY_DELIVERED"
+  ) {
+    actions.push("delivered");
+    actions.push("postponed");
+    actions.push("refused");
+  }
+  return actions;
+}
+
+function getCollectorActions(_order: any): string[] {
+  return ["view_fulfillment"];
+}
+
+function getWarehouseActions(_order: any): string[] {
+  return ["view_fulfillment", "view_shipment"];
+}
+
+function getAdminActions(_order: any): string[] {
+  return ["view_admin", "change_status"];
+}
+
+export const QRRoutingService = {
+  async resolveOrderToken(
+    token: string,
+    current: CurrentSession
+  ): Promise<QRRouteResult> {
+    if (!current) {
+      return {
+        view: "guest",
+        redirect: "/login?redirect=/d/" + encodeURIComponent(token),
+        actions: [],
+      };
+    }
+
+    const order = await prisma.order.findFirst({
+      where: { deliveryToken: token },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: { id: true, sellerId: true, name: true },
+            },
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        },
+        deliveryPerson: {
+          include: {
+            user: { select: { id: true, name: true, phone: true } },
+          },
+        },
+        shipmentItems: {
+          select: {
+            id: true,
+            shipmentId: true,
+            quantity: true,
+            shipment: {
+              select: {
+                id: true,
+                shipmentNumber: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return {
+        view: "guest",
+        redirect: "/",
+        actions: [],
+      };
+    }
+
+    if (
+      current.user.role === "ADMIN" ||
+      current.user.role === "SUPER_ADMIN"
+    ) {
+      return {
+        view: "admin",
+        order,
+        actions: getAdminActions(order),
+      };
+    }
+
+    if (current.user.role === "CUSTOMER") {
+      if (order.userId === current.user.id) {
+        return {
+          view: "customer_owner",
+          order,
+          actions: getCustomerActions(order),
+        };
+      }
+      return {
+        view: "customer_other",
+        redirect: "/",
+        actions: [],
+      };
+    }
+
+    if (current.user.role === "SELLER") {
+      if (!current.user.seller) {
+        return {
+          view: "customer_other",
+          redirect: "/",
+          actions: [],
+        };
+      }
+
+      const sellerId = current.user.seller.id;
+
+      const hasItems = order.items.some(
+        (item) => item.sellerId === sellerId
+      );
+
+      if (!hasItems) {
+        return {
+          view: "customer_other",
+          redirect: "/seller",
+          actions: [],
+        };
+      }
+
+      const access = await AccessPolicyService.canAccessOrder(
+        current.user,
+        order.id
+      );
+
+      const filtered = AccessPolicyService.filterOrderData(order, access);
+
+      return {
+        view: "seller",
+        order: filtered,
+        actions: getSellerActions(order),
+      };
+    }
+
+    if (current.user.role === "DELIVERY") {
+      const person = await prisma.deliveryPerson.findUnique({
+        where: { userId: current.user.id },
+        select: { id: true, status: true, deletedAt: true },
+      });
+
+      if (!person || person.deletedAt || person.status !== "ACTIVE") {
+        return {
+          view: "delivery_other",
+          redirect: "/",
+          actions: [],
+        };
+      }
+
+      if (order.deliveryPersonId === person.id) {
+        return {
+          view: "delivery_assigned",
+          order,
+          actions: getDeliveryActions(order),
+        };
+      }
+
+      return {
+        view: "delivery_other",
+        redirect: "/delivery",
+        actions: [],
+      };
+    }
+
+    if (current.user.role === "COLLECTOR") {
+      return {
+        view: "collector",
+        order,
+        actions: getCollectorActions(order),
+      };
+    }
+
+    if (current.user.role === "WAREHOUSE_MANAGER") {
+      return {
+        view: "warehouse_manager",
+        order,
+        actions: getWarehouseActions(order),
+      };
+    }
+
+    return {
+      view: "guest",
+      redirect: "/",
+      actions: [],
+    };
+  },
+
+  async resolveShipmentToken(
+    token: string,
+    current: CurrentSession
+  ): Promise<QRRouteResult> {
+    if (!current) {
+      return {
+        view: "guest",
+        redirect: "/login?redirect=/sd/" + encodeURIComponent(token),
+        actions: [],
+      };
+    }
+
+    const { ShipmentQRService } = await import("./shipment-qr.service");
+    const shipment = await ShipmentQRService.findByToken(token);
+
+    if (!shipment) {
+      return {
+        view: "guest",
+        redirect: "/",
+        actions: [],
+      };
+    }
+
+    if (
+      current.user.role === "ADMIN" ||
+      current.user.role === "SUPER_ADMIN"
+    ) {
+      return {
+        view: "admin",
+        shipment,
+        actions: ["view_admin"],
+      };
+    }
+
+    if (current.user.role === "DELIVERY") {
+      const person = await prisma.deliveryPerson.findUnique({
+        where: { userId: current.user.id },
+        select: { id: true, status: true, deletedAt: true },
+      });
+
+      if (!person || person.deletedAt || person.status !== "ACTIVE") {
+        return {
+          view: "delivery_other",
+          redirect: "/",
+          actions: [],
+        };
+      }
+
+      const assignment = await prisma.deliveryAssignment.findFirst({
+        where: {
+          shipmentId: shipment.id,
+          deliveryPersonId: person.id,
+          status: {
+            in: ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"],
+          },
+        },
+        select: { id: true },
+      });
+
+      if (assignment || shipment.deliveryPersonId === person.id) {
+        return {
+          view: "delivery_assigned",
+          shipment,
+          actions: getDeliveryActions(shipment),
+        };
+      }
+
+      return {
+        view: "delivery_other",
+        redirect: "/delivery",
+        actions: [],
+      };
+    }
+
+    if (current.user.role === "CUSTOMER") {
+      const ownedOrder = await prisma.order.findFirst({
+        where: {
+          userId: current.user.id,
+          shipmentItems: {
+            some: { shipmentId: shipment.id },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (ownedOrder) {
+        return {
+          view: "customer_owner",
+          shipment,
+          actions: [],
+        };
+      }
+
+      return {
+        view: "customer_other",
+        redirect: "/",
+        actions: [],
+      };
+    }
+
+    if (current.user.role === "WAREHOUSE_MANAGER") {
+      return {
+        view: "warehouse_manager",
+        shipment,
+        actions: ["view_shipment"],
+      };
+    }
+
+    if (current.user.role === "SELLER") {
+      if (!current.user.seller) {
+        return {
+          view: "customer_other",
+          redirect: "/",
+          actions: [],
+        };
+      }
+
+      const sellerId = current.user.seller.id;
+
+      const hasItems = shipment.items.some(
+        (item) => item.sellerId === sellerId
+      );
+
+      if (!hasItems) {
+        return {
+          view: "customer_other",
+          redirect: "/seller",
+          actions: [],
+        };
+      }
+
+      return {
+        view: "seller",
+        shipment,
+        actions: [],
+      };
+    }
+
+    if (current.user.role === "COLLECTOR") {
+      return {
+        view: "collector",
+        shipment,
+        actions: [],
+      };
+    }
+
+    return {
+      view: "guest",
+      redirect: "/",
+      actions: [],
+    };
+  },
+};

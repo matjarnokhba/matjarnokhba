@@ -35,6 +35,12 @@ export const PERMISSIONS = {
   MANAGE_DELIVERY_PERSONS: "MANAGE_DELIVERY_PERSONS",
   EXECUTE_DELIVERY: "EXECUTE_DELIVERY",
 
+  // ═══ الإرجاع (Returns) — جديد ═══
+  VIEW_RETURNS: "VIEW_RETURNS",
+  MANAGE_RETURNS: "MANAGE_RETURNS",
+  RETURN_TO_SELLER: "RETURN_TO_SELLER",
+  CONFIRM_SELLER_RECEIPT: "CONFIRM_SELLER_RECEIPT",
+
   // ═══ البائعون ═══
   MANAGE_SELLERS: "MANAGE_SELLERS",
   VIEW_SELLER_FINANCIALS: "VIEW_SELLER_FINANCIALS",
@@ -185,6 +191,32 @@ export const DEFAULT_PERMISSIONS: Array<{
     category: "DELIVERY",
   },
 
+  // ═══ الإرجاع — جديد ═══
+  {
+    key: PERMISSIONS.VIEW_RETURNS,
+    name: "عرض الإرجاعات",
+    description: "رؤية طلبات الإرجاع وحالاتها",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.MANAGE_RETURNS,
+    name: "إدارة الإرجاعات",
+    description: "الموافقة/الرفض/إكمال الإرجاعات",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.RETURN_TO_SELLER,
+    name: "إرجاع المنتجات إلى التاجر",
+    description: "تعيين سائق لإعادة المنتجات المُرجعة إلى التاجر الأصلي",
+    category: "SHIPMENT",
+  },
+  {
+    key: PERMISSIONS.CONFIRM_SELLER_RECEIPT,
+    name: "تأكيد استلام التاجر للمرتجع",
+    description: "تمكين التاجر من تأكيد استلام المنتجات المُرجعة",
+    category: "SELLER",
+  },
+
   // ═══ البائعون ═══
   {
     key: PERMISSIONS.MANAGE_SELLERS,
@@ -250,7 +282,43 @@ export const PermissionService = {
       return true;
     }
 
-    // باقي الأدوار
+    // ═══ الأدوار الثابتة (COLLECTOR / WAREHOUSE_MANAGER) ═══
+    if (user.role === "COLLECTOR") {
+      const COLLECTOR_PERMISSIONS = [
+        PERMISSIONS.EXECUTE_COLLECTION,
+        PERMISSIONS.VIEW_COLLECTIONS,
+        PERMISSIONS.VIEW_FULFILLMENTS,
+      ];
+      return COLLECTOR_PERMISSIONS.includes(
+        permissionKey as (typeof COLLECTOR_PERMISSIONS)[number]
+      );
+    }
+
+    if (user.role === "WAREHOUSE_MANAGER") {
+      const WAREHOUSE_PERMISSIONS = [
+        PERMISSIONS.VIEW_WAREHOUSE,
+        PERMISSIONS.RECEIVE_WAREHOUSE,
+        PERMISSIONS.VERIFY_WAREHOUSE,
+        PERMISSIONS.VIEW_COLLECTIONS,
+        PERMISSIONS.ASSIGN_COLLECTION,
+        PERMISSIONS.VIEW_CONSOLIDATED_ORDERS,
+        PERMISSIONS.MAKE_GROUPING_DECISION,
+        PERMISSIONS.CREATE_SHIPMENT,
+        PERMISSIONS.MANAGE_SHIPMENT_ITEMS,
+        PERMISSIONS.PRINT_SHIPMENT_LABEL,
+        PERMISSIONS.ASSIGN_DELIVERY,
+        PERMISSIONS.VIEW_FULFILLMENTS,
+        PERMISSIONS.MANAGE_FULFILLMENTS,
+        PERMISSIONS.VIEW_RETURNS,
+        PERMISSIONS.MANAGE_RETURNS,
+        PERMISSIONS.RETURN_TO_SELLER,
+      ];
+      return WAREHOUSE_PERMISSIONS.includes(
+        permissionKey as (typeof WAREHOUSE_PERMISSIONS)[number]
+      );
+    }
+
+    // باقي الأدوار → عبر UserPermission
     const userPerm = await prisma.userPermission.findFirst({
       where: {
         userId,
@@ -306,6 +374,35 @@ export const PermissionService = {
         select: { key: true },
       });
       return all.map((p) => p.key);
+    }
+
+    if (user.role === "COLLECTOR") {
+      return [
+        PERMISSIONS.EXECUTE_COLLECTION,
+        PERMISSIONS.VIEW_COLLECTIONS,
+        PERMISSIONS.VIEW_FULFILLMENTS,
+      ];
+    }
+
+    if (user.role === "WAREHOUSE_MANAGER") {
+      return [
+        PERMISSIONS.VIEW_WAREHOUSE,
+        PERMISSIONS.RECEIVE_WAREHOUSE,
+        PERMISSIONS.VERIFY_WAREHOUSE,
+        PERMISSIONS.VIEW_COLLECTIONS,
+        PERMISSIONS.ASSIGN_COLLECTION,
+        PERMISSIONS.VIEW_CONSOLIDATED_ORDERS,
+        PERMISSIONS.MAKE_GROUPING_DECISION,
+        PERMISSIONS.CREATE_SHIPMENT,
+        PERMISSIONS.MANAGE_SHIPMENT_ITEMS,
+        PERMISSIONS.PRINT_SHIPMENT_LABEL,
+        PERMISSIONS.ASSIGN_DELIVERY,
+        PERMISSIONS.VIEW_FULFILLMENTS,
+        PERMISSIONS.MANAGE_FULFILLMENTS,
+        PERMISSIONS.VIEW_RETURNS,
+        PERMISSIONS.MANAGE_RETURNS,
+        PERMISSIONS.RETURN_TO_SELLER,
+      ];
     }
 
     const userPerms = await prisma.userPermission.findMany({
@@ -399,7 +496,6 @@ export const PermissionService = {
         });
         created++;
       } else {
-        // نُحدّث الوصف/الاسم إن تغيّرا
         if (
           existing.name !== perm.name ||
           existing.description !== perm.description ||
