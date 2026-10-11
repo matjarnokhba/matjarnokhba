@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   DollarSign,
   Printer,
+  Shield,
 } from "lucide-react";
 
 type OrderItem = {
@@ -45,6 +46,7 @@ type Order = {
   id: number;
   orderNumber: string;
   status: string;
+  source: string;
   paymentMethod: string;
   paymentStatus: string;
   subtotal: string;
@@ -54,7 +56,8 @@ type Order = {
   sellerPayout: string | null;
   createdAt: string;
   deliveredAt: string | null;
-  shippingAddressSnapshot: AddressSnapshot;
+  shippingAddressSnapshot: AddressSnapshot | null;
+  customerSnapshot: any | null;
   items: OrderItem[];
   statusHistory: {
     id: number;
@@ -94,6 +97,12 @@ const STATUS_INFO: Record<
     bg: "bg-purple-50",
     icon: Truck,
   },
+  PARTIALLY_DELIVERED: {
+    label: "تسليم جزئي",
+    color: "text-indigo-700",
+    bg: "bg-indigo-50",
+    icon: Truck,
+  },
   DELIVERED: {
     label: "تم التوصيل",
     color: "text-green-700",
@@ -114,7 +123,6 @@ const STATUS_INFO: Record<
   },
 };
 
-// ═══ التغييرات المسموحة للتاجر ═══
 const NEXT_ACTIONS: Record<
   string,
   { next: string; label: string; color: string; icon: any } | null
@@ -204,7 +212,6 @@ export default function SellerOrderDetailPage() {
     }
   }
 
-  // ═══ التحميل ═══
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -213,7 +220,6 @@ export default function SellerOrderDetailPage() {
     );
   }
 
-  // ═══ خطأ ═══
   if (error || !order) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
@@ -236,6 +242,8 @@ export default function SellerOrderDetailPage() {
   );
   const currentStepIndex = STATUS_FLOW.findIndex((s) => s.key === order.status);
   const address = order.shippingAddressSnapshot;
+  const isInStore = order.source === "IN_STORE";
+  const showPII = isInStore && !!address;
   const nextAction = NEXT_ACTIONS[order.status];
 
   const sellerPayout = order.sellerPayout
@@ -260,14 +268,19 @@ export default function SellerOrderDetailPage() {
             <div className="mt-1 font-mono text-xl font-black text-gray-900">
               {order.orderNumber}
             </div>
-            <div className="mt-1 text-xs text-gray-500">
-              {new Date(order.createdAt).toLocaleDateString("ar-MA", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+            <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+              <span>
+                {new Date(order.createdAt).toLocaleDateString("ar-MA", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                {isInStore ? "بيع في المتجر" : "طلب إلكتروني"}
+              </span>
             </div>
           </div>
 
@@ -436,31 +449,48 @@ export default function SellerOrderDetailPage() {
         </div>
       </div>
 
-      {/* ═══ العنوان ═══ */}
-      <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="mb-4 flex items-center gap-2 text-base font-black">
-          <MapPin className="h-4 w-4 text-[#ff5c00]" />
-          عنوان الشحن
-        </h2>
+      {/* ═══ بيانات العميل / الشحن ═══ */}
+      {showPII && address ? (
+        <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-black">
+            <MapPin className="h-4 w-4 text-[#ff5c00]" />
+            بيانات العميل
+          </h2>
 
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-gray-400" />
-            <span className="font-bold">{address.fullName}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Phone className="h-4 w-4 text-gray-400" />
-            <span dir="ltr">{address.phone}</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <Home className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-            <span>
-              {address.street}، {address.city}
-              {address.postalCode && ` - ${address.postalCode}`}
-            </span>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-gray-400" />
+              <span className="font-bold">{address.fullName}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Phone className="h-4 w-4 text-gray-400" />
+              <span dir="ltr">{address.phone}</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Home className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <span>
+                {address.street}، {address.city}
+                {address.postalCode && ` - ${address.postalCode}`}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-5">
+          <div className="flex items-start gap-3">
+            <Shield className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+            <div>
+              <div className="text-sm font-black text-blue-900">
+                بيانات العميل محمية
+              </div>
+              <p className="mt-1 text-xs text-blue-800">
+                لأسباب أمنية وخصوصية، لا تتوفر بيانات الشحن الإلكترونية للتاجر.
+                تُعرض فقط للطلبات المُسجَّلة في المتجر.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ ملخص ═══ */}
       <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
