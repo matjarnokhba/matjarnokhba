@@ -19,6 +19,7 @@ import {
   Square,
   Truck,
   Lock,
+  ChevronLeft,
 } from "lucide-react";
 
 type Task = {
@@ -644,6 +645,7 @@ export default function WarehouseDashboard() {
           colorClass="text-amber-700"
           items={received}
           emptyText="لا توجد استلامات حديثة"
+          clickable={true}
         />
         <TaskColumn
           title="✅ جاهز للشحن"
@@ -806,12 +808,14 @@ function TaskColumn({
   colorClass,
   items,
   emptyText,
+  clickable = false,
 }: {
   title: string;
   count: number;
   colorClass: string;
   items: Task[];
   emptyText: string;
+  clickable?: boolean;
 }) {
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
@@ -828,11 +832,38 @@ function TaskColumn({
         </div>
       ) : (
         <div className="max-h-[400px] space-y-2 overflow-y-auto">
-          {items.slice(0, 10).map((t) => (
-            <div
-              key={t.orderId}
-              className="rounded-lg border border-gray-100 p-3"
-            >
+          {items.slice(0, 10).map((t) =>
+            clickable ? (
+              <Link
+                key={t.orderId}
+                href={`/warehouse/orders/${t.orderId}`}
+                className="block rounded-lg border border-gray-100 p-3 transition hover:border-teal-300 hover:bg-teal-50/30"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-mono text-xs font-black">
+                    {t.orderNumber}
+                  </div>
+                  <ChevronLeft className="h-3.5 w-3.5 text-gray-300" />
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
+                  <Store className="h-3 w-3" />
+                  {t.seller.storeName}
+                </div>
+                {t.pickupCity && (
+                  <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-500">
+                    <MapPin className="h-3 w-3" />
+                    {t.pickupCity}
+                  </div>
+                )}
+                <div className="mt-1 text-[10px] text-gray-500">
+                  {t.itemsCount} منتج
+                </div>
+              </Link>
+            ) : (
+              <div
+                key={t.orderId}
+                className="rounded-lg border border-gray-100 p-3"
+              >
               <div className="font-mono text-xs font-black">
                 {t.orderNumber}
               </div>
@@ -850,7 +881,8 @@ function TaskColumn({
                 {t.itemsCount} منتج
               </div>
             </div>
-          ))}
+            )
+          )}
         </div>
       )}
     </div>

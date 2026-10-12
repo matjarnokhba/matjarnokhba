@@ -277,6 +277,33 @@ export default function WarehouseOrderDetailPage() {
       {/* Actions */}
       <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-black">إجراءات</h2>
+
+        {/* ═══ زر الفحص ═══ */}
+        {order.status === "RECEIVED" && (
+          <VerifyButton
+            orderId={order.id}
+            onSuccess={() => window.location.reload()}
+          />
+        )}
+
+        {order.status === "VERIFIED" && (
+          <div className="mb-3 rounded-xl border-2 border-green-200 bg-green-50 p-4 text-center">
+            <CheckCircle2 className="mx-auto h-6 w-6 text-green-600" />
+            <div className="mt-2 text-sm font-black text-green-900">
+              ✅ تم الفحص
+            </div>
+            <p className="mt-1 text-[11px] text-green-700">
+              جاهز للتجميع في شحنة — اذهب إلى{" "}
+              <Link
+                href="/warehouse/ready"
+                className="font-bold underline"
+              >
+                جاهز للشحن
+              </Link>
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           <Link
             href={`/d/${order.deliveryToken}`}
@@ -323,6 +350,75 @@ export default function WarehouseOrderDetailPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Verify Button
+// ═══════════════════════════════════════════
+function VerifyButton({
+  orderId,
+  onSuccess,
+}: {
+  orderId: number;
+  onSuccess: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleVerify() {
+    setSubmitting(true);
+    setError("");
+
+    try {
+      // ═══ جلب deliveryToken ═══
+      const orderRes = await fetch(`/api/warehouse/orders/${orderId}`);
+      const orderData = await orderRes.json();
+
+      if (!orderData.success || !orderData.order?.deliveryToken) {
+        setError("لا يمكن الوصول للطلب");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/warehouse/orders/by-token/${orderData.order.deliveryToken}/verify`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || "فشل الفحص");
+        return;
+      }
+
+      onSuccess();
+    } catch {
+      setError("فشل الاتصال");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={handleVerify}
+        disabled={submitting}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 py-4 text-sm font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"
+      >
+        {submitting ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <CheckCircle2 className="h-5 w-5" />
+        )}
+        تم فحص الطلبية — الحالة سليمة
+      </button>
+      {error && (
+        <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+          {error}
         </div>
       )}
     </div>

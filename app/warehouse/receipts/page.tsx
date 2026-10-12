@@ -83,9 +83,10 @@ export default function WarehouseReceiptsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((t) => (
-            <div
+            <Link
               key={t.orderId}
-              className="rounded-xl bg-white p-4 shadow-sm"
+              href={`/warehouse/orders/${t.orderId}`}
+              className="block rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md"
             >
               <div className="font-mono text-sm font-black">
                 {t.orderNumber}
@@ -103,7 +104,7 @@ export default function WarehouseReceiptsPage() {
               <div className="mt-1 text-[11px] text-gray-500">
                 {t.itemsCount} منتج
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
