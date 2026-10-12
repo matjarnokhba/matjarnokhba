@@ -18,6 +18,7 @@ import {
   CheckSquare,
   Square,
   Truck,
+  Lock,
 } from "lucide-react";
 
 type Task = {
@@ -131,8 +132,8 @@ export default function WarehouseDashboard() {
   const availableCities = useMemo(() => {
     const set = new Set<string>();
     ready.forEach((t) => {
+      // ═══ فقط مدينة الاستلام (موقع التاجر) ═══
       if (t.pickupCity) set.add(t.pickupCity);
-      if (t.deliveryCity) set.add(t.deliveryCity);
     });
     return Array.from(set).sort();
   }, [ready]);
@@ -148,10 +149,8 @@ export default function WarehouseDashboard() {
     }
 
     if (cityFilter !== "ALL") {
-      list = list.filter(
-        (t) =>
-          t.pickupCity === cityFilter || t.deliveryCity === cityFilter
-      );
+      // ═══ فقط مدينة استلام الطرد من التاجر ═══
+      list = list.filter((t) => t.pickupCity === cityFilter);
     }
 
     if (searchQuery.trim()) {
@@ -204,8 +203,13 @@ export default function WarehouseDashboard() {
   }
 
   function selectAll() {
+    // ═══ فقط غير المُسند ═══
     setSelectedOrderIds(
-      new Set(filteredReady.map((t) => t.orderId))
+      new Set(
+        filteredReady
+          .filter((t) => t.assignedCollectorId === null)
+          .map((t) => t.orderId)
+      )
     );
   }
 
@@ -517,17 +521,23 @@ export default function WarehouseDashboard() {
                         : "border-gray-100"
                   }`}
                 >
-                  {/* Checkbox */}
-                  <button
-                    onClick={() => toggleSelect(t.orderId)}
-                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="h-5 w-5 text-teal-600" />
-                    ) : (
-                      <Square className="h-5 w-5 text-gray-400" />
-                    )}
-                  </button>
+                  {/* Checkbox / Lock */}
+                  {isAssigned ? (
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                      <Lock className="h-4 w-4 text-green-600" />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => toggleSelect(t.orderId)}
+                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="h-5 w-5 text-teal-600" />
+                      ) : (
+                        <Square className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                  )}
 
                   {/* Info */}
                   <div className="min-w-0 flex-1">

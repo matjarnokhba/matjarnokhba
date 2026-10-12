@@ -15,7 +15,6 @@ import {
   X,
   AlertCircle,
   QrCode,
-  Printer,
 } from "lucide-react";
 
 const CURRENCY = "د.م";
@@ -39,20 +38,19 @@ export default function ShipmentDetailPage() {
   async function load() {
     try {
       const [shipmentRes, driversRes] = await Promise.all([
-        fetch(`/api/warehouse/shipments?status=ALL`),
+        fetch(`/api/warehouse/shipments/${shipmentId}`),
         fetch("/api/warehouse/drivers/available"),
       ]);
 
       const shipmentData = await shipmentRes.json();
       const driversData = await driversRes.json();
 
-      if (shipmentData.success) {
-        const found = (shipmentData.shipments || []).find(
-          (s: any) => s.id === parseInt(shipmentId)
-        );
-        if (found) setShipment(found);
-        else setError("الشحنة غير موجودة");
+      if (!shipmentRes.ok || !shipmentData.success) {
+        setError(shipmentData.message || "الشحنة غير موجودة");
+        return;
       }
+
+      setShipment(shipmentData.shipment);
 
       if (driversData.success) {
         setDrivers(driversData.drivers || []);
@@ -134,8 +132,7 @@ export default function ShipmentDetailPage() {
     );
   }
 
-  const canAssign =
-    !shipment.deliveryPerson && shipment.status === "READY";
+  const canAssign = !shipment.deliveryPerson && shipment.status === "READY";
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
@@ -190,7 +187,7 @@ export default function ShipmentDetailPage() {
         </div>
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
           <div className="text-lg font-black text-teal-700">
-            {shipment.totalCOD.toFixed(0)}
+            {Number(shipment.totalCOD).toFixed(0)}
           </div>
           <div className="mt-1 text-[10px] text-gray-500">{CURRENCY}</div>
         </div>
@@ -201,7 +198,7 @@ export default function ShipmentDetailPage() {
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
             <MapPin className="h-4 w-4 text-teal-600" />
-            العنوان
+            عنوان التوصيل
           </h2>
           <div className="space-y-2 text-sm">
             {shipment.customer && (
@@ -221,8 +218,60 @@ export default function ShipmentDetailPage() {
               <span>
                 {shipment.city}
                 {shipment.district && ` — ${shipment.district}`}
+                {shipment.street && ` — ${shipment.street}`}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Products */}
+      {shipment.items?.length > 0 && (
+        <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
+            <Package className="h-4 w-4 text-teal-600" />
+            المنتجات ({shipment.items.length})
+          </h2>
+          <div className="space-y-2">
+            {shipment.items.map((item: any) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 rounded-lg bg-gray-50 p-2.5"
+              >
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.productName}
+                    className="h-11 w-11 shrink-0 rounded object-cover"
+                  />
+                ) : (
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-gray-200">
+                    <Package className="h-5 w-5 text-gray-400" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="line-clamp-1 text-xs font-bold">
+                    {item.productName}
+                  </div>
+                  {item.variantName && (
+                    <div className="text-[10px] text-gray-500">
+                      {item.variantName}
+                    </div>
+                  )}
+                  <div className="mt-0.5 text-[10px] text-gray-500">
+                    طلب: <span className="font-mono">{item.orderNumber}</span>
+                  </div>
+                </div>
+                <div className="text-left">
+                  <div className="text-xs font-black text-teal-700">
+                    ×{item.quantity}
+                  </div>
+                  <div className="text-[10px] text-gray-500">
+                    {Number(item.total).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -282,11 +331,11 @@ export default function ShipmentDetailPage() {
         )}
 
         <Link
-          href={`/sd/${shipment.shipmentNumber}`}
+          href={`/warehouse`}
           className="flex items-center justify-center gap-2 rounded-xl border border-teal-600 bg-white py-3.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50"
         >
           <QrCode className="h-4 w-4" />
-          عرض QR
+          لوحة المستودع
         </Link>
       </div>
 
@@ -315,7 +364,6 @@ export default function ShipmentDetailPage() {
               <div className="max-h-72 space-y-2 overflow-y-auto">
                 {drivers.map((d) => {
                   const selected = selectedDriver === d.id;
-                  // ═══ تمييز السائقين الذين يخدمون نفس المدينة ═══
                   const servesCity =
                     shipment.city &&
                     (d.city === shipment.city ||
@@ -360,9 +408,7 @@ export default function ShipmentDetailPage() {
                           {d.activeShipments} شحنة نشطة
                         </div>
                       </div>
-                      {selected && (
-                        <Check className="h-4 w-4 text-teal-600" />
-                      )}
+                      {selected && <Check className="h-4 w-4 text-teal-600" />}
                     </button>
                   );
                 })}
