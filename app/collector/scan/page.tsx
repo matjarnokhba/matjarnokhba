@@ -10,7 +10,7 @@ import {
   CheckCircle2,
   Store,
   Package,
-  ArrowRight,
+  Send,
   Wifi,
 } from "lucide-react";
 
@@ -29,6 +29,7 @@ export default function CollectorScanPage() {
   const [scanError, setScanError] = useState("");
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [departing, setDeparting] = useState(false);
   const [successFlash, setSuccessFlash] = useState<string | null>(null);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
@@ -38,7 +39,6 @@ export default function CollectorScanPage() {
   const lastScanRef = useRef<string>("");
   const lastScanTimeRef = useRef<number>(0);
 
-  // ═══ تحميل ما تم مسحه سابقًا (من DB) ═══
   useEffect(() => {
     async function loadScanned() {
       try {
@@ -64,7 +64,6 @@ export default function CollectorScanPage() {
     loadScanned();
   }, []);
 
-  // ═══ Cleanup ═══
   useEffect(() => {
     return () => {
       if (scannerRef.current) {
@@ -75,7 +74,6 @@ export default function CollectorScanPage() {
     };
   }, []);
 
-  // ═══ تشغيل الماسح (مستمر) ═══
   async function startScanner() {
     setScanError("");
     setScanning(true);
@@ -91,7 +89,6 @@ export default function CollectorScanPage() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText: string) => {
-          // ═══ منع معالجة نفس الكود مرتين متتاليتين ═══
           const now = Date.now();
           if (
             decodedText === lastScanRef.current &&
@@ -102,7 +99,6 @@ export default function CollectorScanPage() {
           lastScanRef.current = decodedText;
           lastScanTimeRef.current = now;
 
-          // ═══ معالجة بدون إيقاف الماسح ═══
           handleScan(decodedText);
         },
         () => {}
@@ -129,7 +125,6 @@ export default function CollectorScanPage() {
     setScanning(false);
   }
 
-  // ═══ معالجة المسح ═══
   async function handleScan(text: string) {
     if (processing) return;
 
@@ -144,7 +139,6 @@ export default function CollectorScanPage() {
       return;
     }
 
-    // ═══ فحص محلي: هل ممسوح بالفعل؟ ═══
     setProcessing(true);
 
     try {
@@ -154,17 +148,17 @@ export default function CollectorScanPage() {
       );
       const data = await res.json();
 
+      // ═══ فحص التكرار أولًا (قبل فحص النجاح) ═══
+      if (data.alreadyCollected) {
+        flashError(`⚠️ ${data.orderNumber} ممسوح بالفعل`);
+        return;
+      }
+
       if (!res.ok || !data.success) {
-        // ═══ حالة خاصة: ممسوح مسبقًا ═══
-        if (data.alreadyCollected) {
-          flashError(`⚠️ الطلب ${data.orderNumber} ممسوح بالفعل`);
-          return;
-        }
         flashError(data.message || "فشل المسح");
         return;
       }
 
-      // ═══ نجاح ═══
       const newItem: ScannedItem = {
         orderId: data.orderId,
         orderNumber: data.orderNumber,
@@ -175,14 +169,12 @@ export default function CollectorScanPage() {
       };
 
       setScannedItems((prev) => {
-        // تجنب التكرار في الواجهة
         if (prev.some((i) => i.orderId === newItem.orderId)) return prev;
         return [newItem, ...prev];
       });
 
       flashSuccess(`✅ تم استلام ${data.orderNumber}`);
 
-      // ═══ صوت/اهتزاز (اختياري) ═══
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         navigator.vibrate(80);
       }
@@ -203,7 +195,34 @@ export default function CollectorScanPage() {
     setTimeout(() => setErrorFlash(null), 2500);
   }
 
-  // ═══ المجموع حسب التاجر ═══
+  // ═══ إتمام الجمع وإنشاء الدفعة ═══
+  async function handleDepart() {
+    if (scannedItems.length === 0) return;
+
+    await stopScanner();
+    setDeparting(true);
+    setErrorFlash(null);
+
+    try {
+      const res = await fetch("/api/collector/batches/depart", {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        flashError(data.message || "فشل إنشاء الدفعة");
+        setDeparting(false);
+        return;
+      }
+
+      // ═══ redirect إلى صفحة QR ═══
+      router.push("/collector/batch");
+    } catch {
+      flashError("فشل الاتصال");
+      setDeparting(false);
+    }
+  }
+
   const bySeller = scannedItems.reduce(
     (acc, item) => {
       const key = item.sellerName;
@@ -226,7 +245,6 @@ export default function CollectorScanPage() {
         </p>
       </div>
 
-      {/* ═══ Success/Error flash ═══ */}
       {successFlash && (
         <div className="mb-3 flex items-center gap-2 rounded-xl bg-green-50 px-4 py-3 text-sm font-bold text-green-700 shadow-sm">
           <CheckCircle2 className="h-5 w-5" />
@@ -240,7 +258,6 @@ export default function CollectorScanPage() {
         </div>
       )}
 
-      {/* ═══ Scanner ═══ */}
       <div className="mx-auto mb-5 max-w-lg rounded-2xl bg-white p-5 shadow-sm">
         {!scanning ? (
           <button
@@ -312,77 +329,77 @@ export default function CollectorScanPage() {
         )}
       </div>
 
-      {/* ═══ Scanned list ═══ */}
       <div className="mx-auto max-w-lg">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-black text-gray-900">
             الطرود المستلمة ({scannedItems.length})
           </h2>
-          {scannedItems.length > 0 && (
-            <button
-              onClick={() => router.push("/collector")}
-              className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white hover:bg-teal-700"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-              لوحة التحكم
-            </button>
-          )}
         </div>
 
         {scannedItems.length === 0 ? (
           <div className="rounded-xl bg-white py-12 text-center shadow-sm">
             <Package className="mx-auto h-12 w-12 text-gray-300" />
-            <p className="mt-3 text-sm text-gray-500">
-              ابدأ بمسح الملصقات
-            </p>
+            <p className="mt-3 text-sm text-gray-500">ابدأ بمسح الملصقات</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {Object.entries(bySeller).map(([sellerName, items]) => (
-              <div
-                key={sellerName}
-                className="rounded-2xl border border-teal-200 bg-teal-50/50 p-4"
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <Store className="h-4 w-4 text-teal-700" />
-                  <div className="flex-1">
-                    <div className="text-xs font-black text-teal-900">
-                      {items[0].sellerCity || "متجر"}
-                    </div>
-                    <div className="text-sm font-bold text-teal-700">
-                      {sellerName}
-                    </div>
-                  </div>
-                  <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                    {items.length} طرد
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  {items.map((item) => (
-                    <div
-                      key={item.orderId}
-                      className="flex items-center gap-2 rounded-lg bg-white p-2.5 shadow-sm"
-                    >
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-mono text-xs font-black">
-                          {item.orderNumber}
-                        </div>
-                        <div className="text-[10px] text-gray-500">
-                          {item.itemsCount} منتج — تم في{" "}
-                          {item.scannedAt.toLocaleTimeString("ar-MA", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </div>
+          <>
+            <div className="space-y-4">
+              {Object.entries(bySeller).map(([sellerName, items]) => (
+                <div
+                  key={sellerName}
+                  className="rounded-2xl border border-teal-200 bg-teal-50/50 p-4"
+                >
+                  <div className="mb-3 flex items-center gap-2">
+                    <Store className="h-4 w-4 text-teal-700" />
+                    <div className="flex-1">
+                      <div className="text-xs font-black text-teal-900">
+                        {items[0].sellerCity || "متجر"}
+                      </div>
+                      <div className="text-sm font-bold text-teal-700">
+                        {sellerName}
                       </div>
                     </div>
-                  ))}
+                    <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                      {items.length} طرد
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {items.map((item) => (
+                      <div
+                        key={item.orderId}
+                        className="flex items-center gap-2 rounded-lg bg-white p-2.5 shadow-sm"
+                      >
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-mono text-xs font-black">
+                            {item.orderNumber}
+                          </div>
+                          <div className="text-[10px] text-gray-500">
+                            {item.itemsCount} منتج
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {/* ═══ زر إتمام الجمع ═══ */}
+            <button
+              onClick={handleDepart}
+              disabled={departing}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-4 text-sm font-bold text-white shadow-md transition hover:bg-teal-700 disabled:opacity-50"
+            >
+              {departing ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Send className="h-5 w-5" />
+              )}
+              إتمام الجمع — انطلاق إلى المستودع ({scannedItems.length})
+            </button>
+          </>
         )}
       </div>
     </div>

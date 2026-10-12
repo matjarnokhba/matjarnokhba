@@ -66,6 +66,10 @@ export async function POST(
     }
 
     const allItems = order.items.flatMap((i) => i.fulfillmentItems);
+    const totalItemsCount = order.items.reduce((s, i) => s + i.quantity, 0);
+
+    const sellerName = order.seller?.storeName || "—";
+    const sellerCity = order.seller?.city || null;
 
     if (allItems.length === 0) {
       return NextResponse.json(
@@ -91,7 +95,7 @@ export async function POST(
       );
     }
 
-    // ═══ idempotent: كل العناصر COLLECTED → مسح مكرر ═══
+    // ═══ idempotent: كل العناصر COLLECTED أو IN_TRANSIT ═══
     const allCollected = allItems.every(
       (i) =>
         i.status === "COLLECTED" || i.status === "IN_TRANSIT_TO_WAREHOUSE"
@@ -103,12 +107,9 @@ export async function POST(
         alreadyCollected: true,
         orderNumber: order.orderNumber,
         orderId: order.id,
-        sellerName: order.seller?.storeName || "—",
-        sellerCity: order.seller?.city || null,
-        itemsCount: order.items.reduce(
-          (s, i) => s + i.quantity,
-          0
-        ),
+        sellerName,
+        sellerCity,
+        itemsCount: totalItemsCount,
       });
     }
 
@@ -121,8 +122,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          message:
-            "بعض العناصر لم تكن جاهزة للاستلام — تأكد مع التاجر أولاً",
+          message: "بعض العناصر ليست جاهزة للاستلام — تواصل مع التاجر",
         },
         { status: 400 }
       );
@@ -189,28 +189,6 @@ export async function POST(
           });
         }
       }
-
-      // ═══ 4. إشعار WAREHOUSE_MANAGER ═══
-      const warehouseManagers = await tx.user.findMany({
-        where: {
-          role: { in: ["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      for (const wm of warehouseManagers) {
-        await tx.notification.create({
-          data: {
-            userId: wm.id,
-            type: "ORDER_STATUS_CHANGED",
-            title: "📦 طرد بالطريق",
-            message: `الطلب ${order.orderNumber} تم استلامه من التاجر — في الطريق إلى المستودع`,
-            link: `/warehouse`,
-            category: "ORDER",
-            severity: "INFO",
-          },
-        });
-      }
     });
 
     return NextResponse.json({
@@ -218,9 +196,9 @@ export async function POST(
       alreadyCollected: false,
       orderNumber: order.orderNumber,
       orderId: order.id,
-      sellerName: order.seller?.storeName || "—",
-      sellerCity: order.seller?.city || null,
-      itemsCount: order.items.reduce((s, i) => s + i.quantity, 0),
+      sellerName,
+      sellerCity,
+      itemsCount: totalItemsCount,
     });
   } catch (error) {
     console.error("Collector collect error:", error);

@@ -62,20 +62,48 @@ export default function WarehouseScanPage() {
   }
 
   function handleScan(text: string) {
-    let token = text.trim();
+    let value = text.trim();
 
-    if (token.includes("/d/")) {
-      const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
-      if (match) token = match[1];
+    // ═══ Batch QR: /cb/[token] ═══
+    if (value.includes("/cb/")) {
+      const match = value.match(/\/cb\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        stopScanner();
+        router.push(`/cb/${match[1]}`);
+        return;
+      }
     }
 
-    if (!token || token.length < 20) {
-      setScanError("رمز غير صحيح");
+    // ═══ Order QR: /d/[token] ═══
+    if (value.includes("/d/")) {
+      const match = value.match(/\/d\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        stopScanner();
+        router.push(`/d/${match[1]}`);
+        return;
+      }
+    }
+
+    // ═══ رابط مباشر لشحنة: /sd/[token] ═══
+    if (value.includes("/sd/")) {
+      const match = value.match(/\/sd\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        stopScanner();
+        router.push(`/sd/${match[1]}`);
+        return;
+      }
+    }
+
+    // ═══ Token مباشر (لصق يدوي) ═══
+    if (value.length >= 20 && !value.includes("/")) {
+      // نفترض أنه order token
       stopScanner();
+      router.push(`/d/${value}`);
       return;
     }
 
-    router.push(`/d/${token}`);
+    setScanError("رمز غير معروف");
+    stopScanner();
   }
 
   return (
@@ -86,18 +114,18 @@ export default function WarehouseScanPage() {
           مسح QR
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          امسح ملصق الطرد عند وصوله للمستودع
+          امسح ملصق الطرد أو رمز الدفعة من الجامع
         </p>
       </div>
 
       <div className="mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 rounded-xl border-2 border-dashed border-teal-300 bg-teal-50 p-4">
-          <div className="text-sm font-black text-teal-900">خطوات المستودع</div>
-          <ol className="mt-2 space-y-1 text-xs text-teal-800">
-            <li>1️⃣ مسح الملصق عند الوصول → استلام</li>
-            <li>2️⃣ فحص المنتجات → التحقق</li>
-            <li>3️⃣ تجميع في شحنة (قريبًا)</li>
-          </ol>
+          <div className="text-sm font-black text-teal-900">ما يمكن مسحه</div>
+          <ul className="mt-2 space-y-1 text-xs text-teal-800">
+            <li>📦 ملصق طرد فردي (استلام)</li>
+            <li>🚚 رمز دفعة من جامع (استلام جماعي)</li>
+            <li>📄 رمز شحنة</li>
+          </ul>
         </div>
 
         {!scanning ? (
@@ -122,7 +150,7 @@ export default function WarehouseScanPage() {
           <div className="mt-4 overflow-hidden rounded-xl">
             <div id={scannerDivId} className="w-full" />
             <p className="mt-3 text-center text-xs text-gray-500">
-              وجّه الكاميرا نحو ملصق الطرد
+              وجّه الكاميرا نحو الرمز
             </p>
           </div>
         )}
@@ -135,7 +163,10 @@ export default function WarehouseScanPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (manualCode.trim()) handleScan(manualCode.trim());
+                if (manualCode.trim()) {
+                  handleScan(manualCode.trim());
+                  setManualCode("");
+                }
               }}
               className="flex gap-2"
             >
@@ -143,7 +174,7 @@ export default function WarehouseScanPage() {
                 type="text"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
-                placeholder="الصق رمز الطرد..."
+                placeholder="الصق رمز أو رابط..."
                 dir="ltr"
                 className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-teal-500 focus:bg-white"
               />
