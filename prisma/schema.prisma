@@ -322,6 +322,7 @@ model User {
   referralAsReferred Referral?         @relation("ReferralAsReferred")
   deliveryPerson     DeliveryPerson?
   userPermissions    UserPermission[]
+  collectionBatches  CollectionBatch[] @relation("CollectionBatchCollector")
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
 
@@ -1726,10 +1727,11 @@ model FulfillmentItem {
 
   orderItem         OrderItem                  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   seller            Seller                     @relation(fields: [sellerId], references: [id], onDelete: Restrict)
-  history           FulfillmentStatusHistory[]
-  collectionItems   CollectionAssignmentItem[]
-  warehouseReceipts WarehouseReceipt[]
-  shipmentItems     ShipmentItem[]
+  history               FulfillmentStatusHistory[]
+  collectionItems       CollectionAssignmentItem[]
+  warehouseReceipts     WarehouseReceipt[]
+  shipmentItems         ShipmentItem[]
+  collectionBatchItems  CollectionBatchItem[]
 
   @@unique([orderItemId])
   @@index([orderItemId])
@@ -1883,4 +1885,59 @@ model DeliveryAssignment {
   @@index([status])
   @@index([deliveryPersonId, status])
   @@index([assignedAt])
+}
+
+// ═══════════════════════════════════════════
+// Collection Batch — دفعة جمع
+// ═══════════════════════════════════════════
+
+enum CollectionBatchStatus {
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+model CollectionBatch {
+  id               Int                   @id @default(autoincrement())
+  batchNumber      String                @unique
+  collectorId      Int
+  status           CollectionBatchStatus @default(IN_TRANSIT)
+
+  // QR للأدمن يستلم الدفعة
+  qrTokenHash      String                @unique
+  qrTokenEncrypted Bytes
+  qrTokenPreview   String
+  qrTokenRevokedAt DateTime?
+
+  itemsCount       Int                   @default(0)
+  totalOrders      Int                   @default(0)
+
+  departedAt       DateTime              @default(now())
+  receivedAt       DateTime?
+  receivedById     Int?
+
+  notes            String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  collector User                  @relation("CollectionBatchCollector", fields: [collectorId], references: [id], onDelete: Restrict)
+  items     CollectionBatchItem[]
+
+  @@index([collectorId])
+  @@index([status])
+  @@index([collectorId, status])
+  @@index([createdAt])
+}
+
+model CollectionBatchItem {
+  id                Int      @id @default(autoincrement())
+  batchId           Int
+  fulfillmentItemId Int
+  createdAt         DateTime @default(now())
+
+  batch           CollectionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  fulfillmentItem FulfillmentItem @relation(fields: [fulfillmentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([fulfillmentItemId])
+  @@index([batchId])
 }

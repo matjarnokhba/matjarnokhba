@@ -30,11 +30,7 @@ export async function GET() {
         // ═══ فقط المهام المُسندة لهذا الجامع ═══
         assignedCollectorId: auth.user.id,
         status: {
-          in: [
-            "READY_FOR_COLLECTION",
-            "COLLECTED",
-            "IN_TRANSIT_TO_WAREHOUSE",
-          ],
+          in: ["READY_FOR_COLLECTION", "COLLECTED"],
         },
       },
       include: {

@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   UserCheck,
+  Truck,
 } from "lucide-react";
 
 type Props = {
@@ -22,6 +23,7 @@ type Props = {
 const NAV_ITEMS = [
   { href: "/collector", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/collector/scan", label: "مسح QR", icon: QrCode, exact: false },
+  { href: "/collector/batch", label: "الدفعة الحالية", icon: Truck, exact: false },
   { href: "/collector/tasks", label: "مهامي", icon: Package, exact: false },
   { href: "/collector/history", label: "السجل", icon: History, exact: false },
 ];
