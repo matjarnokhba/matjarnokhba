@@ -39,9 +39,13 @@ export async function POST(
     const order = await prisma.order.findFirst({
       where: { deliveryToken: token },
       include: {
+        seller: {
+          select: { storeName: true, city: true },
+        },
         items: {
           select: {
             id: true,
+            quantity: true,
             fulfillmentItems: {
               select: {
                 id: true,
@@ -99,6 +103,12 @@ export async function POST(
         alreadyCollected: true,
         orderNumber: order.orderNumber,
         orderId: order.id,
+        sellerName: order.seller?.storeName || "—",
+        sellerCity: order.seller?.city || null,
+        itemsCount: order.items.reduce(
+          (s, i) => s + i.quantity,
+          0
+        ),
       });
     }
 
@@ -208,6 +218,9 @@ export async function POST(
       alreadyCollected: false,
       orderNumber: order.orderNumber,
       orderId: order.id,
+      sellerName: order.seller?.storeName || "—",
+      sellerCity: order.seller?.city || null,
+      itemsCount: order.items.reduce((s, i) => s + i.quantity, 0),
     });
   } catch (error) {
     console.error("Collector collect error:", error);

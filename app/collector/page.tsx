@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Loader2,
@@ -30,10 +30,6 @@ type ActiveBatch = {
   totalOrders: number;
   departedAt: string;
   preview: string;
-  items: Array<{
-    seller: { id: number; storeName: string; city: string | null };
-    orderNumber: string;
-  }>;
 };
 
 export default function CollectorDashboard() {
@@ -79,6 +75,30 @@ export default function CollectorDashboard() {
     load();
   }, []);
 
+  // ═══ تجميع المُستلم حسب التاجر ═══
+  const collectedBySeller = useMemo(() => {
+    const map = new Map<
+      string,
+      { seller: Task["seller"]; items: Task[]; totalItems: number }
+    >();
+
+    for (const t of collected) {
+      const key = t.seller.id.toString();
+      if (!map.has(key)) {
+        map.set(key, {
+          seller: t.seller,
+          items: [],
+          totalItems: 0,
+        });
+      }
+      const entry = map.get(key)!;
+      entry.items.push(t);
+      entry.totalItems += t.itemsCount;
+    }
+
+    return Array.from(map.values());
+  }, [collected]);
+
   async function handleDepart() {
     if (collected.length === 0) return;
 
@@ -108,7 +128,7 @@ export default function CollectorDashboard() {
 
       setTimeout(() => {
         window.location.href = "/collector/batch";
-      }, 1500);
+      }, 1200);
     } catch {
       setMessage({ type: "error", text: "فشل الاتصال" });
     } finally {
@@ -129,7 +149,7 @@ export default function CollectorDashboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-black text-gray-900">لوحة الجمع</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {ready.length} جاهز للاستلام · {collected.length} بانتظار التسليم
+          {ready.length} جاهز للاستلام · {collected.length} تم استلامه
         </p>
       </div>
 
@@ -157,32 +177,12 @@ export default function CollectorDashboard() {
               </div>
               <div className="mt-1 text-[11px] text-blue-700">
                 {activeBatch.itemsCount} طرد من {activeBatch.totalOrders} طلب —
-                اعرض QR للمستودع
+                أظهر QR للمستودع
               </div>
             </div>
             <ChevronLeft className="h-5 w-5 shrink-0 text-blue-400" />
           </div>
         </Link>
-      )}
-
-      {/* ═══ Quick actions ═══ */}
-      {!activeBatch && (
-        <div className="mb-6 grid grid-cols-2 gap-3">
-          <Link
-            href="/collector/scan"
-            className="flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 p-6 text-white shadow-lg transition hover:shadow-xl"
-          >
-            <QrCode className="h-8 w-8" />
-            <span className="text-sm font-black">مسح QR</span>
-          </Link>
-          <Link
-            href="/collector/tasks"
-            className="flex flex-col items-center gap-2 rounded-2xl bg-white p-6 text-gray-900 shadow-md transition hover:shadow-lg"
-          >
-            <Package className="h-8 w-8 text-purple-600" />
-            <span className="text-sm font-black">كل المهام</span>
-          </Link>
-        </div>
       )}
 
       {message && (
@@ -197,47 +197,96 @@ export default function CollectorDashboard() {
         </div>
       )}
 
-      {/* ═══ Depart section ═══ */}
-      {!activeBatch && collected.length > 0 && (
+      {/* ═══ Quick actions ═══ */}
+      {!activeBatch && (
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          <Link
+            href="/collector/scan"
+            className="flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 p-6 text-white shadow-lg transition hover:shadow-xl"
+          >
+            <QrCode className="h-8 w-8" />
+            <span className="text-sm font-black">مسح الطرود</span>
+          </Link>
+          <Link
+            href="/collector/tasks"
+            className="flex flex-col items-center gap-2 rounded-2xl bg-white p-6 text-gray-900 shadow-md transition hover:shadow-lg"
+          >
+            <Package className="h-8 w-8 text-purple-600" />
+            <span className="text-sm font-black">كل المهام</span>
+          </Link>
+        </div>
+      )}
+
+      {/* ═══ Collected by Seller — القسم الرئيسي ═══ */}
+      {!activeBatch && collectedBySeller.length > 0 && (
         <div className="mb-6 rounded-2xl border-2 border-teal-300 bg-teal-50 p-5">
           <div className="mb-4 flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100">
-              <Send className="h-5 w-5 text-teal-700" />
+              <Package className="h-5 w-5 text-teal-700" />
             </div>
-            <div>
+            <div className="flex-1">
               <div className="text-base font-black text-teal-900">
                 الطرود المستلمة ({collected.length})
               </div>
               <p className="mt-1 text-xs text-teal-700">
-                اضغط "انطلاق إلى المستودع" لإنشاء دفعة واحدة مع QR موحد.
+                من {collectedBySeller.length} تاجر — بانتظار الانطلاق للمستودع
               </p>
             </div>
           </div>
 
-          <div className="mb-4 space-y-2">
-            {collected.map((t) => (
+          {/* Per seller groups */}
+          <div className="space-y-3">
+            {collectedBySeller.map((group) => (
               <div
-                key={t.orderId}
-                className="flex items-center gap-2 rounded-lg bg-white p-3 shadow-sm"
+                key={group.seller.id}
+                className="rounded-xl border border-teal-200 bg-white p-3"
               >
-                <Package className="h-4 w-4 shrink-0 text-teal-600" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-xs font-black">
-                    {t.orderNumber}
+                <div className="mb-2 flex items-center gap-2">
+                  <Store className="h-4 w-4 text-teal-600" />
+                  <div className="flex-1">
+                    <div className="text-xs font-black text-teal-900">
+                      {group.seller.storeName}
+                    </div>
+                    {group.seller.city && (
+                      <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                        <MapPin className="h-2.5 w-2.5" />
+                        {group.seller.city}
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-500">
-                    <Store className="h-3 w-3" />
-                    {t.seller.storeName}
-                  </div>
+                  <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {group.items.length === 1
+                      ? `استلمت الطرد`
+                      : `استلمت ${group.items.length} طرود`}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <div
+                      key={item.orderId}
+                      className="flex items-center gap-2 rounded-lg bg-gray-50 px-2 py-1.5 text-[10px]"
+                    >
+                      <Package className="h-3 w-3 shrink-0 text-teal-600" />
+                      <span className="font-mono font-bold">
+                        {item.orderNumber}
+                      </span>
+                      <span className="text-gray-500">
+                        · {item.itemsCount} منتج
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
 
+          {/* Depart button */}
           <button
             onClick={handleDepart}
             disabled={departing}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50"
           >
             {departing ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -250,13 +299,17 @@ export default function CollectorDashboard() {
       )}
 
       {/* ═══ Ready for collection ═══ */}
-      <h2 className="mb-3 text-base font-black">جاهز للاستلام</h2>
+      <h2 className="mb-3 text-base font-black">
+        {ready.length > 0 ? "جاهز للاستلام" : "لا يوجد جاهز للاستلام"}
+      </h2>
 
       {ready.length === 0 ? (
         <div className="rounded-xl bg-white p-12 text-center shadow-sm">
           <div className="text-5xl">📦</div>
           <p className="mt-3 text-sm text-gray-500">
-            لا توجد طرود جاهزة للاستلام
+            {collected.length > 0
+              ? "كل ما تم إسناده إليك مُستلم — انطلق للمستودع"
+              : "لا توجد طرود مُسندة إليك حالياً"}
           </p>
         </div>
       ) : (
