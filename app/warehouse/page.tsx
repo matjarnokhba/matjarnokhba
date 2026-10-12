@@ -581,6 +581,12 @@ export default function WarehouseDashboard() {
 
                   {/* Actions */}
                   <div className="flex shrink-0 gap-1.5">
+                    <Link
+                      href={`/warehouse/orders/${t.orderId}`}
+                      className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                    >
+                      عرض
+                    </Link>
                     {!isAssigned ? (
                       <button
                         onClick={() =>

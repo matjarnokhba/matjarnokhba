@@ -1531,6 +1531,8 @@ model DeliveryPerson {
   id                   Int                    @id @default(autoincrement())
   userId               Int                    @unique
   city                 String
+  cities               String[]               @default([])
+  districts            String[]               @default([])
   phone                String
   vehicleType          String?
   status               DeliveryPersonStatus   @default(ACTIVE)

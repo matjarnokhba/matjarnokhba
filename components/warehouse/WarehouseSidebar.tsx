@@ -13,6 +13,7 @@ import {
   X,
   Warehouse,
   Truck,
+  Send,
 } from "lucide-react";
 
 type Props = {
@@ -40,7 +41,18 @@ const NAV_ITEMS = [
     icon: Truck,
     exact: false,
   },
-  { href: "/warehouse/history", label: "السجل", icon: History, exact: false },
+  {
+    href: "/warehouse/shipments",
+    label: "الشحنات",
+    icon: Send,
+    exact: false,
+  },
+  {
+    href: "/warehouse/history",
+    label: "السجل",
+    icon: History,
+    exact: false,
+  },
 ];
 
 export default function WarehouseSidebar({ userName, role }: Props) {
