@@ -39,6 +39,14 @@ export async function GET(
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
         items: {
           include: {
             product: {
@@ -76,9 +84,6 @@ export async function GET(
           orderBy: { createdAt: "desc" },
           take: 30,
         },
-        user: {
-          select: { id: true, name: true, email: true, phone: true },
-        },
       },
     });
 
@@ -89,9 +94,47 @@ export async function GET(
       );
     }
 
+    // ═══ طلبات العميل الأخرى (لعرض السياق الكامل) ═══
+    const customerOtherOrders = await prisma.order.findMany({
+      where: {
+        userId: order.userId,
+        id: { not: orderId },
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        total: true,
+        createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            imageUrl: true,
+            quantity: true,
+            fulfillmentItems: {
+              select: {
+                id: true,
+                status: true,
+                sellerId: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
+    // ═══ دمج الطلب + طلبات العميل الأخرى ═══
+    const combined = {
+      ...order,
+      customerOtherOrders,
+    };
+
     // ═══ Serialize Decimal → Number ═══
     const serialized = JSON.parse(
-      JSON.stringify(order, (_, value) => {
+      JSON.stringify(combined, (_, value) => {
         if (typeof value === "bigint") return value.toString();
         if (
           value !== null &&

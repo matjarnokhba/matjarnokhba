@@ -1723,6 +1723,11 @@ model FulfillmentItem {
   warehouseReceivedById Int?
   verifiedAt            DateTime?
   verifiedById          Int?
+  postponedAt           DateTime?
+  postponedReason       String?
+  rejectedAt            DateTime?
+  rejectedReason        String?
+  rejectedById          Int?
   notes                 String?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
