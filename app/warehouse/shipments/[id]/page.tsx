@@ -30,6 +30,10 @@ export default function ShipmentDetailPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<number | null>(null);
   const [assigning, setAssigning] = useState(false);
+
+  // Cancel modal
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -66,6 +70,41 @@ export default function ShipmentDetailPage() {
     if (shipmentId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipmentId]);
+
+  async function handleCancel() {
+    setCancelling(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(
+        `/api/warehouse/shipments/${shipmentId}/cancel`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setMessage({
+          type: "error",
+          text: data.message || "فشل الإلغاء",
+        });
+        return;
+      }
+
+      setShowCancelModal(false);
+      setMessage({
+        type: "success",
+        text: `✅ تم إلغاء الشحنة — ${data.itemsRestored} عنصر عاد للإسناد`,
+      });
+
+      setTimeout(() => {
+        window.location.href = "/warehouse/shipments";
+      }, 1200);
+    } catch {
+      setMessage({ type: "error", text: "فشل الاتصال" });
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function handleAssign() {
     if (!selectedDriver) return;
@@ -337,7 +376,62 @@ export default function ShipmentDetailPage() {
           <QrCode className="h-4 w-4" />
           لوحة المستودع
         </Link>
+
+        {/* ═══ زر الإلغاء — فقط قبل الإسناد ═══ */}
+        {shipment.status === "READY" && (
+          <button
+            onClick={() => setShowCancelModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 transition hover:bg-red-100 sm:col-span-2"
+          >
+            <X className="h-4 w-4" />
+            إلغاء الشحنة
+          </button>
+        )}
       </div>
+
+      {/* ═══ Cancel Modal ═══ */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
+              <X className="h-7 w-7 text-red-600" />
+            </div>
+            <h3 className="mt-4 text-center text-lg font-black">
+              تأكيد إلغاء الشحنة
+            </h3>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              سيتم إلغاء الشحنة{" "}
+              <strong className="font-mono">{shipment.shipmentNumber}</strong>
+              {" "}وإرجاع كل العناصر إلى قائمة "جاهز للشحن".
+            </p>
+            <p className="mt-2 text-center text-[11px] text-gray-500">
+              يمكن التراجع فقط قبل إسناد الشحنة لسائق.
+            </p>
+
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                {cancelling ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+                تأكيد الإلغاء
+              </button>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700"
+              >
+                رجوع
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Assign Modal */}
       {showAssignModal && (
