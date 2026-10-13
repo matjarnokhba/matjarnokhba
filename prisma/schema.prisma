@@ -17,6 +17,11 @@ datasource db {
 // المرجع: DECISIONS.md
 // ============================================
 
+enum ZoneType {
+  COLLECTION
+  DELIVERY
+}
+
 enum AssemblyStatus {
   PENDING
   READY
@@ -332,6 +337,7 @@ model User {
   deliveryPerson     DeliveryPerson?
   userPermissions    UserPermission[]
   collectionBatches  CollectionBatch[] @relation("CollectionBatchCollector")
+  collectionZones    Zone[]                @relation("UserCollectionZone")
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
 
@@ -442,11 +448,14 @@ model Seller {
   attributeValues      CategoryAttributeValue[]
   fulfillmentItems     FulfillmentItem[]
   orderItems           OrderItem[]            @relation("OrderItemSeller")
+  collectionZoneId Int?
+  collectionZone   Zone? @relation("SellerCollectionZone", fields: [collectionZoneId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([deletedAt])
   @@index([isFeatured])
   @@index([isVerified])
+  @@index([collectionZoneId])
 }
 
 // ============================================
@@ -1561,6 +1570,7 @@ model DeliveryPerson {
   shipments             Shipment[]             @relation("ShipmentDeliveryPerson")
   collectionAssignments CollectionAssignment[]
   deliveryAssignments   DeliveryAssignment[]
+  deliveryZones         Zone[]                 @relation("DeliveryPersonZone")
 
   @@index([status])
   @@index([city])
@@ -1674,6 +1684,8 @@ model Shipment {
   items               ShipmentItem[]
   deliveryAttempts    DeliveryAttempt[]
   deliveryAssignments DeliveryAssignment[]
+  deliveryZoneId      Int?
+  deliveryZone        Zone?                @relation("ShipmentDeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   assemblyItems       AssemblyItem[]
 
   @@index([status])
@@ -1681,6 +1693,7 @@ model Shipment {
   @@index([customerId])
   @@index([createdAt])
   @@index([status, deliveryPersonId])
+  @@index([deliveryZoneId])
 }
 
 model ShipmentItem {
@@ -2017,4 +2030,32 @@ model AssemblyItem {
   @@index([assemblyId])
   @@index([includedInShipment])
   @@index([shipmentId])
+}
+
+// ═══════════════════════════════════════════
+// Zones — D.2
+// ═══════════════════════════════════════════
+
+model Zone {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  type        ZoneType
+  city        String
+  districts   String[] @default([])
+  description String?
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sellers         Seller[]         @relation("SellerCollectionZone")
+  collectors      User[]           @relation("UserCollectionZone")
+  deliveryPersons DeliveryPerson[] @relation("DeliveryPersonZone")
+  shipments       Shipment[]       @relation("ShipmentDeliveryZone")
+
+  @@index([type])
+  @@index([city])
+  @@index([type, city])
+  @@index([isActive])
 }
