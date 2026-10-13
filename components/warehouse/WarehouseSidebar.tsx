@@ -14,6 +14,7 @@ import {
   Warehouse,
   Truck,
   Send,
+  RotateCcw,
 } from "lucide-react";
 
 type Props = {
@@ -48,11 +49,12 @@ const NAV_ITEMS = [
     exact: false,
   },
   {
-    href: "/warehouse/history",
-    label: "السجل",
-    icon: History,
+    href: "/warehouse/returns",
+    label: "الإرجاعات",
+    icon: RotateCcw,
     exact: false,
   },
+  { href: "/warehouse/history", label: "السجل", icon: History, exact: false },
 ];
 
 export default function WarehouseSidebar({ userName, role }: Props) {

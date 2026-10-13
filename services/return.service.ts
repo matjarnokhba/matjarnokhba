@@ -240,6 +240,10 @@ export const ReturnService = {
         throw new Error("تم تغيير حالة الطلب من عملية أخرى");
       }
 
+      // ═══ إنشاء ReturnShipment تلقائيًا ═══
+      const { ReturnShipmentService } = await import("./return-shipment.service");
+      await ReturnShipmentService.createForReturn(tx, returnId);
+
       await tx.notification.create({
         data: {
           userId: ret.userId,

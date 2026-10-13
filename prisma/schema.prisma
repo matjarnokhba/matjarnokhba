@@ -17,6 +17,24 @@ datasource db {
 // المرجع: DECISIONS.md
 // ============================================
 
+enum ReturnShipmentStatus {
+  PENDING_PICKUP
+  PICKED_UP
+  IN_TRANSIT_TO_WAREHOUSE
+  RECEIVED_AT_WAREHOUSE
+  INSPECTED
+  IN_TRANSIT_TO_SELLER
+  DELIVERED_TO_SELLER
+  COMPLETED
+  CANCELLED
+}
+
+enum ReturnInspectionStatus {
+  INTACT
+  DAMAGED
+  INCOMPLETE
+}
+
 enum ZoneType {
   COLLECTION
   DELIVERY
@@ -941,6 +959,7 @@ model ReturnRequest {
   order Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   user  User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   items ReturnItem[]
+  shipment ReturnShipment?
 
   @@index([orderId])
   @@index([userId])
@@ -1570,6 +1589,8 @@ model DeliveryPerson {
   shipments             Shipment[]             @relation("ShipmentDeliveryPerson")
   collectionAssignments CollectionAssignment[]
   deliveryAssignments   DeliveryAssignment[]
+  pickupReturns         ReturnShipment[]       @relation("ReturnPickupDriver")
+  deliveryReturns       ReturnShipment[]       @relation("ReturnDeliveryDriver")
   deliveryZones         Zone[]                 @relation("DeliveryPersonZone")
 
   @@index([status])
@@ -2058,4 +2079,63 @@ model Zone {
   @@index([city])
   @@index([type, city])
   @@index([isActive])
+}
+
+// ═══════════════════════════════════════════
+// Return Shipment — E.1
+// ═══════════════════════════════════════════
+
+model ReturnShipment {
+  id            Int                  @id @default(autoincrement())
+  returnNumber  String               @unique
+  returnId      Int                  @unique
+  status        ReturnShipmentStatus @default(PENDING_PICKUP)
+
+  // ═══ QR للعميل/الجامع (استلام من العميل) ═══
+  pickupTokenHash       String    @unique
+  pickupTokenEncrypted  Bytes
+  pickupTokenPreview    String
+  pickupTokenRevokedAt  DateTime?
+
+  // ═══ QR للتاجر (تأكيد استلام المرتجع) ═══
+  deliveryTokenHash       String    @unique
+  deliveryTokenEncrypted  Bytes
+  deliveryTokenPreview    String
+  deliveryTokenRevokedAt  DateTime?
+
+  // ═══ Pickup from customer ═══
+  pickupDriverId     Int?
+  pickupAssignedAt   DateTime?
+  pickupAssignedById Int?
+  pickedUpAt         DateTime?
+
+  // ═══ Warehouse reception ═══
+  warehouseReceivedAt   DateTime?
+  warehouseReceivedById Int?
+  inspectedAt           DateTime?
+  inspectedById         Int?
+  inspectionStatus      ReturnInspectionStatus?
+  inspectionNotes       String?
+
+  // ═══ Return to seller ═══
+  returnDriverId        Int?
+  returnAssignedAt      DateTime?
+  returnAssignedById    Int?
+  deliveredToSellerAt   DateTime?
+  sellerConfirmedAt     DateTime?
+  sellerConfirmedById   Int?
+  sellerRejectionReason String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  returnRequest ReturnRequest  @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  pickupDriver  DeliveryPerson? @relation("ReturnPickupDriver", fields: [pickupDriverId], references: [id], onDelete: SetNull)
+  returnDriver  DeliveryPerson? @relation("ReturnDeliveryDriver", fields: [returnDriverId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([pickupDriverId])
+  @@index([returnDriverId])
+  @@index([status, createdAt])
 }
