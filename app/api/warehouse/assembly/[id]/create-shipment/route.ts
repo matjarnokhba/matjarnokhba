@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { ShipmentQRService } from "@/services/shipment-qr.service";
@@ -14,6 +15,11 @@ async function requireWarehouse() {
   }
   return { user: current.user };
 }
+
+const schema = z.object({
+  allowPartial: z.boolean().default(false),
+  notes: z.string().trim().max(500).optional().nullable(),
+});
 
 export async function POST(
   request: Request,
@@ -37,14 +43,35 @@ export async function POST(
       );
     }
 
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { allowPartial, notes } = parsed.data;
+
     // ═══ Recompute first ═══
     await prisma.$transaction(async (tx) => {
       await AssemblyService.recompute(tx, assemblyId);
     });
 
-    const assembly = await prisma.assemblyFile.findUnique({
+    const assembly: any = await prisma.assemblyFile.findUnique({
       where: { id: assemblyId },
       include: {
+        order: { select: { orderNumber: true } },
         items: {
           include: {
             fulfillmentItem: {
@@ -77,52 +104,69 @@ export async function POST(
       );
     }
 
-    if (assembly.status !== "READY") {
+    if (assembly.status === "COMPLETED") {
+      return NextResponse.json(
+        { success: false, message: "كل المنتجات تم شحنها بالفعل" },
+        { status: 400 }
+      );
+    }
+
+    const canShipFull = assembly.status === "READY";
+    const canShipPartial =
+      allowPartial &&
+      (assembly.status === "PENDING" ||
+        assembly.status === "PARTIALLY_SHIPPED");
+
+    if (!canShipFull && !canShipPartial) {
       return NextResponse.json(
         {
           success: false,
           message:
             assembly.status === "PENDING"
-              ? `لم تكتمل المنتجات — ${assembly.receivedItems}/${assembly.expectedItems}`
+              ? `لم تكتمل المنتجات — ${assembly.receivedItems}/${assembly.expectedItems}. فعّل "الشحن الجزئي" للمتابعة.`
               : `لا يمكن إنشاء الشحنة — الحالة: ${assembly.status}`,
         },
         { status: 400 }
       );
     }
 
-    const validItems = assembly.items.filter(
-      (ai) =>
-        ai.fulfillmentItem.status === "VERIFIED" ||
-        ai.fulfillmentItem.status === "AVAILABLE_FOR_SHIPMENT"
+    // ═══ العناصر القابلة للشحن ═══
+    const shippableItems = (assembly.items as any[]).filter(
+      (ai: any) =>
+        !ai.includedInShipment &&
+        (ai.fulfillmentItem.status === "VERIFIED" ||
+          ai.fulfillmentItem.status === "AVAILABLE_FOR_SHIPMENT")
     );
 
-    if (validItems.length === 0) {
+    if (shippableItems.length === 0) {
       return NextResponse.json(
         { success: false, message: "لا توجد عناصر جاهزة للشحن" },
         { status: 400 }
       );
     }
 
-    const totalCOD = validItems.reduce(
-      (s, ai) => s + Number(ai.fulfillmentItem.orderItem.total),
+    const waitingItems = (assembly.items as any[]).filter(
+      (ai: any) => !ai.includedInShipment && !ai.receivedAt
+    );
+
+    const isPartial = waitingItems.length > 0;
+    const totalCOD = shippableItems.reduce(
+      (s: number, ai: any) => s + Number(ai.fulfillmentItem.orderItem.total),
       0
     );
 
     const result = await prisma.$transaction(async (tx) => {
-      // ═══ 1. رقم الشحنة ═══
       const year = new Date().getFullYear();
       const count = await tx.shipment.count({
         where: { shipmentNumber: { startsWith: `SHP-${year}-` } },
       });
       const shipmentNumber = `SHP-${year}-${String(count + 1).padStart(5, "0")}`;
 
-      // ═══ 2. QR ═══
       const rawToken = ShipmentQRService.generateToken();
       const tokenHash = ShipmentQRService.hashToken(rawToken);
       const encrypted = ShipmentQRService.encryptToken(rawToken);
       const preview = ShipmentQRService.preview(rawToken);
 
-      // ═══ 3. Shipment ═══
       const shipment = await tx.shipment.create({
         data: {
           shipmentNumber,
@@ -134,11 +178,11 @@ export async function POST(
           customerId: assembly.userId,
           totalCOD,
           totalOrders: 1,
+          notes: notes || null,
         },
       });
 
-      // ═══ 4. ShipmentItems + FulfillmentItem → ALLOCATED ═══
-      for (const ai of validItems) {
+      for (const ai of shippableItems) {
         const fi = ai.fulfillmentItem;
 
         await tx.shipmentItem.create({
@@ -166,18 +210,43 @@ export async function POST(
             fromStatus: fi.status as any,
             toStatus: "ALLOCATED",
             changedById: auth.user.id,
-            note: `مُخصص للشحنة ${shipmentNumber}`,
+            note: isPartial
+              ? `شحن جزئي — الشحنة ${shipmentNumber}`
+              : `مُخصص للشحنة ${shipmentNumber}`,
           },
         });
 
-        // ═══ 5. Mark in assembly ═══
         await AssemblyService.markItemShipped(tx, fi.id, shipment.id);
       }
 
-      // ═══ 6. Recompute assembly ═══
       await AssemblyService.recompute(tx, assemblyId);
 
-      // ═══ 7. Audit ═══
+      if (isPartial) {
+        const remainingCount =
+          assembly.expectedItems - assembly.receivedItems;
+
+        await tx.notification.create({
+          data: {
+            userId: assembly.userId,
+            type: "SHIPPING_UPDATED",
+            title: "📦 تم شحن جزء من طلبك",
+            message: `تم شحن ${shippableItems.length} من ${assembly.items.length} منتجات من طلبك ${assembly.order.orderNumber}. بانتظار ${remainingCount} منتج إضافي.`,
+            link: `/orders/${assembly.orderId}`,
+            category: "ORDER",
+            severity: "INFO",
+            metadata: {
+              assemblyId: assembly.id,
+              assemblyCode: assembly.assemblyCode,
+              shipmentId: shipment.id,
+              shipmentNumber,
+              shippedItems: shippableItems.length,
+              waitingItems: remainingCount,
+              isPartial: true,
+            },
+          },
+        });
+      }
+
       const reqInfo = AuditService.getRequestInfo(request);
       await AuditService.logInTransaction(tx, {
         userId: auth.user.id,
@@ -187,8 +256,10 @@ export async function POST(
         newData: {
           shipmentNumber,
           assemblyCode: assembly.assemblyCode,
-          itemsCount: validItems.length,
+          itemsCount: shippableItems.length,
           totalCOD,
+          isPartial,
+          waitingItems: waitingItems.length,
         },
         ipAddress: reqInfo.ipAddress,
         userAgent: reqInfo.userAgent,
@@ -197,8 +268,10 @@ export async function POST(
       return {
         shipmentId: shipment.id,
         shipmentNumber,
-        itemsCount: validItems.length,
+        itemsCount: shippableItems.length,
         totalCOD,
+        isPartial,
+        waitingItems: waitingItems.length,
       };
     });
 

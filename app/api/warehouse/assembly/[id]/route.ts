@@ -40,7 +40,7 @@ export async function GET(
       await AssemblyService.recompute(tx, assemblyId);
     });
 
-    const assembly = await prisma.assemblyFile.findUnique({
+    const rawAssembly = await prisma.assemblyFile.findUnique({
       where: { id: assemblyId },
       include: {
         order: {
@@ -50,20 +50,6 @@ export async function GET(
             customerSnapshot: true,
             shippingAddressSnapshot: true,
             total: true,
-            items: {
-              select: {
-                id: true,
-                productName: true,
-                variantName: true,
-                imageUrl: true,
-                quantity: true,
-                total: true,
-                sellerId: true,
-                fulfillmentItems: {
-                  select: { id: true, status: true, sellerId: true },
-                },
-              },
-            },
           },
         },
         user: { select: { id: true, name: true, phone: true, email: true } },
@@ -95,12 +81,40 @@ export async function GET(
       },
     });
 
-    if (!assembly) {
+    if (!rawAssembly) {
       return NextResponse.json(
         { success: false, message: "ملف التجميع غير موجود" },
         { status: 404 }
       );
     }
+
+    const assembly: any = rawAssembly;
+
+    // ═══ الشحنات المنشأة من هذا الملف ═══
+    const shipmentIdSet = new Set<number>();
+    for (const ai of assembly.items) {
+      if (typeof ai.shipmentId === "number" && ai.shipmentId > 0) {
+        shipmentIdSet.add(ai.shipmentId);
+      }
+    }
+    const shipmentIds = Array.from(shipmentIdSet);
+
+    const shipments =
+      shipmentIds.length > 0
+        ? await prisma.shipment.findMany({
+            where: { id: { in: shipmentIds } },
+            select: {
+              id: true,
+              shipmentNumber: true,
+              status: true,
+              totalCOD: true,
+              createdAt: true,
+              assignedAt: true,
+              _count: { select: { items: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
 
     // ═══ طلبات العميل الأخرى ═══
     const customerOtherOrders = await prisma.order.findMany({
@@ -131,6 +145,7 @@ export async function GET(
     const combined = {
       ...assembly,
       customerOtherOrders,
+      shipments,
     };
 
     const serialized = JSON.parse(
