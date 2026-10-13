@@ -604,11 +604,17 @@ function WarehouseOrderView({ order }: { order: any }) {
       {action === "done" && (
         <div className="mt-4 rounded-2xl border-2 border-green-200 bg-green-50 p-5 text-center">
           <div className="text-base font-black text-green-900">
-            ✅ الطرد جاهز للشحن
+            ✅ تم فحص الطرد
           </div>
           <p className="mt-1 text-xs text-green-700">
-            بانتظار تجميع في شحنة (Phase C)
+            جاهز للتجميع مع طلبات العميل الأخرى
           </p>
+          <Link
+            href="/warehouse/assembly"
+            className="mt-3 inline-block rounded-full bg-teal-600 px-5 py-2 text-xs font-bold text-white hover:bg-teal-700"
+          >
+            اذهب إلى التجميع
+          </Link>
         </div>
       )}
 

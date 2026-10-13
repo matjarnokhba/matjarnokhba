@@ -36,9 +36,9 @@ const NAV_ITEMS = [
     exact: false,
   },
   {
-    href: "/warehouse/ready",
-    label: "جاهز للشحن",
-    icon: Truck,
+    href: "/warehouse/assembly",
+    label: "التجميع",
+    icon: Package,
     exact: false,
   },
   {

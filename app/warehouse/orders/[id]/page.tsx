@@ -456,12 +456,12 @@ export default function WarehouseOrderDetailPage() {
               ✅ تم الفحص
             </div>
             <p className="mt-1 text-[11px] text-green-700">
-              جاهز للتجميع في شحنة —{" "}
+              جاهز للتجميع مع طلبات العميل —{" "}
               <Link
-                href="/warehouse/ready"
+                href="/warehouse/assembly"
                 className="font-bold underline"
               >
-                اذهب إلى جاهز للشحن
+                اذهب إلى التجميع
               </Link>
             </p>
           </div>

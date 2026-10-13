@@ -17,6 +17,14 @@ datasource db {
 // المرجع: DECISIONS.md
 // ============================================
 
+enum AssemblyStatus {
+  PENDING
+  READY
+  PARTIALLY_SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
 /// دور المستخدم
 enum UserRole {
   CUSTOMER
@@ -315,6 +323,7 @@ model User {
   loyaltyAccount LoyaltyAccount?
   sessions       Session[]
   passwordResetTokens PasswordResetToken[]
+  assemblyFiles      AssemblyFile[]
 
   referredBy         User?             @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
   referralsGiven     User[]            @relation("UserReferrals")
@@ -698,6 +707,7 @@ model Order {
   shippingZoneId          Int?
   notes                   String?
   sellerNotes             String?
+  assemblyFile            AssemblyFile?
   loyaltyPointsAwarded    Int           @default(0)
   loyaltyPointsRevoked    Int           @default(0)
   loyaltyAwardedAt        DateTime?
@@ -1664,6 +1674,7 @@ model Shipment {
   items               ShipmentItem[]
   deliveryAttempts    DeliveryAttempt[]
   deliveryAssignments DeliveryAssignment[]
+  assemblyItems       AssemblyItem[]
 
   @@index([status])
   @@index([deliveryPersonId])
@@ -1709,6 +1720,7 @@ model FulfillmentItem {
   sellerId              Int
   quantity              Int
   status                FulfillmentStatus  @default(PENDING)
+  assemblyItem          AssemblyItem?
   deadline              DateTime?
   preparedAt            DateTime?
   preparedById          Int?
@@ -1947,4 +1959,62 @@ model CollectionBatchItem {
 
   @@unique([fulfillmentItemId])
   @@index([batchId])
+}
+
+// ═══════════════════════════════════════════
+// Assembly System — D.1
+// ═══════════════════════════════════════════
+
+model AssemblyFile {
+  id            Int            @id @default(autoincrement())
+  assemblyCode  String         @unique
+  orderId       Int            @unique
+  userId        Int
+  status        AssemblyStatus @default(PENDING)
+
+  expectedItems Int @default(0)
+  receivedItems Int @default(0)
+  shippedItems  Int @default(0)
+
+  deliveryCity     String?
+  deliveryDistrict String?
+
+  readyAt      DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items AssemblyItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([deliveryCity])
+  @@index([status, deliveryCity])
+  @@index([createdAt])
+}
+
+model AssemblyItem {
+  id                 Int      @id @default(autoincrement())
+  assemblyId         Int
+  fulfillmentItemId  Int      @unique
+  expectedQuantity   Int
+  receivedAt         DateTime?
+  includedInShipment Boolean  @default(false)
+  shipmentId         Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assembly        AssemblyFile    @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  fulfillmentItem FulfillmentItem @relation(fields: [fulfillmentItemId], references: [id], onDelete: Restrict)
+  shipment        Shipment?       @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  @@index([assemblyId])
+  @@index([includedInShipment])
+  @@index([shipmentId])
 }
