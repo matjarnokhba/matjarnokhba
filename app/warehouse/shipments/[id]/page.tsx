@@ -15,6 +15,7 @@ import {
   X,
   AlertCircle,
   QrCode,
+  Printer,
 } from "lucide-react";
 
 const CURRENCY = "د.م";
@@ -359,6 +360,15 @@ export default function ShipmentDetailPage() {
 
       {/* Actions */}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {/* ═══ زر طباعة الملصق ═══ */}
+        <Link
+          href={`/warehouse/shipments/${shipmentId}/label`}
+          className="flex items-center justify-center gap-2 rounded-xl bg-[#0a1f44] py-3.5 text-sm font-bold text-white transition hover:bg-[#1a2f54]"
+        >
+          <Printer className="h-4 w-4" />
+          طباعة الملصق
+        </Link>
+
         {canAssign && (
           <button
             onClick={() => setShowAssignModal(true)}
