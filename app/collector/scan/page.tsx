@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   QrCode,
   X,
@@ -12,6 +13,7 @@ import {
   Package,
   Send,
   Wifi,
+  RotateCcw,
 } from "lucide-react";
 
 type ScannedItem = {
@@ -128,7 +130,20 @@ export default function CollectorScanPage() {
   async function handleScan(text: string) {
     if (processing) return;
 
-    let token = text.trim();
+    let raw = text.trim();
+
+    // ═══ Return QR: /r/[token] ═══
+    if (raw.includes("/r/")) {
+      const match = raw.match(/\/r\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        // redirect to return page (handles pickup/arrive actions)
+        window.location.href = `/r/${match[1]}`;
+        return;
+      }
+    }
+
+    // ═══ Order QR: /d/[token] ═══
+    let token = raw;
     if (token.includes("/d/")) {
       const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
       if (match) token = match[1];
@@ -235,14 +250,23 @@ export default function CollectorScanPage() {
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      <div className="mb-6">
-        <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
-          <QrCode className="h-6 w-6 text-purple-600" />
-          مسح الطرود
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          امسح ملصقات الطرود واحدة تلو الأخرى
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
+            <QrCode className="h-6 w-6 text-purple-600" />
+            مسح الطرود
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            امسح ملصقات الطرود أو المرتجعات
+          </p>
+        </div>
+        <Link
+          href="/collector/returns"
+          className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-700"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          المرتجعات
+        </Link>
       </div>
 
       {successFlash && (

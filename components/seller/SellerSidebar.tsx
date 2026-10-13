@@ -20,6 +20,7 @@ import {
   Bell,
   QrCode,
   ScanLine,
+  RotateCcw,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
+  { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
   { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false },
   { href: "/seller/payouts", label: "المدفوعات", icon: Wallet, exact: false },
