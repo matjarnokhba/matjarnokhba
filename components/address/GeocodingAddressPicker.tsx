@@ -60,6 +60,9 @@ export default function GeocodingAddressPicker({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // ═══ Session cache (in-memory) ═══
+  const sessionCache = useRef<Map<string, GeocodingPlace[]>>(new Map());
+
   // ═══ Debounced search ═══
   useEffect(() => {
     if (search.trim().length < 2) {
@@ -68,6 +71,14 @@ export default function GeocodingAddressPicker({
     }
 
     const t = setTimeout(async () => {
+      // ═══ Check session cache ═══
+      const cacheKey = `${search.trim()}|${types?.join(",") || ""}|${bias?.lat || ""}`;
+      const cached = sessionCache.current.get(cacheKey);
+      if (cached) {
+        setResults(cached);
+        return;
+      }
+
       setLoading(true);
       setError("");
 
@@ -76,7 +87,7 @@ export default function GeocodingAddressPicker({
         params.set("q", search.trim());
         // Photon supports only: fr, en, default (NOT ar)
         params.set("lang", "fr");
-        params.set("limit", "12");
+        params.set("limit", "8");
 
         if (types && types.length > 0) {
           params.set("types", types.join(","));
@@ -88,7 +99,8 @@ export default function GeocodingAddressPicker({
         }
 
         const res = await fetch(
-          `/api/geocoding/search?${params.toString()}`
+          `/api/geocoding/search?${params.toString()}`,
+          { cache: "force-cache" }
         );
         const data = await res.json();
 
@@ -111,13 +123,14 @@ export default function GeocodingAddressPicker({
         }
 
         setResults(list);
+        sessionCache.current.set(cacheKey, list);
       } catch {
         setError("فشل البحث");
         setResults([]);
       } finally {
         setLoading(false);
       }
-    }, 350);
+    }, 200);
 
     return () => clearTimeout(t);
   }, [search, types, bbox, bias, parentCity]);
