@@ -123,11 +123,31 @@ export async function POST(request: Request) {
           quantity: item.quantity,
         })),
         couponCode: body.couponCode?.trim() || undefined,
+        shippingAddressId:
+          typeof body.shippingAddressId === "number"
+            ? body.shippingAddressId
+            : undefined,
         address: {
           fullName: addr.fullName.trim(),
           phone: addr.phone.trim(),
           city: addr.city.trim(),
           street: addr.street.trim(),
+          district:
+            typeof addr.district === "string"
+              ? addr.district.trim()
+              : undefined,
+          buildingNumber:
+            typeof addr.buildingNumber === "string"
+              ? addr.buildingNumber.trim()
+              : undefined,
+          apartment:
+            typeof addr.apartment === "string"
+              ? addr.apartment.trim()
+              : undefined,
+          landmark:
+            typeof addr.landmark === "string"
+              ? addr.landmark.trim()
+              : undefined,
           postalCode:
             typeof addr.postalCode === "string"
               ? addr.postalCode.trim()

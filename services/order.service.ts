@@ -18,6 +18,10 @@ type AddressInput = {
   phone: string;
   city: string;
   street: string;
+  district?: string;
+  buildingNumber?: string;
+  apartment?: string;
+  landmark?: string;
   postalCode?: string;
 };
 
@@ -25,6 +29,7 @@ type CreateOrderInput = {
   items: OrderItemInput[];
   couponCode?: string;
   address: AddressInput;
+  shippingAddressId?: number;
   customer: {
     id: number;
     name: string;
@@ -292,6 +297,7 @@ export const OrderService = {
               discount: appliedDiscount,
               total: sellerTotal,
               shippingAddressSnapshot: data.address,
+              shippingAddressId: data.shippingAddressId || null,
               customerSnapshot: data.customer,
               items: {
                 create: items.map((item) => ({

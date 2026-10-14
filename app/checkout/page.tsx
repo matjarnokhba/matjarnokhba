@@ -10,12 +10,12 @@ import {
   Truck,
   Loader2,
   MapPin,
-  Phone,
-  User,
-  Home,
   Ticket,
   X,
   Check,
+  Plus,
+  AlertCircle,
+  User,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -27,32 +27,12 @@ import {
   SHIPPING_FEE,
   FREE_SHIPPING_THRESHOLD,
 } from "@/lib/data/products";
-
-// ═══════════════════════════════════════════
-// المدن المغربية
-// ═══════════════════════════════════════════
-const MOROCCAN_CITIES = [
-  "الدار البيضاء",
-  "الرباط",
-  "مراكش",
-  "فاس",
-  "طنجة",
-  "أكادير",
-  "مكناس",
-  "وجدة",
-  "القنيطرة",
-  "تطوان",
-  "سلا",
-  "المحمدية",
-  "خريبكة",
-  "بني ملال",
-  "الجديدة",
-  "تازة",
-  "الناظور",
-  "سطات",
-  "العرائش",
-  "خنيفرة",
-];
+import AddressForm, {
+  type AddressFormData,
+} from "@/components/address/AddressForm";
+import AddressCard, {
+  type AddressDisplay,
+} from "@/components/address/AddressCard";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -60,19 +40,30 @@ export default function CheckoutPage() {
 
   // ═══════ Idempotency Key ═══════
   const idempotencyKeyRef = useRef<string>("");
-
   useEffect(() => {
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = crypto.randomUUID();
     }
   }, []);
 
-  // ═══════ Form State ═══════
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [city, setCity] = useState("");
-  const [street, setStreet] = useState("");
-  const [postalCode, setPostalCode] = useState("");
+  // ═══════ Auth ═══════
+  const [userId, setUserId] = useState<number | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  // ═══════ Addresses ═══════
+  const [addresses, setAddresses] = useState<AddressDisplay[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(
+    null
+  );
+  const [addressesLoading, setAddressesLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // ═══════ Coupon ═══════
+  const [couponCode, setCouponCode] = useState("");
+  const [couponId, setCouponId] = useState<number | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
 
   // ═══════ UI State ═══════
   const [loading, setLoading] = useState(false);
@@ -82,26 +73,68 @@ export default function CheckoutPage() {
   } | null>(null);
   const [search, setSearch] = useState("");
 
-  // ═══════ الكوبون ═══════
-  const [couponCode, setCouponCode] = useState("");
-  const [couponId, setCouponId] = useState<number | null>(null);
-  const [couponDiscount, setCouponDiscount] = useState(0);
-  const [couponLoading, setCouponLoading] = useState(false);
-  const [couponError, setCouponError] = useState("");
-
-  // ═══════ الحسابات ═══════
+  // ═══════ Shipping ═══════
   const shippingCost =
     subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const total = Math.max(0, subtotal + shippingCost - couponDiscount);
 
-  // ═══════ إعادة التوجيه إذا السلة فارغة ═══════
+  // ═══════ Redirect if cart empty ═══════
   useEffect(() => {
     if (isReady && items.length === 0 && !success) {
       router.push("/");
     }
   }, [isReady, items.length, success, router]);
 
-  // ═══════ تطبيق الكوبون ═══════
+  // ═══════ Check auth ═══════
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUserId(data.user.id);
+        } else {
+          router.push("/login?redirect=/checkout");
+        }
+      } catch {
+        router.push("/login?redirect=/checkout");
+      } finally {
+        setAuthChecking(false);
+      }
+    }
+    checkAuth();
+  }, [router]);
+
+  // ═══════ Load addresses ═══════
+  async function loadAddresses() {
+    setAddressesLoading(true);
+    try {
+      const res = await fetch("/api/user/addresses");
+      const data = await res.json();
+      if (data.success) {
+        setAddresses(data.addresses);
+
+        // اختيار الافتراضي تلقائيًا
+        const def = data.addresses.find((a: AddressDisplay) => a.isDefault);
+        if (def) {
+          setSelectedAddressId(def.id);
+        } else if (data.addresses.length > 0 && !selectedAddressId) {
+          setSelectedAddressId(data.addresses[0].id);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAddressesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (userId) loadAddresses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  // ═══════ Coupon ═══════
   async function applyCoupon() {
     setCouponError("");
     if (!couponCode.trim()) {
@@ -114,12 +147,8 @@ export default function CheckoutPage() {
       const res = await fetch("/api/coupons/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: couponCode.trim(),
-          subtotal,
-        }),
+        body: JSON.stringify({ code: couponCode.trim(), subtotal }),
       });
-
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -146,35 +175,75 @@ export default function CheckoutPage() {
     setCouponError("");
   }
 
-  // ═══════ إرسال الطلب ═══════
+  // ═══════ Add new address ═══════
+  async function handleAddAddress(form: AddressFormData) {
+    const res = await fetch("/api/user/addresses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: form.fullName,
+        phone: form.phone,
+        cityId: form.cityId,
+        districtId: form.districtId,
+        street: form.street,
+        buildingNumber: form.buildingNumber || null,
+        apartment: form.apartment || null,
+        landmark: form.landmark || null,
+        postalCode: form.postalCode || null,
+        isDefault: form.isDefault,
+      }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "فشل الحفظ");
+    }
+
+    setShowAddModal(false);
+    await loadAddresses();
+    // اختر العنوان الجديد تلقائيًا
+    if (data.address?.id) {
+      setSelectedAddressId(data.address.id);
+    }
+  }
+
+  // ═══════ Submit ═══════
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    if (!fullName.trim() || fullName.trim().length < 2) {
-      setError("الاسم يجب أن يكون حرفين على الأقل");
+    if (!selectedAddressId) {
+      setError("اختر عنوانًا للتوصيل أو أضف عنوانًا جديدًا");
       return;
     }
-    if (!phone.trim() || phone.trim().length < 8) {
-      setError("رقم الهاتف غير صالح");
-      return;
-    }
-    if (!city) {
-      setError("اختر المدينة");
-      return;
-    }
-    if (!street.trim() || street.trim().length < 5) {
-      setError("العنوان قصير جداً");
+
+    const selectedAddress = addresses.find(
+      (a) => a.id === selectedAddressId
+    );
+    if (!selectedAddress) {
+      setError("العنوان غير موجود");
       return;
     }
 
     setLoading(true);
 
     try {
-      // ═══ ضمان وجود Idempotency Key ═══
       if (!idempotencyKeyRef.current) {
         idempotencyKeyRef.current = crypto.randomUUID();
       }
+
+      // ═══ Snapshot من العنوان المختار ═══
+      const addressSnapshot = {
+        fullName: selectedAddress.fullName,
+        phone: selectedAddress.phone,
+        city: selectedAddress.city,
+        street: selectedAddress.street,
+        district: selectedAddress.district,
+        buildingNumber: selectedAddress.buildingNumber,
+        apartment: selectedAddress.apartment,
+        landmark: selectedAddress.landmark,
+        postalCode: selectedAddress.postalCode,
+      };
 
       const response = await fetch("/api/orders", {
         method: "POST",
@@ -183,21 +252,14 @@ export default function CheckoutPage() {
           "Idempotency-Key": idempotencyKeyRef.current,
         },
         body: JSON.stringify({
-          // ⚠️ Client يُرسل فقط: productId + variantId + quantity
-          // Server يحسب كل الأسعار
           items: items.map((item) => ({
             productId: item.id,
             variantId: item.variantId,
             quantity: item.quantity,
           })),
           couponCode: couponCode?.trim() || undefined,
-          address: {
-            fullName: fullName.trim(),
-            phone: phone.trim(),
-            city,
-            street: street.trim(),
-            postalCode: postalCode.trim() || undefined,
-          },
+          shippingAddressId: selectedAddressId,
+          address: addressSnapshot,
         }),
       });
 
@@ -225,7 +287,7 @@ export default function CheckoutPage() {
   }
 
   // ═══════════════════════════════════════════
-  // صفحة النجاح
+  // Success page
   // ═══════════════════════════════════════════
   if (success) {
     return (
@@ -297,7 +359,28 @@ export default function CheckoutPage() {
   }
 
   // ═══════════════════════════════════════════
-  // صفحة Checkout
+  // Auth checking
+  // ═══════════════════════════════════════════
+  if (authChecking) {
+    return (
+      <main dir="rtl" className="min-h-screen bg-[#f7f6f2]">
+        <TopBar />
+        <Header
+          search={search}
+          onSearchChange={setSearch}
+          cartCount={items.reduce((s, i) => s + i.quantity, 0)}
+          onCartClick={() => router.push("/")}
+        />
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
+        </div>
+        <Footer />
+      </main>
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  // Checkout Page
   // ═══════════════════════════════════════════
   return (
     <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -328,113 +411,75 @@ export default function CheckoutPage() {
         <h1 className="mb-5 text-2xl font-black">إتمام الطلب</h1>
 
         <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-3">
-          {/* ═══════ اليسار: النموذج ═══════ */}
+          {/* ═══════ Left: Form ═══════ */}
           <div className="space-y-4 lg:col-span-2">
-            {/* معلومات الشحن */}
+            {/* ═══════ Address Section ═══════ */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fff4ed]">
-                  <Truck className="h-4 w-4 text-[#ff5c00]" />
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fff4ed]">
+                    <Truck className="h-4 w-4 text-[#ff5c00]" />
+                  </div>
+                  <h2 className="text-base font-black">عنوان التوصيل</h2>
                 </div>
-                <h2 className="text-base font-black">معلومات الشحن</h2>
+
+                {addresses.length > 0 && addresses.length < 10 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="flex items-center gap-1 rounded-lg border border-[#ff5c00] bg-white px-3 py-1.5 text-xs font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    عنوان جديد
+                  </button>
+                )}
               </div>
 
-              <div className="space-y-3">
-                {/* الاسم */}
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-                    الاسم الكامل <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="أحمد محمد"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                      required
+              {addressesLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
+                </div>
+              ) : addresses.length === 0 ? (
+                <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-8 text-center">
+                  <MapPin className="mx-auto h-10 w-10 text-gray-300" />
+                  <h3 className="mt-3 text-sm font-black">
+                    لا توجد عناوين محفوظة
+                  </h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    أضف عنوانك الأول لإتمام الطلب
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#ff5c00] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    إضافة عنوان
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {addresses.map((a) => (
+                    <AddressCard
+                      key={a.id}
+                      address={a}
+                      selected={selectedAddressId === a.id}
+                      onSelect={setSelectedAddressId}
+                      showActions={false}
                     />
-                  </div>
-                </div>
+                  ))}
 
-                {/* الهاتف */}
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-                    رقم الهاتف <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Phone className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="0612345678"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                      required
-                    />
-                  </div>
+                  <Link
+                    href="/profile/addresses"
+                    className="block text-center text-xs font-bold text-[#ff5c00] hover:underline"
+                  >
+                    إدارة العناوين →
+                  </Link>
                 </div>
-
-                {/* المدينة */}
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-                    المدينة <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <MapPin className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <select
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="w-full appearance-none rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                      required
-                    >
-                      <option value="">اختر المدينة</option>
-                      {MOROCCAN_CITIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* العنوان */}
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-                    العنوان بالتفصيل <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Home className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-gray-400" />
-                    <textarea
-                      value={street}
-                      onChange={(e) => setStreet(e.target.value)}
-                      placeholder="الحي، الشارع، رقم المنزل..."
-                      rows={2}
-                      className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* الرمز البريدي */}
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-                    الرمز البريدي{" "}
-                    <span className="text-gray-400">(اختياري)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
-                    placeholder="20000"
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 px-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* ═══════ الكوبون ═══════ */}
+            {/* ═══════ Coupon ═══════ */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 flex items-center gap-2 text-base font-black">
                 <Ticket className="h-4 w-4 text-[#ff5c00]" />
@@ -456,7 +501,6 @@ export default function CheckoutPage() {
                     type="button"
                     onClick={removeCoupon}
                     className="flex h-7 w-7 items-center justify-center rounded-full text-red-500 transition hover:bg-red-100"
-                    aria-label="إزالة"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -494,7 +538,7 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* طريقة الدفع */}
+            {/* ═══════ Payment ═══════ */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-base font-black">طريقة الدفع</h2>
 
@@ -505,7 +549,7 @@ export default function CheckoutPage() {
                 <div className="flex-1">
                   <div className="text-sm font-bold">الدفع عند الاستلام</div>
                   <div className="text-[11px] text-[#6b7280]">
-                    ادفع نقداً أو بالبطاقة عند وصول طلبك
+                    ادفع نقداً عند وصول طلبك
                   </div>
                 </div>
                 <CheckCircle2 className="h-5 w-5 text-[#ff5c00]" />
@@ -513,7 +557,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* ═══════ اليمين: ملخص الطلب ═══════ */}
+          {/* ═══════ Right: Summary ═══════ */}
           <div className="lg:col-span-1">
             <div className="sticky top-24 rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-base font-black">
@@ -521,7 +565,6 @@ export default function CheckoutPage() {
                 ملخص الطلب
               </h2>
 
-              {/* قائمة المنتجات */}
               <div className="max-h-64 space-y-3 overflow-y-auto border-b border-gray-100 pb-4">
                 {items.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex gap-2">
@@ -554,7 +597,6 @@ export default function CheckoutPage() {
                 ))}
               </div>
 
-              {/* الأسعار */}
               <div className="mt-4 space-y-1.5 text-xs">
                 <div className="flex justify-between text-[#6b7280]">
                   <span>المجموع الفرعي</span>
@@ -592,17 +634,21 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* الخطأ */}
               {error && (
-                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {error}
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
 
-              {/* زر التأكيد */}
               <button
                 type="submit"
-                disabled={loading || items.length === 0}
+                disabled={
+                  loading ||
+                  items.length === 0 ||
+                  !selectedAddressId ||
+                  addresses.length === 0
+                }
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5c00] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-[#e64a00] active:scale-[0.98] disabled:opacity-50"
               >
                 {loading ? (
@@ -625,6 +671,30 @@ export default function CheckoutPage() {
           </div>
         </form>
       </div>
+
+      {/* ═══════ Add Address Modal ═══════ */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-black">إضافة عنوان جديد</h2>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <AddressForm
+              onSubmit={handleAddAddress}
+              onCancel={() => setShowAddModal(false)}
+              submitLabel="إضافة العنوان"
+            />
+          </div>
+        </div>
+      )}
 
       <Footer />
     </main>
