@@ -3,7 +3,6 @@
 import {
   MapPin,
   Phone,
-  User,
   Star,
   Edit3,
   Trash2,
@@ -13,14 +12,31 @@ import {
 export type AddressDisplay = {
   id: number;
   fullName: string;
+  firstName?: string | null;
+  lastName?: string | null;
   phone: string;
+
+  // Legacy
   city: string;
   district: string | null;
   street: string;
+
+  // New geocoding fields
+  cityText?: string | null;
+  cityPlaceId?: string | null;
+  districtText?: string | null;
+  districtPlaceId?: string | null;
+  fullAddressText?: string | null;
+  fullAddressPlaceId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+
+  // Details
   buildingNumber: string | null;
   apartment: string | null;
   landmark: string | null;
   postalCode: string | null;
+
   isDefault: boolean;
 };
 
@@ -43,6 +59,31 @@ export default function AddressCard({
   selected,
   showActions = true,
 }: Props) {
+  // ═══ حقول موحّدة (fallback من legacy إلى الجديدة) ═══
+  const displayName =
+    address.firstName && address.lastName
+      ? `${address.firstName} ${address.lastName}`
+      : address.fullName;
+
+  const displayCity = address.cityText || address.city;
+  const displayDistrict = address.districtText || address.district;
+  const displayStreet = address.fullAddressText || address.street;
+
+  // ═══ بناء سطر العنوان ═══
+  const addressParts: string[] = [];
+
+  if (displayStreet) addressParts.push(displayStreet);
+  if (address.buildingNumber) addressParts.push(address.buildingNumber);
+  if (address.apartment) addressParts.push(address.apartment);
+
+  const addressLine1 = addressParts.join("، ");
+
+  const addressParts2: string[] = [];
+  if (displayDistrict) addressParts2.push(displayDistrict);
+  if (displayCity) addressParts2.push(displayCity);
+
+  const addressLine2 = addressParts2.join("، ");
+
   return (
     <div
       className={`rounded-2xl border-2 bg-white p-4 transition ${
@@ -58,9 +99,10 @@ export default function AddressCard({
             type="button"
             onClick={() => onSelect(address.id)}
             className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
+            aria-label="اختيار"
           >
             <div
-              className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+              className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
                 selected
                   ? "border-[#ff5c00] bg-[#ff5c00]"
                   : "border-gray-300"
@@ -72,8 +114,9 @@ export default function AddressCard({
         )}
 
         <div className="min-w-0 flex-1">
+          {/* ═══ الاسم + Badge ═══ */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-black">{address.fullName}</span>
+            <span className="text-sm font-black">{displayName}</span>
             {address.isDefault && (
               <span className="flex items-center gap-1 rounded-full bg-[#ff5c00] px-2 py-0.5 text-[10px] font-bold text-white">
                 <Star className="h-2.5 w-2.5" fill="currentColor" />
@@ -82,29 +125,35 @@ export default function AddressCard({
             )}
           </div>
 
+          {/* ═══ تفاصيل العنوان ═══ */}
           <div className="mt-2 space-y-1 text-xs text-gray-600">
+            {/* الهاتف */}
             <div className="flex items-center gap-1.5">
               <Phone className="h-3 w-3 shrink-0" />
               <span dir="ltr">{address.phone}</span>
             </div>
-            <div className="flex items-start gap-1.5">
-              <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>
-                {[
-                  address.street,
-                  address.buildingNumber,
-                  address.apartment,
-                ]
-                  .filter(Boolean)
-                  .join("، ")}
-                {" — "}
-                {address.district && `${address.district}، `}
-                {address.city}
-                {address.postalCode && ` (${address.postalCode})`}
-              </span>
-            </div>
+
+            {/* السطر 1: الشارع + الرقم */}
+            {addressLine1 && (
+              <div className="flex items-start gap-1.5">
+                <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>{addressLine1}</span>
+              </div>
+            )}
+
+            {/* السطر 2: الحي + المدينة + الرمز البريدي */}
+            {(addressLine2 || address.postalCode) && (
+              <div className="flex items-start gap-1.5 pl-4.5">
+                <span className="text-gray-500">
+                  {addressLine2}
+                  {address.postalCode && ` (${address.postalCode})`}
+                </span>
+              </div>
+            )}
+
+            {/* علامة مميزة */}
             {address.landmark && (
-              <div className="text-[11px] italic text-gray-500">
+              <div className="mt-1 text-[11px] italic text-gray-500">
                 📍 {address.landmark}
               </div>
             )}
@@ -112,7 +161,7 @@ export default function AddressCard({
         </div>
       </div>
 
-      {/* Actions */}
+      {/* ═══ Actions ═══ */}
       {showActions && (
         <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
           {!address.isDefault && onSetDefault && (

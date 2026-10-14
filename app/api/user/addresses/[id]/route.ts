@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { addressUpdateSchema } from "@/lib/validations/address";
+import { moroccanPhoneSchema } from "@/lib/validations/address";
+import { isValidPlaceId } from "@/lib/geocoding";
 
 async function requireAuth() {
   const current = await SessionService.getCurrent();
@@ -9,6 +11,31 @@ async function requireAuth() {
   return { user: current.user };
 }
 
+// ═══════ Schema ═══════
+const placeSchema = z.object({
+  placeId: z.string().refine(isValidPlaceId, "Place ID غير صالح"),
+  name: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().max(500).optional().default(""),
+  lat: z.number(),
+  lng: z.number(),
+});
+
+const patchSchema = z.object({
+  firstName: z.string().trim().min(2).max(60).optional(),
+  lastName: z.string().trim().min(2).max(60).optional(),
+  phone: moroccanPhoneSchema.optional(),
+  city: placeSchema.optional(),
+  district: placeSchema.optional(),
+  fullAddress: placeSchema.optional(),
+  buildingNumber: z.string().trim().max(50).optional().nullable(),
+  landmark: z.string().trim().max(300).optional().nullable(),
+  postalCode: z.string().trim().max(10).optional().nullable(),
+  isDefault: z.boolean().optional(),
+});
+
+// ═══════════════════════════════════════════
+// GET
+// ═══════════════════════════════════════════
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -37,10 +64,6 @@ export async function GET(
         userId: auth.user.id,
         deletedAt: null,
       },
-      include: {
-        cityRef: { select: { id: true, name: true } },
-        districtRef: { select: { id: true, name: true } },
-      },
     });
 
     if (!address) {
@@ -60,6 +83,9 @@ export async function GET(
   }
 }
 
+// ═══════════════════════════════════════════
+// PATCH
+// ═══════════════════════════════════════════
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -82,18 +108,6 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json();
-    const parsed = addressUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
-        },
-        { status: 400 }
-      );
-    }
-
     const existing = await prisma.address.findFirst({
       where: { id: addressId, userId: auth.user.id, deletedAt: null },
     });
@@ -105,46 +119,58 @@ export async function PATCH(
       );
     }
 
+    const body = await request.json();
+    const parsed = patchSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
+        },
+        { status: 400 }
+      );
+    }
+
     const data = parsed.data;
+    const updates: any = {};
 
-    // ═══ التحقق من المدينة/الحي إن تغيّرا ═══
-    let cityName: string | null = null;
-    let districtName: string | null = null;
+    if (data.firstName !== undefined) updates.firstName = data.firstName;
+    if (data.lastName !== undefined) updates.lastName = data.lastName;
 
-    const newCityId = data.cityId ?? existing.cityId;
-    const newDistrictId =
-      data.districtId !== undefined ? data.districtId : existing.districtId;
-
-    if (newCityId) {
-      const city = await prisma.city.findUnique({
-        where: { id: newCityId },
-        select: { name: true },
-      });
-      if (!city) {
-        return NextResponse.json(
-          { success: false, message: "المدينة غير موجودة" },
-          { status: 400 }
-        );
-      }
-      cityName = city.name;
+    if (data.firstName !== undefined || data.lastName !== undefined) {
+      updates.fullName = `${data.firstName ?? existing.firstName ?? ""} ${
+        data.lastName ?? existing.lastName ?? ""
+      }`.trim();
     }
 
-    if (newDistrictId) {
-      const district = await prisma.district.findUnique({
-        where: { id: newDistrictId },
-        select: { name: true, cityId: true },
-      });
-      if (!district || district.cityId !== newCityId) {
-        return NextResponse.json(
-          { success: false, message: "الحي لا ينتمي لهذه المدينة" },
-          { status: 400 }
-        );
-      }
-      districtName = district.name;
+    if (data.phone !== undefined) updates.phone = data.phone;
+
+    if (data.city !== undefined) {
+      updates.cityPlaceId = data.city.placeId;
+      updates.cityText = data.city.name;
+      updates.city = data.city.name;
     }
+
+    if (data.district !== undefined) {
+      updates.districtPlaceId = data.district.placeId;
+      updates.districtText = data.district.name;
+      updates.district = data.district.name;
+    }
+
+    if (data.fullAddress !== undefined) {
+      updates.fullAddressPlaceId = data.fullAddress.placeId;
+      updates.fullAddressText = data.fullAddress.name;
+      updates.street = data.fullAddress.name;
+      updates.latitude = data.fullAddress.lat;
+      updates.longitude = data.fullAddress.lng;
+    }
+
+    if (data.buildingNumber !== undefined)
+      updates.buildingNumber = data.buildingNumber;
+    if (data.landmark !== undefined) updates.landmark = data.landmark;
+    if (data.postalCode !== undefined) updates.postalCode = data.postalCode;
 
     const updated = await prisma.$transaction(async (tx) => {
-      // ═══ إذا صار default → ألغِ الآخرين ═══
       if (data.isDefault === true) {
         await tx.address.updateMany({
           where: {
@@ -155,36 +181,12 @@ export async function PATCH(
           },
           data: { isDefault: false },
         });
+        updates.isDefault = true;
       }
 
       return tx.address.update({
         where: { id: addressId },
-        data: {
-          ...(data.fullName !== undefined && { fullName: data.fullName }),
-          ...(data.phone !== undefined && { phone: data.phone }),
-          ...(data.cityId !== undefined && { cityId: data.cityId }),
-          ...(data.districtId !== undefined && {
-            districtId: data.districtId,
-          }),
-          ...(cityName && { city: cityName }),
-          ...(districtName !== null && { district: districtName }),
-          ...(data.street !== undefined && { street: data.street }),
-          ...(data.buildingNumber !== undefined && {
-            buildingNumber: data.buildingNumber,
-          }),
-          ...(data.apartment !== undefined && {
-            apartment: data.apartment,
-          }),
-          ...(data.landmark !== undefined && { landmark: data.landmark }),
-          ...(data.postalCode !== undefined && {
-            postalCode: data.postalCode,
-          }),
-          ...(data.isDefault !== undefined && { isDefault: data.isDefault }),
-        },
-        include: {
-          cityRef: { select: { id: true, name: true } },
-          districtRef: { select: { id: true, name: true } },
-        },
+        data: updates,
       });
     });
 
@@ -198,6 +200,9 @@ export async function PATCH(
   }
 }
 
+// ═══════════════════════════════════════════
+// DELETE
+// ═══════════════════════════════════════════
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -232,13 +237,13 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // ═══ Soft Delete ═══
+      // Soft delete
       await tx.address.update({
         where: { id: addressId },
         data: { deletedAt: new Date(), isDefault: false },
       });
 
-      // ═══ إذا كان default → عيّن بديل ═══
+      // If default → promote latest
       if (existing.isDefault) {
         const next = await tx.address.findFirst({
           where: {

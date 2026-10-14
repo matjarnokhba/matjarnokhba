@@ -15,7 +15,6 @@ import {
   Check,
   Plus,
   AlertCircle,
-  User,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -114,12 +113,11 @@ export default function CheckoutPage() {
       if (data.success) {
         setAddresses(data.addresses);
 
-        // اختيار الافتراضي تلقائيًا
         const def = data.addresses.find((a: AddressDisplay) => a.isDefault);
         if (def) {
           setSelectedAddressId(def.id);
-        } else if (data.addresses.length > 0 && !selectedAddressId) {
-          setSelectedAddressId(data.addresses[0].id);
+        } else if (data.addresses.length > 0) {
+          setSelectedAddressId((prev) => prev ?? data.addresses[0].id);
         }
       }
     } catch (e) {
@@ -181,13 +179,13 @@ export default function CheckoutPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fullName: form.fullName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         phone: form.phone,
-        cityId: form.cityId,
-        districtId: form.districtId,
-        street: form.street,
+        city: form.city,
+        district: form.district,
+        fullAddress: form.fullAddress,
         buildingNumber: form.buildingNumber || null,
-        apartment: form.apartment || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,
         isDefault: form.isDefault,
@@ -201,7 +199,6 @@ export default function CheckoutPage() {
 
     setShowAddModal(false);
     await loadAddresses();
-    // اختر العنوان الجديد تلقائيًا
     if (data.address?.id) {
       setSelectedAddressId(data.address.id);
     }
@@ -232,17 +229,25 @@ export default function CheckoutPage() {
         idempotencyKeyRef.current = crypto.randomUUID();
       }
 
-      // ═══ Snapshot من العنوان المختار ═══
+      // ═══ Snapshot from selected address ═══
       const addressSnapshot = {
         fullName: selectedAddress.fullName,
+        firstName: selectedAddress.firstName || undefined,
+        lastName: selectedAddress.lastName || undefined,
         phone: selectedAddress.phone,
-        city: selectedAddress.city,
-        street: selectedAddress.street,
-        district: selectedAddress.district,
-        buildingNumber: selectedAddress.buildingNumber,
-        apartment: selectedAddress.apartment,
-        landmark: selectedAddress.landmark,
-        postalCode: selectedAddress.postalCode,
+        city: selectedAddress.cityText || selectedAddress.city,
+        cityPlaceId: selectedAddress.cityPlaceId || undefined,
+        district: selectedAddress.districtText || selectedAddress.district,
+        districtPlaceId: selectedAddress.districtPlaceId || undefined,
+        fullAddress:
+          selectedAddress.fullAddressText || selectedAddress.street,
+        fullAddressPlaceId:
+          selectedAddress.fullAddressPlaceId || undefined,
+        latitude: selectedAddress.latitude || undefined,
+        longitude: selectedAddress.longitude || undefined,
+        buildingNumber: selectedAddress.buildingNumber || undefined,
+        landmark: selectedAddress.landmark || undefined,
+        postalCode: selectedAddress.postalCode || undefined,
       };
 
       const response = await fetch("/api/orders", {
@@ -392,7 +397,6 @@ export default function CheckoutPage() {
         onCartClick={() => router.push("/")}
       />
 
-      {/* Breadcrumb */}
       <div className="border-b border-gray-100 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-xs text-[#6b7280]">
           <Link
@@ -411,9 +415,8 @@ export default function CheckoutPage() {
         <h1 className="mb-5 text-2xl font-black">إتمام الطلب</h1>
 
         <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-3">
-          {/* ═══════ Left: Form ═══════ */}
           <div className="space-y-4 lg:col-span-2">
-            {/* ═══════ Address Section ═══════ */}
+            {/* Address Section */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -479,7 +482,7 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* ═══════ Coupon ═══════ */}
+            {/* Coupon */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 flex items-center gap-2 text-base font-black">
                 <Ticket className="h-4 w-4 text-[#ff5c00]" />
@@ -538,7 +541,7 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* ═══════ Payment ═══════ */}
+            {/* Payment */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-base font-black">طريقة الدفع</h2>
 
@@ -557,7 +560,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* ═══════ Right: Summary ═══════ */}
+          {/* Summary */}
           <div className="lg:col-span-1">
             <div className="sticky top-24 rounded-2xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 flex items-center gap-2 text-base font-black">
@@ -672,7 +675,7 @@ export default function CheckoutPage() {
         </form>
       </div>
 
-      {/* ═══════ Add Address Modal ═══════ */}
+      {/* Add Address Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16">
           <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">

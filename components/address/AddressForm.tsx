@@ -2,17 +2,21 @@
 
 import { useState } from "react";
 import { Loader2, User, Phone, Home, Check } from "lucide-react";
-import CityDistrictPicker from "./CityDistrictPicker";
+import GeocodingAddressPicker, {
+  type GeocodingPlace,
+} from "./GeocodingAddressPicker";
 
 export type AddressFormData = {
   id?: number;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phone: string;
-  cityId: number | null;
-  districtId: number | null;
-  street: string;
+
+  city: GeocodingPlace | null;
+  district: GeocodingPlace | null;
+  fullAddress: GeocodingPlace | null;
+
   buildingNumber: string;
-  apartment: string;
   landmark: string;
   postalCode: string;
   isDefault: boolean;
@@ -26,13 +30,13 @@ type Props = {
 };
 
 const EMPTY: AddressFormData = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
   phone: "",
-  cityId: null,
-  districtId: null,
-  street: "",
+  city: null,
+  district: null,
+  fullAddress: null,
   buildingNumber: "",
-  apartment: "",
   landmark: "",
   postalCode: "",
   isDefault: false,
@@ -61,8 +65,12 @@ export default function AddressForm({
     setError("");
 
     // ═══ Validation ═══
-    if (!data.fullName.trim() || data.fullName.trim().length < 2) {
-      setError("الاسم مطلوب (2 أحرف على الأقل)");
+    if (!data.firstName.trim() || data.firstName.trim().length < 2) {
+      setError("الاسم الشخصي مطلوب (2 أحرف على الأقل)");
+      return;
+    }
+    if (!data.lastName.trim() || data.lastName.trim().length < 2) {
+      setError("الاسم العائلي مطلوب (2 أحرف على الأقل)");
       return;
     }
     if (!data.phone.trim()) {
@@ -73,12 +81,16 @@ export default function AddressForm({
       setError("رقم الهاتف المغربي غير صحيح (مثال: 0612345678)");
       return;
     }
-    if (!data.cityId) {
-      setError("اختر المدينة");
+    if (!data.city) {
+      setError("اختر المدينة من القائمة");
       return;
     }
-    if (!data.street.trim() || data.street.trim().length < 3) {
-      setError("الشارع مطلوب (3 أحرف على الأقل)");
+    if (!data.district) {
+      setError("اختر الحي / المنطقة من القائمة");
+      return;
+    }
+    if (!data.fullAddress) {
+      setError("اختر العنوان الكامل من القائمة");
       return;
     }
 
@@ -94,24 +106,41 @@ export default function AddressForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* الاسم */}
-      <div>
-        <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-          الاسم الكامل <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={data.fullName}
-            onChange={(e) => set("fullName", e.target.value)}
-            placeholder="أحمد محمد"
-            className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-          />
+      {/* ═══ الأسماء ═══ */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-bold text-[#4b5563]">
+            الاسم الشخصي <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={data.firstName}
+              onChange={(e) => set("firstName", e.target.value)}
+              placeholder="أحمد"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-bold text-[#4b5563]">
+            الاسم العائلي <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <User className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={data.lastName}
+              onChange={(e) => set("lastName", e.target.value)}
+              placeholder="العلوي"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
+            />
+          </div>
         </div>
       </div>
 
-      {/* الهاتف */}
+      {/* ═══ الهاتف ═══ */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           رقم الهاتف <span className="text-red-500">*</span>
@@ -127,39 +156,94 @@ export default function AddressForm({
             className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
           />
         </div>
-        <p className="mt-1 text-[10px] text-gray-500">
-          يقبل الصيغة: 06XXXXXXXX أو +2126XXXXXXXX
-        </p>
       </div>
 
-      {/* المدينة + الحي */}
-      <CityDistrictPicker
-        cityId={data.cityId}
-        districtId={data.districtId}
-        onChange={(cityId, districtId) => {
-          setData((prev) => ({ ...prev, cityId, districtId }));
+      {/* ═══ المدينة ═══ */}
+      <GeocodingAddressPicker
+        label="المدينة"
+        placeholder="ابحث عن مدينتك (مثال: الدار البيضاء)"
+        value={data.city}
+        onChange={(city) => {
+          setData((prev) => ({
+            ...prev,
+            city,
+            district: null,
+            fullAddress: null,
+          }));
           setError("");
         }}
+        required
+        types={["city", "state", "administrative"]}
+        hint="اكتب 2 أحرف على الأقل ثم اختر من القائمة"
       />
 
-      {/* الشارع */}
-      <div>
-        <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-          الشارع / العنوان <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <Home className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            value={data.street}
-            onChange={(e) => set("street", e.target.value)}
-            placeholder="مثال: شارع الحسن الثاني"
-            className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-          />
-        </div>
-      </div>
+      {/* ═══ الحي ═══ */}
+      <GeocodingAddressPicker
+        label="الحي / المنطقة"
+        placeholder={
+          data.city
+            ? `ابحث في ${data.city.name}`
+            : "اختر المدينة أولاً"
+        }
+        value={data.district}
+        onChange={(district) => {
+          setData((prev) => ({
+            ...prev,
+            district,
+            fullAddress: null,
+          }));
+          setError("");
+        }}
+        disabled={!data.city}
+        required
+        types={["district", "suburb", "neighbourhood", "locality", "village", "hamlet"]}
+        bias={
+          data.city
+            ? { lat: data.city.lat, lng: data.city.lng }
+            : undefined
+        }
+        parentCity={data.city?.name || null}
+        hint={
+          data.city
+            ? "ابحث عن حيّك — إن لم تجده، اختر أقرب منطقة"
+            : "اختر المدينة أولاً"
+        }
+      />
 
-      {/* رقم المبنى + الشقة */}
+      {/* ═══ العنوان الكامل ═══ */}
+      <GeocodingAddressPicker
+        label="العنوان الكامل (شارع + رقم)"
+        placeholder={
+          data.city
+            ? `ابحث في ${data.city.name}`
+            : "اختر المدينة أولاً"
+        }
+        value={data.fullAddress}
+        onChange={(addr) => {
+          setData((prev) => ({ ...prev, fullAddress: addr }));
+          setError("");
+        }}
+        disabled={!data.city}
+        required
+        types={[
+          "street",
+          "house",
+          "residential",
+          "road",
+          "place",
+          "square",
+        ]}
+        bias={
+          data.district
+            ? { lat: data.district.lat, lng: data.district.lng }
+            : data.city
+              ? { lat: data.city.lat, lng: data.city.lng }
+              : undefined
+        }
+        hint="ابحث عن الشارع — ثم أضف رقم المنزل أدناه"
+      />
+
+      {/* ═══ رقم المنزل + علامة مميزة ═══ */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
@@ -169,25 +253,27 @@ export default function AddressForm({
             type="text"
             value={data.buildingNumber}
             onChange={(e) => set("buildingNumber", e.target.value)}
-            placeholder="مثال: 45 أو عمارة A"
+            placeholder="45 / عمارة A"
             className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 px-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
           />
         </div>
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-            رقم الشقة / الطابق
+            الرمز البريدي
           </label>
           <input
             type="text"
-            value={data.apartment}
-            onChange={(e) => set("apartment", e.target.value)}
-            placeholder="مثال: ط3 شقة 12"
+            value={data.postalCode}
+            onChange={(e) => set("postalCode", e.target.value)}
+            placeholder="20000"
+            dir="ltr"
+            maxLength={10}
             className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 px-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
           />
         </div>
       </div>
 
-      {/* علامة مميزة */}
+      {/* ═══ علامة مميزة ═══ */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           علامة مميزة{" "}
@@ -203,24 +289,7 @@ export default function AddressForm({
         />
       </div>
 
-      {/* الرمز البريدي */}
-      <div>
-        <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-          الرمز البريدي{" "}
-          <span className="text-gray-400">(اختياري)</span>
-        </label>
-        <input
-          type="text"
-          value={data.postalCode}
-          onChange={(e) => set("postalCode", e.target.value)}
-          placeholder="20000"
-          dir="ltr"
-          maxLength={10}
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 px-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-        />
-      </div>
-
-      {/* Default */}
+      {/* ═══ Default ═══ */}
       <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 transition hover:bg-gray-100">
         <input
           type="checkbox"
@@ -236,14 +305,14 @@ export default function AddressForm({
         </div>
       </label>
 
-      {/* Error */}
+      {/* ═══ Error ═══ */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {error}
         </div>
       )}
 
-      {/* Actions */}
+      {/* ═══ Actions ═══ */}
       <div className="flex gap-2 pt-2">
         {onCancel && (
           <button
@@ -265,7 +334,7 @@ export default function AddressForm({
           ) : (
             <Check className="h-4 w-4" />
           )}
-          {submitting ? "جاري الحفظ..." : submitLabel}
+          {submitting ? "جاري التحقق..." : submitLabel}
         </button>
       </div>
     </form>

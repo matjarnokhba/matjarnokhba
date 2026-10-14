@@ -373,21 +373,38 @@ model User {
 model Address {
   id             Int      @id @default(autoincrement())
   userId         Int
-  fullName       String
+
+  // ═══ الاسم (جديد + قديم) ═══
+  fullName       String   // legacy — kept for old records
+  firstName      String?
+  lastName       String?
+
   phone          String
   country        String   @default("MA")
 
-  // ═══ جغرافي (جديد) ═══
+  // ═══ Geocoding (Photon) ═══
+  cityPlaceId        String?
+  cityText           String?
+  districtPlaceId    String?
+  districtText       String?
+  fullAddressPlaceId String?
+  fullAddressText    String?
+  latitude           Float?
+  longitude          Float?
+
+  // ═══ Internal mapping (Zone admin) ═══
   cityId         Int?
   districtId     Int?
-  city           String   // backward compat
-  district       String?
 
-  // ═══ تفاصيل العنوان (جديد) ═══
-  street         String
+  // ═══ Legacy / compat fields ═══
+  city           String   // legacy
+  district       String?  // legacy
+  street         String   // legacy — will hold fullAddressText
+
+  // ═══ Address details ═══
   buildingNumber String?
-  apartment      String?
-  landmark       String?  // علامة مميزة
+  apartment      String?  // kept for compat
+  landmark       String?
   postalCode     String?
 
   isDefault      Boolean  @default(false)
@@ -395,8 +412,8 @@ model Address {
   updatedAt      DateTime @updatedAt
   deletedAt      DateTime?
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cityRef  City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cityRef     City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
   districtRef District? @relation(fields: [districtId], references: [id], onDelete: SetNull)
 
   @@index([userId])

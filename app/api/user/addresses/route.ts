@@ -1,13 +1,39 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { addressCreateSchema } from "@/lib/validations/address";
+import { moroccanPhoneSchema } from "@/lib/validations/address";
+import { isValidPlaceId, isWithinMorocco } from "@/lib/geocoding";
 
 async function requireAuth() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   return { user: current.user };
 }
+
+const placeSchema = z.object({
+  placeId: z.string().refine(isValidPlaceId, "Place ID غير صالح"),
+  name: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().max(500).optional().default(""),
+  lat: z.number().refine((n) => isWithinMorocco(n, 0), "خط عرض غير صالح"),
+  lng: z.number().refine((n) => isWithinMorocco(0, n), "خط طول غير صالح"),
+});
+
+const createSchema = z.object({
+  firstName: z.string().trim().min(2).max(60),
+  lastName: z.string().trim().min(2).max(60),
+  phone: moroccanPhoneSchema,
+
+  city: placeSchema,
+  district: placeSchema,
+  fullAddress: placeSchema,
+
+  buildingNumber: z.string().trim().max(50).optional().nullable(),
+  landmark: z.string().trim().max(300).optional().nullable(),
+  postalCode: z.string().trim().max(10).optional().nullable(),
+
+  isDefault: z.boolean().optional().default(false),
+});
 
 export async function GET() {
   try {
@@ -21,10 +47,6 @@ export async function GET() {
 
     const addresses = await prisma.address.findMany({
       where: { userId: auth.user.id, deletedAt: null },
-      include: {
-        cityRef: { select: { id: true, name: true, nameFr: true } },
-        districtRef: { select: { id: true, name: true } },
-      },
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     });
 
@@ -49,7 +71,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const parsed = addressCreateSchema.safeParse(body);
+    const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         {
@@ -62,57 +84,35 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // ═══ تحقق: المدينة موجودة ═══
-    const city = await prisma.city.findUnique({
-      where: { id: data.cityId },
-      select: { id: true, name: true },
-    });
-    if (!city) {
-      return NextResponse.json(
-        { success: false, message: "المدينة غير موجودة" },
-        { status: 400 }
-      );
-    }
-
-    // ═══ تحقق: الحي موجود وينتمي للمدينة ═══
-    if (data.districtId) {
-      const district = await prisma.district.findUnique({
-        where: { id: data.districtId },
-        select: { id: true, cityId: true, name: true },
-      });
-      if (!district || district.cityId !== data.cityId) {
-        return NextResponse.json(
-          { success: false, message: "الحي لا ينتمي لهذه المدينة" },
-          { status: 400 }
-        );
-      }
-    }
-
     // ═══ الحد الأقصى 10 عناوين ═══
     const count = await prisma.address.count({
       where: { userId: auth.user.id, deletedAt: null },
     });
     if (count >= 10) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "لا يمكن حفظ أكثر من 10 عناوين",
-        },
+        { success: false, message: "لا يمكن حفظ أكثر من 10 عناوين" },
         { status: 400 }
       );
     }
 
-    const districtName = data.districtId
-      ? (
-          await prisma.district.findUnique({
-            where: { id: data.districtId },
-            select: { name: true },
-          })
-        )?.name || null
-      : null;
+    // ═══ تحقق جغرافي: المدينة = الحي؟ ═══
+    if (
+      data.city.placeId === data.district.placeId ||
+      data.city.placeId === data.fullAddress.placeId
+    ) {
+      return NextResponse.json(
+        { success: false, message: "يجب اختيار أماكن مختلفة" },
+        { status: 400 }
+      );
+    }
+
+    // ═══ تجهيز الحقول ═══
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+    const cityText = data.city.name;
+    const districtText = data.district.name;
+    const fullAddressText = data.fullAddress.name;
 
     const address = await prisma.$transaction(async (tx) => {
-      // ═══ إذا isDefault → إلغاء الافتراضي القديم ═══
       if (data.isDefault) {
         await tx.address.updateMany({
           where: {
@@ -124,29 +124,35 @@ export async function POST(request: Request) {
         });
       }
 
-      // ═══ إذا أول عنوان → اجعله افتراضي ═══
       const shouldBeDefault = data.isDefault || count === 0;
 
       return tx.address.create({
         data: {
           userId: auth.user.id,
-          fullName: data.fullName,
+          // Legacy
+          fullName,
+          city: cityText,
+          district: districtText,
+          street: fullAddressText,
+          // New
+          firstName: data.firstName,
+          lastName: data.lastName,
           phone: data.phone,
           country: "MA",
-          cityId: data.cityId,
-          districtId: data.districtId || null,
-          city: city.name,
-          district: districtName,
-          street: data.street,
+          // Geocoding
+          cityPlaceId: data.city.placeId,
+          cityText,
+          districtPlaceId: data.district.placeId,
+          districtText,
+          fullAddressPlaceId: data.fullAddress.placeId,
+          fullAddressText,
+          latitude: data.fullAddress.lat,
+          longitude: data.fullAddress.lng,
+          // Details
           buildingNumber: data.buildingNumber || null,
-          apartment: data.apartment || null,
           landmark: data.landmark || null,
           postalCode: data.postalCode || null,
           isDefault: shouldBeDefault,
-        },
-        include: {
-          cityRef: { select: { id: true, name: true } },
-          districtRef: { select: { id: true, name: true } },
         },
       });
     });

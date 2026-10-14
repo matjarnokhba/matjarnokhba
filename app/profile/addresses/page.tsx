@@ -8,7 +8,6 @@ import {
   MapPin,
   Plus,
   X,
-  Check,
   AlertCircle,
 } from "lucide-react";
 import AddressForm, {
@@ -17,6 +16,7 @@ import AddressForm, {
 import AddressCard, {
   type AddressDisplay,
 } from "@/components/address/AddressCard";
+import type { GeocodingPlace } from "@/components/address/GeocodingAddressPicker";
 
 type Mode =
   | { type: "list" }
@@ -56,18 +56,21 @@ export default function ProfileAddressesPage() {
     load();
   }, []);
 
+  // ═══════════════════════════════════════════
+  // Create
+  // ═══════════════════════════════════════════
   async function handleCreate(form: AddressFormData) {
     const res = await fetch("/api/user/addresses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fullName: form.fullName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         phone: form.phone,
-        cityId: form.cityId,
-        districtId: form.districtId,
-        street: form.street,
+        city: form.city,
+        district: form.district,
+        fullAddress: form.fullAddress,
         buildingNumber: form.buildingNumber || null,
-        apartment: form.apartment || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,
         isDefault: form.isDefault,
@@ -85,6 +88,9 @@ export default function ProfileAddressesPage() {
     setTimeout(() => setMessage(null), 2500);
   }
 
+  // ═══════════════════════════════════════════
+  // Update
+  // ═══════════════════════════════════════════
   async function handleUpdate(form: AddressFormData) {
     if (!form.id) throw new Error("معرف مفقود");
 
@@ -92,13 +98,13 @@ export default function ProfileAddressesPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fullName: form.fullName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         phone: form.phone,
-        cityId: form.cityId,
-        districtId: form.districtId,
-        street: form.street,
+        city: form.city,
+        district: form.district,
+        fullAddress: form.fullAddress,
         buildingNumber: form.buildingNumber || null,
-        apartment: form.apartment || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,
         isDefault: form.isDefault,
@@ -117,6 +123,9 @@ export default function ProfileAddressesPage() {
     setTimeout(() => setMessage(null), 2500);
   }
 
+  // ═══════════════════════════════════════════
+  // Delete
+  // ═══════════════════════════════════════════
   async function handleDelete(id: number) {
     if (!confirm("هل تريد حذف هذا العنوان؟")) return;
 
@@ -137,6 +146,9 @@ export default function ProfileAddressesPage() {
     }
   }
 
+  // ═══════════════════════════════════════════
+  // Set Default
+  // ═══════════════════════════════════════════
   async function handleSetDefault(id: number) {
     try {
       const res = await fetch(`/api/user/addresses/${id}/set-default`, {
@@ -155,6 +167,9 @@ export default function ProfileAddressesPage() {
     }
   }
 
+  // ═══════════════════════════════════════════
+  // Edit — تحويل البيانات لحقول النموذج الجديد
+  // ═══════════════════════════════════════════
   async function handleEdit(id: number) {
     try {
       const res = await fetch(`/api/user/addresses/${id}`);
@@ -165,15 +180,60 @@ export default function ProfileAddressesPage() {
       }
 
       const a = data.address;
+
+      // ═══ إعادة بناء GeocodingPlace من DB ═══
+      const city: GeocodingPlace | null = a.cityPlaceId
+        ? {
+            placeId: a.cityPlaceId,
+            name: a.cityText || a.city,
+            displayName: a.cityText || a.city,
+            city: null,
+            district: null,
+            state: null,
+            lat: a.latitude || 0,
+            lng: a.longitude || 0,
+            type: "city",
+          }
+        : null;
+
+      const district: GeocodingPlace | null = a.districtPlaceId
+        ? {
+            placeId: a.districtPlaceId,
+            name: a.districtText || a.district || "",
+            displayName: a.districtText || a.district || "",
+            city: null,
+            district: null,
+            state: null,
+            lat: 0,
+            lng: 0,
+            type: "district",
+          }
+        : null;
+
+      const fullAddress: GeocodingPlace | null = a.fullAddressPlaceId
+        ? {
+            placeId: a.fullAddressPlaceId,
+            name: a.fullAddressText || a.street,
+            displayName: a.fullAddressText || a.street,
+            city: null,
+            district: null,
+            state: null,
+            lat: a.latitude || 0,
+            lng: a.longitude || 0,
+            type: "street",
+          }
+        : null;
+
       setEditingAddress({
         id: a.id,
-        fullName: a.fullName,
+        firstName: a.firstName || a.fullName.split(" ")[0] || "",
+        lastName:
+          a.lastName || a.fullName.split(" ").slice(1).join(" ") || "",
         phone: a.phone,
-        cityId: a.cityId,
-        districtId: a.districtId,
-        street: a.street,
+        city,
+        district,
+        fullAddress,
         buildingNumber: a.buildingNumber || "",
-        apartment: a.apartment || "",
         landmark: a.landmark || "",
         postalCode: a.postalCode || "",
         isDefault: a.isDefault,
