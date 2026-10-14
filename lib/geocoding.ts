@@ -2,12 +2,15 @@
 // Geocoding Service — Photon (Komoot)
 // Free, no API key, built on OpenStreetMap
 // Docs: https://photon.komoot.io
+//
+// ⚠️ Photon supports only: default, de, en, fr (NOT ar)
 // ═══════════════════════════════════════════
 
 const PHOTON_BASE = "https://photon.komoot.io/api";
 
-// نطاق المغرب التقريبي (bbox: minLon,minLat,maxLon,maxLat)
-const MOROCCO_BBOX = "-13.5,27.5,-0.5,36.0";
+// ═══ Morocco bounding box (minLon,minLat,maxLon,maxLat) ═══
+// Including Western Sahara region
+const MOROCCO_BBOX = "-17.2,20.7,-0.99,36.1";
 
 export type GeocodingResult = {
   placeId: string;
@@ -105,7 +108,7 @@ function normalizeFeature(f: PhotonFeature): GeocodingResult {
 export async function searchPlaces(
   query: string,
   options: {
-    lang?: "ar" | "fr" | "en" | "default";
+    lang?: "fr" | "en" | "default";
     limit?: number;
     lat?: number;
     lng?: number;
@@ -118,9 +121,9 @@ export async function searchPlaces(
 
   const params = new URLSearchParams();
   params.set("q", query.trim());
-  params.set("lang", options.lang || "ar");
+  // Photon supports only: default, de, en, fr
+  params.set("lang", options.lang || "fr");
   params.set("limit", String(options.limit || 12));
-  params.set("bbox", options.bbox || MOROCCO_BBOX);
 
   // location bias
   if (options.lat && options.lng) {
@@ -159,7 +162,8 @@ export async function searchPlaces(
 
     // ═══ Type filter ═══
     if (options.types && options.types.length > 0) {
-      results = results.filter((r) => options.types!.includes(r.type));
+      const allowed = new Set(options.types);
+      results = results.filter((r) => allowed.has(r.type));
     }
 
     return results;

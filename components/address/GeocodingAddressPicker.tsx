@@ -6,7 +6,6 @@ import {
   Loader2,
   X,
   MapPin,
-  Check,
   Navigation,
 } from "lucide-react";
 
@@ -32,7 +31,7 @@ type Props = {
   hint?: string;
 
   // Restrict search
-  types?: string[]; // ["city"], ["district", "suburb"], ["street", "house"]
+  types?: string[];
   bbox?: string;
   bias?: { lat: number; lng: number };
 
@@ -75,7 +74,8 @@ export default function GeocodingAddressPicker({
       try {
         const params = new URLSearchParams();
         params.set("q", search.trim());
-        params.set("lang", "ar");
+        // Photon supports only: fr, en, default (NOT ar)
+        params.set("lang", "fr");
         params.set("limit", "12");
 
         if (types && types.length > 0) {

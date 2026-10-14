@@ -48,11 +48,13 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
-    const lang = (searchParams.get("lang") || "ar") as
-      | "ar"
-      | "fr"
-      | "en"
-      | "default";
+
+    // Photon supports only: default, de, en, fr (NOT ar)
+    const rawLang = searchParams.get("lang") || "fr";
+    const lang = (["fr", "en", "default"].includes(rawLang)
+      ? rawLang
+      : "fr") as "fr" | "en" | "default";
+
     const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 20);
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
@@ -63,7 +65,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, results: [] });
     }
 
-    const types = typesParam ? typesParam.split(",").filter(Boolean) : undefined;
+    const types = typesParam
+      ? typesParam.split(",").filter(Boolean)
+      : undefined;
 
     const results = await searchPlaces(q, {
       lang,
