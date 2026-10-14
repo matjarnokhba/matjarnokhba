@@ -316,6 +316,13 @@ enum LoyaltyRewardStatus {
   CANCELLED     // ملغى
 }
 
+enum DistrictType {
+  NEIGHBORHOOD
+  RURAL
+  DOUAR
+  VILLAGE
+}
+
 // ============================================
 // GROUP 1 — IDENTITY
 // User, Address, Session, Seller
@@ -364,24 +371,39 @@ model User {
 }
 
 model Address {
-  id         Int       @id @default(autoincrement())
-  userId     Int
-  fullName   String
-  phone      String
-  country    String
-  city       String
-  street     String
-  postalCode String?
-  isDefault  Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  fullName       String
+  phone          String
+  country        String   @default("MA")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // ═══ جغرافي (جديد) ═══
+  cityId         Int?
+  districtId     Int?
+  city           String   // backward compat
+  district       String?
+
+  // ═══ تفاصيل العنوان (جديد) ═══
+  street         String
+  buildingNumber String?
+  apartment      String?
+  landmark       String?  // علامة مميزة
+  postalCode     String?
+
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cityRef  City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  districtRef District? @relation(fields: [districtId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([userId, isDefault])
   @@index([deletedAt])
+  @@index([cityId])
+  @@index([districtId])
 }
 
 model Session {
@@ -733,6 +755,7 @@ model Order {
   customerSnapshot        Json
   shippingZoneId          Int?
   notes                   String?
+  shippingAddressId       Int?
   sellerNotes             String?
   assemblyFile            AssemblyFile?
   loyaltyPointsAwarded    Int           @default(0)
@@ -767,6 +790,7 @@ model Order {
   @@index([sellerId, source])
   @@index([deliveryPersonId])
   @@index([deliveryPersonId, status])
+  @@index([shippingAddressId])
 }
 
 model OrderItem {
@@ -2138,4 +2162,48 @@ model ReturnShipment {
   @@index([pickupDriverId])
   @@index([returnDriverId])
   @@index([status, createdAt])
+}
+
+// ═══════════════════════════════════════════
+// Geography — Cities & Districts
+// ═══════════════════════════════════════════
+
+model City {
+  id          Int      @id @default(autoincrement())
+  name        String   // العربية
+  nameFr      String?  // Français
+  slug        String   @unique
+  region      String?
+  postalCode  String?
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  districts District[]
+  addresses Address[]
+
+  @@index([name])
+  @@index([isActive])
+  @@index([slug])
+}
+
+model District {
+  id        Int          @id @default(autoincrement())
+  cityId    Int
+  name      String
+  nameFr    String?
+  type      DistrictType @default(NEIGHBORHOOD)
+  isActive  Boolean      @default(true)
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  city      City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  addresses Address[]
+
+  @@unique([cityId, name])
+  @@index([cityId])
+  @@index([isActive])
+  @@index([cityId, isActive])
 }
