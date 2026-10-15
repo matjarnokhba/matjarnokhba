@@ -2,6 +2,55 @@ import "dotenv/config";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
+function normalizeName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ىي]/g, "ي")
+    .replace(/[ؤئء]/g, "ء")
+    .replace(/[ةه]/g, "ه")
+    .replace(/[\s\-_.]+/g, " ");
+}
+
+function fnv1aHash(str: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = (hash * 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function getColorHue(name: string): number {
+  const normalized = normalizeName(name);
+  if (!normalized) return 0;
+  return fnv1aHash(normalized) % 360;
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function getColorHex(name: string): string {
+  return hslToHex(getColorHue(name), 65, 45);
+}
+
 const adapter = new PrismaNeon({
   connectionString: process.env.DATABASE_URL!,
 });
@@ -710,6 +759,9 @@ async function main() {
 
     let cityId: number;
 
+    const cityHue = getColorHue(c.name);
+    const cityHex = getColorHex(c.name);
+
     if (existing) {
       await prisma.city.update({
         where: { id: existing.id },
@@ -719,6 +771,8 @@ async function main() {
           region: c.region || null,
           postalCode: c.postalCode || null,
           order: i,
+          colorHue: cityHue,
+          colorHex: cityHex,
         },
       });
       cityId = existing.id;
@@ -732,6 +786,8 @@ async function main() {
           region: c.region || null,
           postalCode: c.postalCode || null,
           order: i,
+          colorHue: cityHue,
+          colorHex: cityHex,
         },
       });
       cityId = created.id;
@@ -750,6 +806,9 @@ async function main() {
           select: { id: true },
         });
 
+        const dHue = getColorHue(d.name);
+        const dHex = getColorHex(d.name);
+
         if (existingDistrict) {
           await prisma.district.update({
             where: { id: existingDistrict.id },
@@ -757,6 +816,8 @@ async function main() {
               nameFr: d.nameFr || null,
               type: (d.type as any) || "NEIGHBORHOOD",
               order: j,
+              colorHue: dHue,
+              colorHex: dHex,
             },
           });
           districtsUpdated++;
@@ -768,6 +829,8 @@ async function main() {
               nameFr: d.nameFr || null,
               type: (d.type as any) || "NEIGHBORHOOD",
               order: j,
+              colorHue: dHue,
+              colorHex: dHex,
             },
           });
           districtsCreated++;

@@ -22,6 +22,8 @@ type Label = {
   postalCode: string | null;
   parcelCount: number;
   sellers: Array<{ id: number; storeName: string; city: string | null }>;
+  cityColor: string | null;
+  districtColor: string | null;
   qrToken: string | null;
   qrPreview: string;
 };
@@ -154,10 +156,25 @@ export default function ShipmentLabelPage() {
           </div>
         </div>
 
-        {/* ═══ QR + Parcel Count ═══ */}
+        {/* ═══ QR + Parcel Count + Color Bars ═══ */}
         <div className="flex items-stretch border-b-2 border-gray-200">
+          {/* ═══ شريط المدينة (يمين) ═══ */}
+          {label.cityColor && (
+            <div
+              className="flex w-12 flex-col items-center justify-center gap-2 py-4"
+              style={{ backgroundColor: label.cityColor }}
+            >
+              <div
+                className="text-3xl font-black"
+                style={{ color: getContrastText(label.cityColor) }}
+              >
+                M
+              </div>
+            </div>
+          )}
+
           {/* QR */}
-          <div className="flex flex-1 items-center justify-center border-l-2 border-gray-200 bg-white p-4">
+          <div className="flex flex-1 items-center justify-center bg-white p-4">
             {qrDataUrl ? (
               <img
                 src={qrDataUrl}
@@ -171,8 +188,23 @@ export default function ShipmentLabelPage() {
             )}
           </div>
 
+          {/* ═══ شريط الحي (يسار) ═══ */}
+          {label.districtColor && (
+            <div
+              className="flex w-12 flex-col items-center justify-center gap-2 py-4"
+              style={{ backgroundColor: label.districtColor }}
+            >
+              <div
+                className="text-3xl font-black"
+                style={{ color: getContrastText(label.districtColor) }}
+              >
+                H
+              </div>
+            </div>
+          )}
+
           {/* Parcel count */}
-          <div className="flex w-32 flex-col items-center justify-center bg-[#fff4ed] p-3">
+          <div className="flex w-32 flex-col items-center justify-center border-l-2 border-gray-200 bg-[#fff4ed] p-3">
             <div className="text-[10px] font-black uppercase tracking-wider text-gray-500">
               عدد الطرود
             </div>
@@ -236,7 +268,7 @@ export default function ShipmentLabelPage() {
           </div>
         </div>
 
-        {/* ═══ Sellers (internal reference) ═══ */}
+        {/* ═══ Sellers ═══ */}
         {label.sellers.length > 0 && (
           <div className="border-b-2 border-gray-200 px-5 py-3">
             <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">
@@ -289,4 +321,12 @@ export default function ShipmentLabelPage() {
       `}</style>
     </div>
   );
+}
+
+function getContrastText(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#000000" : "#FFFFFF";
 }

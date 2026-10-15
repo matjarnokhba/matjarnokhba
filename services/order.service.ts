@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { CouponService } from "@/services/coupon.service";
 import { InventoryService } from "@/services/inventory.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
+import { getColorHex } from "@/lib/address-colors";
 
 const SHIPPING_FEE = 30;
 const FREE_SHIPPING_THRESHOLD = 300;
@@ -296,6 +297,14 @@ export const OrderService = {
 
           const orderNumber = await this.generateOrderNumber(tx);
 
+          // ═══ Address colors ═══
+          const cityColor = data.address.city
+            ? getColorHex(data.address.city)
+            : null;
+          const districtColor = data.address.district
+            ? getColorHex(data.address.district)
+            : null;
+
           const order = await tx.order.create({
             data: {
               orderNumber,
@@ -311,6 +320,8 @@ export const OrderService = {
               total: sellerTotal,
               shippingAddressSnapshot: data.address,
               shippingAddressId: data.shippingAddressId || null,
+              shippingCityColor: cityColor,
+              shippingDistrictColor: districtColor,
               customerSnapshot: data.customer,
               items: {
                 create: items.map((item) => ({

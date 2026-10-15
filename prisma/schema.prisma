@@ -781,6 +781,8 @@ model Order {
   deliveredAt             DateTime?
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
+  shippingCityColor     String?
+  shippingDistrictColor String?
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   seller           Seller?              @relation(fields: [sellerId], references: [id], onDelete: Restrict)
@@ -2196,6 +2198,8 @@ model City {
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  colorHue    Int      @default(0)
+  colorHex    String?
 
   districts District[]
   addresses Address[]
@@ -2215,6 +2219,8 @@ model District {
   order     Int          @default(0)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
+  colorHue   Int         @default(0)
+  colorHex   String?
 
   city      City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
   addresses Address[]

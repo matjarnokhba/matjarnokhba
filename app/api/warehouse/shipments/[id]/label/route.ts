@@ -47,6 +47,8 @@ export async function GET(
                 orderNumber: true,
                 shippingAddressSnapshot: true,
                 customerSnapshot: true,
+                shippingCityColor: true,
+                shippingDistrictColor: true,
               },
             },
           },
@@ -143,7 +145,11 @@ export async function GET(
           parcelCount: uniqueOrderIds.size,
 
           // التجار (للمرجع)
-          sellers: uniqueSellers,
+          sellers: Array.from(sellerMap.values()),
+
+          // ═══ ألوان المدينة والحي ═══
+          cityColor: firstItem?.order?.shippingCityColor || null,
+          districtColor: firstItem?.order?.shippingDistrictColor || null,
 
           // QR
           qrToken: rawToken,
