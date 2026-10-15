@@ -16,6 +16,8 @@ type Order = {
   deliveryToken: string | null;
   shippingAddressSnapshot: any;
   customerSnapshot: any;
+  shippingCityColor: string | null;
+  shippingDistrictColor: string | null;
   items: {
     id: number;
     productName: string;
@@ -77,7 +79,7 @@ export default function OrderLabelPage() {
     if (orderId) load();
   }, [orderId]);
 
-  // ═══ 2. توليد QR (بعد وجود canvas في DOM) ═══
+  // ═══ 2. توليد QR ═══
   useEffect(() => {
     if (loading || !order || !seller || !canvasRef.current) return;
     if (qrDataUrl) return;
@@ -134,7 +136,38 @@ export default function OrderLabelPage() {
   }
 
   const address = order.shippingAddressSnapshot || {};
+  const customer = order.customerSnapshot || {};
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+
+  // ═══ الاسم الكامل — من جميع المصادر ═══
+  const customerFullName =
+    address.fullName ||
+    (address.firstName || address.lastName
+      ? `${address.firstName || ""} ${address.lastName || ""}`.trim()
+      : "") ||
+    customer.name ||
+    customer.fullName ||
+    "—";
+
+  // ═══ الألوان ═══
+  const cityColor = order.shippingCityColor || null;
+  const districtColor = order.shippingDistrictColor || null;
+
+  // ═══ لون نص الشريط — حسب الإضاءة ═══
+  const cityTextColor = cityColor ? getContrastText(cityColor) : "#fff";
+  const districtTextColor = districtColor
+    ? getContrastText(districtColor)
+    : "#fff";
+
+  // ═══ العنوان الكامل ═══
+  const fullStreet =
+    address.fullAddress ||
+    address.fullAddressText ||
+    address.street ||
+    "";
+
+  const districtName = address.district || address.districtText || "";
+  const cityName = address.city || address.cityText || "";
 
   return (
     <div className="min-h-screen bg-gray-200 p-4 print:bg-white print:p-0">
@@ -168,6 +201,7 @@ export default function OrderLabelPage() {
         className="mx-auto rounded-xl bg-white p-2 shadow-xl print:shadow-none"
         style={{ width: "33%", minWidth: "320px", maxWidth: "500px" }}
       >
+        {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b-2 border-[#0a1f44] pb-1">
           <div className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">
             {seller.storeName}
@@ -177,33 +211,70 @@ export default function OrderLabelPage() {
           </div>
         </div>
 
-        <div className="flex justify-center pt-1">
-          <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
-            {qrDataUrl ? (
-              <img
-                src={qrDataUrl}
-                alt="QR"
-                className="h-48 w-48 object-contain"
-              />
-            ) : (
-              <div className="flex h-48 w-48 items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
+        {/* ═══ QR + Color Bars ═══ */}
+        <div className="mt-1 flex items-stretch justify-center gap-1">
+          {/* شريط المدينة (يمين) */}
+          {cityColor && (
+            <div
+              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: cityColor }}
+            >
+              <span
+                className="text-xl font-black"
+                style={{ color: cityTextColor }}
+              >
+                M
+              </span>
+            </div>
+          )}
+
+          {/* QR */}
+          <div className="flex-1">
+            <div className="flex justify-center">
+              <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR"
+                    className="h-44 w-44 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-44 w-44 items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
+
+          {/* شريط الحي (يسار) */}
+          {districtColor && (
+            <div
+              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: districtColor }}
+            >
+              <span
+                className="text-xl font-black"
+                style={{ color: districtTextColor }}
+              >
+                H
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="text-center text-sm font-bold leading-none text-gray-600">
+        <div className="mt-1 text-center text-sm font-bold leading-none text-gray-600">
           📱 امسح الرمز لبدء التوصيل
         </div>
 
+        {/* ═══ Recipient ═══ */}
         <div className="mt-1 rounded-lg border-2 border-gray-300 p-1.5">
           <div className="flex items-baseline gap-1.5">
             <span className="shrink-0 text-[10px] font-black uppercase leading-none text-gray-400">
               إلى
             </span>
-            <span className="truncate text-2xl font-black leading-none text-[#0a1f44]">
-              {address.fullName || "—"}
+            <span className="text-2xl font-black leading-none text-[#0a1f44]">
+              {customerFullName}
             </span>
           </div>
 
@@ -217,12 +288,20 @@ export default function OrderLabelPage() {
           )}
 
           <div className="mt-1 text-base leading-tight text-gray-700">
-            {address.street && <span>{address.street}، </span>}
-            <span>{address.city}</span>
-            {address.postalCode && <span> - {address.postalCode}</span>}
+            {fullStreet && <div>{fullStreet}</div>}
+            {districtName && (
+              <div className="font-bold">{districtName}</div>
+            )}
+            {cityName && <div className="font-bold">{cityName}</div>}
+            {address.postalCode && (
+              <div className="font-mono text-sm" dir="ltr">
+                {address.postalCode}
+              </div>
+            )}
           </div>
         </div>
 
+        {/* ═══ Totals ═══ */}
         <div className="mt-1 flex items-center justify-between gap-2 border-t-2 border-dashed border-gray-300 pt-1">
           <div className="flex items-baseline gap-1">
             <span className="text-xs font-bold leading-none text-gray-500">
@@ -259,8 +338,21 @@ export default function OrderLabelPage() {
             margin: 8mm;
             size: auto;
           }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         }
       `}</style>
     </div>
   );
+}
+
+function getContrastText(hex: string): string {
+  if (!hex) return "#FFFFFF";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#000000" : "#FFFFFF";
 }

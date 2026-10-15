@@ -217,6 +217,9 @@ export const AccessPolicyService = {
           ? order.shippingAddressSnapshot
           : null,
         userId: isInStore ? order.userId : null,
+        // ═══ الألوان تُبقى دائمًا (لا PII) ═══
+        shippingCityColor: order.shippingCityColor,
+        shippingDistrictColor: order.shippingDistrictColor,
       };
 
       if (!isInStore) {
