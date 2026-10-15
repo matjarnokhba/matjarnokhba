@@ -22,6 +22,7 @@ import {
   Settings,
   LogOut,
   ChevronLeft,
+  ArrowRight,
   Edit3,
 } from "lucide-react";
 
@@ -140,6 +141,17 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* ═══════ Header Card ═══════ */}
       <div className="bg-gradient-to-br from-[#ff5c00] to-[#e64a00] px-4 pb-20 pt-16 text-white lg:pt-8">
+        {/* زر الرجوع إلى المتجر */}
+        <div className="mx-auto mb-4 max-w-3xl">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 text-xs font-bold backdrop-blur transition hover:bg-white/30"
+          >
+            <ArrowRight className="h-3.5 w-3.5" />
+            الرجوع إلى المتجر
+          </Link>
+        </div>
+
         <div className="mx-auto flex max-w-3xl items-center gap-4">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl font-black backdrop-blur">
             {user.name.charAt(0)}
