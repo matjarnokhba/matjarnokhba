@@ -19,7 +19,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { placeId, name, lat, lng } = body || {};
 
-    // ═══ Format checks ═══
     if (typeof placeId !== "string" || !isValidPlaceId(placeId)) {
       return NextResponse.json(
         { success: false, message: "معرف المكان غير صالح" },
@@ -48,15 +47,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ Photon verification ═══
     const verified = await verifyPlace(placeId, name.trim());
 
     if (!verified) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "لم نتمكن من التحقق من هذا المكان",
-        },
+        { success: false, message: "لم نتمكن من التحقق من هذا المكان" },
         { status: 400 }
       );
     }

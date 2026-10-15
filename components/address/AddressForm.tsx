@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, User, Phone, Home, Check } from "lucide-react";
+import {
+  Loader2,
+  User,
+  Phone,
+  Check,
+  MapPin,
+  Navigation,
+} from "lucide-react";
 import GeocodingAddressPicker, {
   type GeocodingPlace,
 } from "./GeocodingAddressPicker";
@@ -51,6 +58,8 @@ export default function AddressForm({
   const [data, setData] = useState<AddressFormData>({ ...EMPTY, ...initial });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locatingError, setLocatingError] = useState("");
 
   function set<K extends keyof AddressFormData>(
     key: K,
@@ -60,11 +69,119 @@ export default function AddressForm({
     setError("");
   }
 
+  // ═══════ 📍 زر تحديد الموقع ═══════
+  async function handleLocateMe() {
+    setLocating(true);
+    setLocatingError("");
+
+    if (!navigator.geolocation) {
+      setLocatingError("جهازك لا يدعم تحديد الموقع");
+      setLocating(false);
+      return;
+    }
+
+    try {
+      const position: GeolocationPosition = await new Promise(
+        (resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0,
+          });
+        }
+      );
+
+      const { latitude, longitude } = position.coords;
+
+      const res = await fetch(
+        `/api/geocoding/reverse?lat=${latitude}&lng=${longitude}`
+      );
+      const json = await res.json();
+
+      if (!res.ok || !json.success || !json.result) {
+        setLocatingError(
+          json.message || "لم نتمكن من تحديد عنوانك — جرّب البحث اليدوي"
+        );
+        return;
+      }
+
+      const r = json.result;
+
+      // ═══ بناء placeIds pseudo من النتيجة (نستخدم lat/lng كـfallback) ═══
+      const cityPlace: GeocodingPlace | null = r.city
+        ? {
+            placeId: r.placeId,
+            name: r.city,
+            displayName: r.city,
+            city: r.city,
+            district: null,
+            state: r.state,
+            lat: r.lat,
+            lng: r.lng,
+            type: "city",
+          }
+        : null;
+
+      const districtName = r.suburb || r.neighbourhood || r.district;
+      const districtPlace: GeocodingPlace | null = districtName
+        ? {
+            placeId: r.placeId + "_d",
+            name: districtName,
+            displayName: districtName,
+            city: r.city,
+            district: districtName,
+            state: r.state,
+            lat: r.lat,
+            lng: r.lng,
+            type: "district",
+          }
+        : null;
+
+      const fullAddrName = r.street || r.name || r.displayName.split(",")[0];
+      const fullAddrPlace: GeocodingPlace | null = fullAddrName
+        ? {
+            placeId: r.placeId + "_f",
+            name: fullAddrName,
+            displayName: r.displayName,
+            city: r.city,
+            district: districtName,
+            state: r.state,
+            street: r.street,
+            housenumber: r.housenumber,
+            postcode: r.postcode,
+            lat: r.lat,
+            lng: r.lng,
+            type: "street",
+          }
+        : null;
+
+      setData((prev) => ({
+        ...prev,
+        city: cityPlace || prev.city,
+        district: districtPlace || prev.district,
+        fullAddress: fullAddrPlace || prev.fullAddress,
+        postalCode: r.postcode || prev.postalCode,
+        buildingNumber: r.housenumber || prev.buildingNumber,
+      }));
+    } catch (err: any) {
+      if (err?.code === 1) {
+        setLocatingError("تم رفض الإذن للوصول إلى الموقع");
+      } else if (err?.code === 2) {
+        setLocatingError("تعذّر تحديد الموقع — جرّب في مكان مكشوف");
+      } else if (err?.code === 3) {
+        setLocatingError("انتهت المهلة — حاول مرة أخرى");
+      } else {
+        setLocatingError("فشل تحديد الموقع");
+      }
+    } finally {
+      setLocating(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    // ═══ Validation ═══
     if (!data.firstName.trim() || data.firstName.trim().length < 2) {
       setError("الاسم الشخصي مطلوب (2 أحرف على الأقل)");
       return;
@@ -106,7 +223,32 @@ export default function AddressForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* ═══ الأسماء ═══ */}
+      {/* ═══════ زر تحديد موقعي ═══════ */}
+      <div className="rounded-xl border-2 border-dashed border-[#ff5c00] bg-[#fff4ed] p-3">
+        <button
+          type="button"
+          onClick={handleLocateMe}
+          disabled={locating}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
+        >
+          {locating ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Navigation className="h-4 w-4" />
+          )}
+          {locating ? "جاري تحديد موقعك..." : "📍 تحديد موقعي تلقائيًا"}
+        </button>
+        <p className="mt-2 text-center text-[10px] text-gray-600">
+          سيتم ملء المدينة والحي والعنوان تلقائيًا حسب موقعك الحالي
+        </p>
+        {locatingError && (
+          <p className="mt-2 text-center text-[10px] text-red-600">
+            {locatingError}
+          </p>
+        )}
+      </div>
+
+      {/* ═══════ الاسم الشخصي + العائلي ═══════ */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
@@ -140,7 +282,7 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══ الهاتف ═══ */}
+      {/* ═══════ الهاتف ═══════ */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           رقم الهاتف <span className="text-red-500">*</span>
@@ -158,10 +300,10 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══ المدينة ═══ */}
+      {/* ═══════ المدينة ═══════ */}
       <GeocodingAddressPicker
         label="المدينة"
-        placeholder="ابحث عن مدينتك (مثال: الدار البيضاء)"
+        placeholder="ابحث عن مدينتك..."
         value={data.city}
         onChange={(city) => {
           setData((prev) => ({
@@ -173,17 +315,21 @@ export default function AddressForm({
           setError("");
         }}
         required
-        types={["city", "state", "administrative"]}
+        types={[
+          "administrative",
+          "city",
+          "town",
+          "village",
+          "municipality",
+        ]}
         hint="اكتب 2 أحرف على الأقل ثم اختر من القائمة"
       />
 
-      {/* ═══ الحي ═══ */}
+      {/* ═══════ الحي ═══════ */}
       <GeocodingAddressPicker
         label="الحي / المنطقة"
         placeholder={
-          data.city
-            ? `ابحث في ${data.city.name}`
-            : "اختر المدينة أولاً"
+          data.city ? `ابحث في ${data.city.name}` : "اختر المدينة أولاً"
         }
         value={data.district}
         onChange={(district) => {
@@ -196,11 +342,17 @@ export default function AddressForm({
         }}
         disabled={!data.city}
         required
-        types={["district", "suburb", "neighbourhood", "locality", "village", "hamlet"]}
+        types={[
+          "suburb",
+          "neighbourhood",
+          "quarter",
+          "city_district",
+          "district",
+          "hamlet",
+          "village",
+        ]}
         bias={
-          data.city
-            ? { lat: data.city.lat, lng: data.city.lng }
-            : undefined
+          data.city ? { lat: data.city.lat, lng: data.city.lng } : undefined
         }
         parentCity={data.city?.name || null}
         hint={
@@ -210,13 +362,11 @@ export default function AddressForm({
         }
       />
 
-      {/* ═══ العنوان الكامل ═══ */}
+      {/* ═══════ العنوان الكامل ═══════ */}
       <GeocodingAddressPicker
         label="العنوان الكامل (شارع + رقم)"
         placeholder={
-          data.city
-            ? `ابحث في ${data.city.name}`
-            : "اختر المدينة أولاً"
+          data.city ? `ابحث في ${data.city.name}` : "اختر المدينة أولاً"
         }
         value={data.fullAddress}
         onChange={(addr) => {
@@ -226,12 +376,15 @@ export default function AddressForm({
         disabled={!data.city}
         required
         types={[
-          "street",
-          "house",
-          "residential",
           "road",
-          "place",
-          "square",
+          "street",
+          "residential",
+          "pedestrian",
+          "footway",
+          "house",
+          "building",
+          "amenity",
+          "shop",
         ]}
         bias={
           data.district
@@ -243,7 +396,7 @@ export default function AddressForm({
         hint="ابحث عن الشارع — ثم أضف رقم المنزل أدناه"
       />
 
-      {/* ═══ رقم المنزل + علامة مميزة ═══ */}
+      {/* ═══════ رقم المنزل + الرمز البريدي ═══════ */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
@@ -273,7 +426,7 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══ علامة مميزة ═══ */}
+      {/* ═══════ علامة مميزة ═══════ */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           علامة مميزة{" "}
@@ -289,7 +442,7 @@ export default function AddressForm({
         />
       </div>
 
-      {/* ═══ Default ═══ */}
+      {/* ═══════ Default ═══════ */}
       <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 transition hover:bg-gray-100">
         <input
           type="checkbox"
@@ -305,14 +458,12 @@ export default function AddressForm({
         </div>
       </label>
 
-      {/* ═══ Error ═══ */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {error}
         </div>
       )}
 
-      {/* ═══ Actions ═══ */}
       <div className="flex gap-2 pt-2">
         {onCancel && (
           <button

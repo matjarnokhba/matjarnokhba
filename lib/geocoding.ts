@@ -1,57 +1,40 @@
 // ═══════════════════════════════════════════
-// Geocoding Service — Photon (Komoot)
-// Free, no API key, built on OpenStreetMap
-// Docs: https://photon.komoot.io
-//
-// ⚠️ Photon supports only: default, de, en, fr (NOT ar)
+// Geocoding Service — Nominatim (OpenStreetMap)
+// Free, supports Arabic, detailed addresses
+// Rate limit: 1 req/sec (must cache)
+// Docs: https://nominatim.org/release-docs/latest/api/
 // ═══════════════════════════════════════════
 
-const PHOTON_BASE = "https://photon.komoot.io/api";
+const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 
-// ═══ Morocco bounding box (minLon,minLat,maxLon,maxLat) ═══
-// Including Western Sahara region
+// ═══ Morocco bounding box ═══
 const MOROCCO_BBOX = "-17.2,20.7,-0.99,36.1";
+
+// ═══ Required by Nominatim usage policy ═══
+const USER_AGENT = "MatjarNokhba/1.0 (contact: matjarnokhba.vercel.app)";
 
 export type GeocodingResult = {
   placeId: string;
   osmId: number;
   osmType: string;
+
   name: string;
   displayName: string;
   country: string;
   countryCode: string;
+
   city: string | null;
   district: string | null;
+  suburb: string | null;
+  neighbourhood: string | null;
   state: string | null;
   street: string | null;
   housenumber: string | null;
   postcode: string | null;
+
   type: string;
   lat: number;
   lng: number;
-};
-
-type PhotonFeature = {
-  type: "Feature";
-  geometry: { coordinates: [number, number]; type: "Point" };
-  properties: {
-    osm_id: number;
-    osm_type: string;
-    osm_key?: string;
-    osm_value?: string;
-    name?: string;
-    country?: string;
-    countrycode?: string;
-    city?: string;
-    district?: string;
-    state?: string;
-    street?: string;
-    housenumber?: string;
-    postcode?: string;
-    type?: string;
-    extent?: number[];
-    [key: string]: any;
-  };
 };
 
 // ═══ Place ID helpers ═══
@@ -71,36 +54,56 @@ export function isValidPlaceId(placeId: string): boolean {
   return parsePlaceId(placeId) !== null;
 }
 
-// ═══ Normalize Photon feature ═══
-function normalizeFeature(f: PhotonFeature): GeocodingResult {
-  const p = f.properties;
+// ═══ Normalize Nominatim response ═══
+function normalize(result: any): GeocodingResult {
+  const addr = result.address || {};
 
-  const parts = [
-    p.name,
-    p.street,
-    p.district,
-    p.city,
-    p.state,
-    p.country,
-  ].filter(Boolean);
+  const city =
+    addr.city || addr.town || addr.village || addr.municipality || null;
+
+  const suburb = addr.suburb || addr.city_district || null;
+  const neighbourhood = addr.neighbourhood || addr.quarter || null;
+  const district = addr.district || addr.county || null;
+  const state = addr.state || addr.region || null;
+  const street = addr.road || addr.pedestrian || addr.footway || null;
+  const housenumber = addr.house_number || null;
+  const postcode = addr.postcode || null;
+
+  const name =
+    addr.amenity ||
+    addr.shop ||
+    street ||
+    suburb ||
+    neighbourhood ||
+    city ||
+    result.display_name?.split(",")[0] ||
+    "—";
 
   return {
-    placeId: makePlaceId(p.osm_type, p.osm_id),
-    osmId: p.osm_id,
-    osmType: p.osm_type,
-    name: p.name || p.street || p.city || "—",
-    displayName: parts.join("، "),
-    country: p.country || "Maroc",
-    countryCode: (p.countrycode || "MA").toUpperCase(),
-    city: p.city || null,
-    district: p.district || null,
-    state: p.state || null,
-    street: p.street || null,
-    housenumber: p.housenumber || null,
-    postcode: p.postcode || null,
-    type: p.type || p.osm_value || "unknown",
-    lng: f.geometry.coordinates[0],
-    lat: f.geometry.coordinates[1],
+    placeId: makePlaceId(
+      (result.osm_type || "N").charAt(0).toUpperCase(),
+      parseInt(result.osm_id)
+    ),
+    osmId: parseInt(result.osm_id),
+    osmType: (result.osm_type || "N").charAt(0).toUpperCase(),
+
+    name: String(name).trim(),
+    displayName: result.display_name || "",
+    country: addr.country || "Maroc",
+    countryCode: (addr.country_code || "ma").toUpperCase(),
+
+    city,
+    district,
+    suburb,
+    neighbourhood,
+    state,
+    street,
+    housenumber,
+    postcode,
+
+    type: result.type || "unknown",
+    lat: parseFloat(result.lat),
+    lng: parseFloat(result.lon),
   };
 }
 
@@ -108,59 +111,66 @@ function normalizeFeature(f: PhotonFeature): GeocodingResult {
 export async function searchPlaces(
   query: string,
   options: {
-    lang?: "fr" | "en" | "default";
+    lang?: "ar" | "fr" | "en";
     limit?: number;
     lat?: number;
     lng?: number;
-    bbox?: string;
     types?: string[];
     includeCountryCodes?: string[];
+    viewbox?: string;
+    bounded?: boolean;
   } = {}
 ): Promise<GeocodingResult[]> {
   if (!query || query.trim().length < 2) return [];
 
   const params = new URLSearchParams();
   params.set("q", query.trim());
-  // Photon supports only: default, de, en, fr
-  params.set("lang", options.lang || "fr");
-  params.set("limit", String(options.limit || 12));
+  params.set("format", "jsonv2");
+  params.set("addressdetails", "1");
+  params.set("limit", String(options.limit || 10));
+  params.set("accept-language", options.lang || "ar");
 
-  // location bias
-  if (options.lat && options.lng) {
-    params.set("lat", String(options.lat));
-    params.set("lon", String(options.lng));
+  // Filter by country (default Morocco)
+  const countries =
+    options.includeCountryCodes && options.includeCountryCodes.length > 0
+      ? options.includeCountryCodes
+      : ["ma"];
+  params.set("countrycodes", countries.join(",").toLowerCase());
+
+  // Optional viewbox for location bias
+  if (options.viewbox) {
+    params.set("viewbox", options.viewbox);
+    params.set("bounded", options.bounded ? "1" : "0");
+  } else if (options.lat !== undefined && options.lng !== undefined) {
+    // Build small viewbox around point (~50km)
+    const d = 0.5;
+    const vb = `${options.lng - d},${options.lat + d},${options.lng + d},${options.lat - d}`;
+    params.set("viewbox", vb);
+    params.set("bounded", "0"); // prefer but not exclusive
   }
 
-  const url = `${PHOTON_BASE}?${params.toString()}`;
+  const url = `${NOMINATIM_BASE}/search?${params.toString()}`;
 
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "MatjarNokhba/1.0 (matjarnokhba.vercel.app)",
+        "User-Agent": USER_AGENT,
+        "Accept-Language": options.lang || "ar",
       },
       cache: "no-store",
     });
 
     if (!res.ok) {
-      console.error("Photon search failed:", res.status);
+      console.error("Nominatim search failed:", res.status, res.statusText);
       return [];
     }
 
     const data = await res.json();
-    let results: GeocodingResult[] = (data.features || []).map(
-      normalizeFeature
-    );
+    if (!Array.isArray(data)) return [];
 
-    // ═══ Filter to Morocco only (default) ═══
-    if (!options.includeCountryCodes) {
-      results = results.filter((r) => r.countryCode === "MA");
-    } else {
-      results = results.filter((r) =>
-        options.includeCountryCodes!.includes(r.countryCode)
-      );
-    }
+    let results = data.map(normalize);
 
-    // ═══ Type filter ═══
+    // Type filter (Nominatim types)
     if (options.types && options.types.length > 0) {
       const allowed = new Set(options.types);
       results = results.filter((r) => allowed.has(r.type));
@@ -168,8 +178,50 @@ export async function searchPlaces(
 
     return results;
   } catch (err) {
-    console.error("Photon fetch error:", err);
+    console.error("Nominatim fetch error:", err);
     return [];
+  }
+}
+
+// ═══ Reverse Geocoding (Coordinates → Address) ═══
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  lang: "ar" | "fr" | "en" = "ar"
+): Promise<GeocodingResult | null> {
+  if (!isWithinMorocco(lat, lng)) return null;
+
+  const params = new URLSearchParams();
+  params.set("lat", String(lat));
+  params.set("lon", String(lng));
+  params.set("format", "jsonv2");
+  params.set("addressdetails", "1");
+  params.set("accept-language", lang);
+  params.set("zoom", "18"); // building level
+
+  const url = `${NOMINATIM_BASE}/reverse?${params.toString()}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": lang,
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      console.error("Nominatim reverse failed:", res.status);
+      return null;
+    }
+
+    const data = await res.json();
+    if (!data || data.error) return null;
+
+    return normalize(data);
+  } catch (err) {
+    console.error("Nominatim reverse error:", err);
+    return null;
   }
 }
 
@@ -181,18 +233,37 @@ export async function verifyPlace(
   const parsed = parsePlaceId(placeId);
   if (!parsed) return null;
 
-  // Photon has no direct ID lookup — we re-search by name
-  // and confirm that a result with matching osm_id + osm_type exists
-  const results = await searchPlaces(expectedName, {
-    limit: 20,
-    includeCountryCodes: ["MA"],
-  });
+  // Nominatim has /lookup endpoint by OSM ID
+  const osmTypePrefix = parsed.osmType === "N" ? "N" : parsed.osmType === "W" ? "W" : "R";
+  const osmIds = `${osmTypePrefix}${parsed.osmId}`;
 
-  const match = results.find(
-    (r) => r.osmId === parsed.osmId && r.osmType === parsed.osmType
-  );
+  const params = new URLSearchParams();
+  params.set("osm_ids", osmIds);
+  params.set("format", "jsonv2");
+  params.set("addressdetails", "1");
+  params.set("accept-language", "ar");
 
-  return match || null;
+  const url = `${NOMINATIM_BASE}/lookup?${params.toString()}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "ar",
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+
+    return normalize(data[0]);
+  } catch (err) {
+    console.error("Nominatim verify error:", err);
+    return null;
+  }
 }
 
 // ═══ Coordinates within Morocco bbox ═══

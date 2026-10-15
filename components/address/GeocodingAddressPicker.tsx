@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Search,
-  Loader2,
-  X,
-  MapPin,
-  Navigation,
-} from "lucide-react";
+import { Search, Loader2, X, MapPin, Navigation } from "lucide-react";
 
 export type GeocodingPlace = {
   placeId: string;
@@ -15,7 +9,12 @@ export type GeocodingPlace = {
   displayName: string;
   city: string | null;
   district: string | null;
+  suburb?: string | null;
+  neighbourhood?: string | null;
   state: string | null;
+  street?: string | null;
+  housenumber?: string | null;
+  postcode?: string | null;
   lat: number;
   lng: number;
   type: string;
@@ -29,13 +28,8 @@ type Props = {
   disabled?: boolean;
   required?: boolean;
   hint?: string;
-
-  // Restrict search
   types?: string[];
-  bbox?: string;
   bias?: { lat: number; lng: number };
-
-  // For district: filter by parent city name
   parentCity?: string | null;
 };
 
@@ -48,7 +42,6 @@ export default function GeocodingAddressPicker({
   required,
   hint,
   types,
-  bbox,
   bias,
   parentCity,
 }: Props) {
@@ -59,8 +52,6 @@ export default function GeocodingAddressPicker({
   const [error, setError] = useState("");
 
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // ═══ Session cache (in-memory) ═══
   const sessionCache = useRef<Map<string, GeocodingPlace[]>>(new Map());
 
   // ═══ Debounced search ═══
@@ -71,8 +62,7 @@ export default function GeocodingAddressPicker({
     }
 
     const t = setTimeout(async () => {
-      // ═══ Check session cache ═══
-      const cacheKey = `${search.trim()}|${types?.join(",") || ""}|${bias?.lat || ""}`;
+      const cacheKey = `${search.trim().toLowerCase()}|${types?.join(",") || ""}|${bias?.lat || ""}|${bias?.lng || ""}`;
       const cached = sessionCache.current.get(cacheKey);
       if (cached) {
         setResults(cached);
@@ -85,22 +75,19 @@ export default function GeocodingAddressPicker({
       try {
         const params = new URLSearchParams();
         params.set("q", search.trim());
-        // Photon supports only: fr, en, default (NOT ar)
-        params.set("lang", "fr");
+        params.set("lang", "ar");
         params.set("limit", "8");
 
         if (types && types.length > 0) {
           params.set("types", types.join(","));
         }
-        if (bbox) params.set("bbox", bbox);
         if (bias) {
           params.set("lat", String(bias.lat));
           params.set("lng", String(bias.lng));
         }
 
         const res = await fetch(
-          `/api/geocoding/search?${params.toString()}`,
-          { cache: "force-cache" }
+          `/api/geocoding/search?${params.toString()}`
         );
         const data = await res.json();
 
@@ -111,7 +98,6 @@ export default function GeocodingAddressPicker({
 
         let list: GeocodingPlace[] = data.results || [];
 
-        // ═══ Filter by parent city (for districts) ═══
         if (parentCity) {
           const q = parentCity.toLowerCase();
           list = list.filter(
@@ -130,10 +116,10 @@ export default function GeocodingAddressPicker({
       } finally {
         setLoading(false);
       }
-    }, 200);
+    }, 250);
 
     return () => clearTimeout(t);
-  }, [search, types, bbox, bias, parentCity]);
+  }, [search, types, bias, parentCity]);
 
   // ═══ Click outside ═══
   useEffect(() => {
@@ -258,9 +244,7 @@ export default function GeocodingAddressPicker({
         <p className="mt-1 text-[10px] text-gray-500">{hint}</p>
       )}
 
-      {error && (
-        <p className="mt-1 text-[10px] text-red-600">{error}</p>
-      )}
+      {error && <p className="mt-1 text-[10px] text-red-600">{error}</p>}
     </div>
   );
 }
