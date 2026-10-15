@@ -15,10 +15,23 @@ type OrderItemInput = {
 
 type AddressInput = {
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   phone: string;
+
   city: string;
-  street: string;
+  cityPlaceId?: string;
+
   district?: string;
+  districtPlaceId?: string;
+
+  street: string;
+  fullAddress?: string;
+  fullAddressPlaceId?: string;
+
+  latitude?: number;
+  longitude?: number;
+
   buildingNumber?: string;
   apartment?: string;
   landmark?: string;

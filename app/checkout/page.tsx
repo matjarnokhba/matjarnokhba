@@ -230,21 +230,36 @@ export default function CheckoutPage() {
       }
 
       // ═══ Snapshot from selected address ═══
+      const snapCity =
+        selectedAddress.cityText || selectedAddress.city || "";
+      const snapDistrict =
+        selectedAddress.districtText || selectedAddress.district || "";
+      const snapStreet =
+        selectedAddress.fullAddressText ||
+        selectedAddress.street ||
+        "";
+
       const addressSnapshot = {
         fullName: selectedAddress.fullName,
         firstName: selectedAddress.firstName || undefined,
         lastName: selectedAddress.lastName || undefined,
         phone: selectedAddress.phone,
-        city: selectedAddress.cityText || selectedAddress.city,
+
+        // Legacy fields (يقرأها السيرفر)
+        city: snapCity,
+        street: snapStreet,
+        district: snapDistrict || undefined,
+
+        // Extended fields (للـsnapshot الكامل)
         cityPlaceId: selectedAddress.cityPlaceId || undefined,
-        district: selectedAddress.districtText || selectedAddress.district,
         districtPlaceId: selectedAddress.districtPlaceId || undefined,
-        fullAddress:
-          selectedAddress.fullAddressText || selectedAddress.street,
+        fullAddress: snapStreet,
         fullAddressPlaceId:
           selectedAddress.fullAddressPlaceId || undefined,
+
         latitude: selectedAddress.latitude || undefined,
         longitude: selectedAddress.longitude || undefined,
+
         buildingNumber: selectedAddress.buildingNumber || undefined,
         landmark: selectedAddress.landmark || undefined,
         postalCode: selectedAddress.postalCode || undefined,

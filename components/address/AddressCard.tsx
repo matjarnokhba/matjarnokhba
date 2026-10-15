@@ -15,28 +15,21 @@ export type AddressDisplay = {
   firstName?: string | null;
   lastName?: string | null;
   phone: string;
-
-  // Legacy
   city: string;
-  district: string | null;
-  street: string;
-
-  // New geocoding fields
   cityText?: string | null;
   cityPlaceId?: string | null;
+  district: string | null;
   districtText?: string | null;
   districtPlaceId?: string | null;
+  street: string;
   fullAddressText?: string | null;
   fullAddressPlaceId?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-
-  // Details
   buildingNumber: string | null;
   apartment: string | null;
   landmark: string | null;
   postalCode: string | null;
-
   isDefault: boolean;
 };
 
