@@ -1,22 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  User as UserIcon,
-  Mail,
-  Phone,
   Loader2,
-  Save,
+  User,
+  Phone,
+  Mail,
   Package,
+  Truck,
+  Heart,
+  Star,
+  MapPin,
+  Gift,
+  Tag,
+  Users,
+  HelpCircle,
+  MessageCircle,
+  FileText,
+  Settings,
   LogOut,
-  ShieldCheck,
+  ChevronLeft,
+  Edit3,
 } from "lucide-react";
-
-import TopBar from "@/components/layout/TopBar";
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer";
 
 type UserData = {
   id: number;
@@ -26,38 +33,75 @@ type UserData = {
   role: string;
 };
 
+type OrderStats = {
+  total: number;
+  active: number;
+  delivered: number;
+};
+
+type LoyaltyStats = {
+  balance: number;
+  tier: string | null;
+};
+
 export default function ProfilePage() {
   const router = useRouter();
+
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [search, setSearch] = useState("");
+  const [orderStats, setOrderStats] = useState<OrderStats>({
+    total: 0,
+    active: 0,
+    delivered: 0,
+  });
+  const [loyaltyStats, setLoyaltyStats] = useState<LoyaltyStats>({
+    balance: 0,
+    tier: null,
+  });
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/user/profile");
-        const data = await res.json();
+        const [meRes, ordersRes, loyaltyRes] = await Promise.all([
+          fetch("/api/auth/me"),
+          fetch("/api/orders"),
+          fetch("/api/loyalty/me").catch(() => null),
+        ]);
 
-        if (!res.ok || !data.success) {
-          if (res.status === 401) {
-            router.push("/login");
-            return;
-          }
-          setError(data.message || "فشل التحميل");
+        const meData = await meRes.json();
+        if (!meData.success) {
+          router.push("/login");
           return;
         }
+        setUser(meData.user);
 
-        setUser(data.user);
-        setName(data.user.name);
-        setPhone(data.user.phone || "");
-      } catch {
-        setError("فشل الاتصال بالخادم");
+        const ordersData = await ordersRes.json();
+        if (ordersData.success && ordersData.orders) {
+          const orders = ordersData.orders;
+          setOrderStats({
+            total: orders.length,
+            active: orders.filter((o: any) =>
+              ["NEW", "PROCESSING", "SHIPPED", "PARTIALLY_DELIVERED"].includes(
+                o.status
+              )
+            ).length,
+            delivered: orders.filter((o: any) => o.status === "DELIVERED")
+              .length,
+          });
+        }
+
+        if (loyaltyRes) {
+          const loyaltyData = await loyaltyRes.json();
+          if (loyaltyData.success) {
+            setLoyaltyStats({
+              balance: loyaltyData.account?.balance || 0,
+              tier: loyaltyData.currentTier?.name || null,
+            });
+          }
+        }
+      } catch (e) {
+        console.error(e);
       } finally {
         setLoading(false);
       }
@@ -65,244 +109,297 @@ export default function ProfilePage() {
     load();
   }, [router]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-
-    if (!name.trim() || name.trim().length < 2) {
-      setError("الاسم يجب أن يكون حرفين على الأقل");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const res = await fetch("/api/user/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setError(data.message || "فشل الحفظ");
-        return;
-      }
-
-      setUser(data.user);
-      setSuccess(true);
-      router.refresh();
-      setTimeout(() => setSuccess(false), 3000);
-    } catch {
-      setError("فشل الاتصال بالخادم");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.dispatchEvent(new CustomEvent("nokhba:auth-changed"));
+      router.push("/");
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoggingOut(false);
+    }
   }
 
   if (loading) {
     return (
-      <main dir="rtl" className="min-h-screen bg-[#f7f6f2]">
-        <TopBar />
-        <Header
-          search={search}
-          onSearchChange={setSearch}
-          cartCount={0}
-          onCartClick={() => {}}
-        />
-        <div className="flex flex-col items-center justify-center py-32">
-          <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
-        </div>
-        <Footer />
-      </main>
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
+      </div>
     );
   }
 
   if (!user) return null;
 
+  const isSeller = user.role === "SELLER";
   const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
   return (
-    <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
-      <TopBar />
-      <Header
-        search={search}
-        onSearchChange={setSearch}
-        cartCount={0}
-        onCartClick={() => {}}
-      />
-
-      <div className="mx-auto max-w-2xl px-4 py-6">
-        <h1 className="mb-5 text-2xl font-black">حسابي</h1>
-
-        {/* ═══════ بطاقة المستخدم ═══════ */}
-        <div className="rounded-2xl bg-gradient-to-br from-purple-600 to-orange-500 p-5 text-white shadow-lg">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/20 text-2xl font-black backdrop-blur">
-              {user.name.charAt(0)}
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* ═══════ Header Card ═══════ */}
+      <div className="bg-gradient-to-br from-[#ff5c00] to-[#e64a00] px-4 pb-20 pt-16 text-white lg:pt-8">
+        <div className="mx-auto flex max-w-3xl items-center gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl font-black backdrop-blur">
+            {user.name.charAt(0)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xl font-black">{user.name}</div>
+            <div className="mt-1 flex items-center gap-1.5 text-xs opacity-90">
+              <Phone className="h-3 w-3" />
+              <span dir="ltr">{user.phone || "—"}</span>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-lg font-black">{user.name}</div>
-              <div className="mt-0.5 truncate text-xs text-white/80">
-                {user.email}
-              </div>
-              {isAdmin && (
-                <span className="mt-1.5 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold backdrop-blur">
-                  {user.role === "SUPER_ADMIN" ? "مدير عام" : "مدير"}
-                </span>
-              )}
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs opacity-90">
+              <Mail className="h-3 w-3" />
+              <span className="truncate">{user.email}</span>
             </div>
           </div>
         </div>
 
-        {/* ═══════ روابط سريعة ═══════ */}
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mx-auto mt-4 max-w-3xl">
           <Link
-            href="/orders"
-            className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm transition hover:shadow-md"
+            href="/profile/edit"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-4 py-2 text-xs font-bold backdrop-blur transition hover:bg-white/30"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff4ed]">
-              <Package className="h-5 w-5 text-[#ff5c00]" />
-            </div>
-            <div>
-              <div className="text-sm font-bold">طلباتي</div>
-              <div className="text-[10px] text-[#6b7280]">عرض الطلبات</div>
-            </div>
+            <Edit3 className="h-3.5 w-3.5" />
+            تعديل الملف الشخصي
           </Link>
-
-          {isAdmin ? (
-            <Link
-              href="/admin"
-              className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm transition hover:shadow-md"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
-                <ShieldCheck className="h-5 w-5 text-purple-700" />
-              </div>
-              <div>
-                <div className="text-sm font-bold">لوحة التحكم</div>
-                <div className="text-[10px] text-[#6b7280]">إدارة المتجر</div>
-              </div>
-            </Link>
-          ) : (
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 rounded-xl bg-white p-3 text-right shadow-sm transition hover:shadow-md"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50">
-                <LogOut className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <div className="text-sm font-bold">تسجيل الخروج</div>
-                <div className="text-[10px] text-[#6b7280]">خروج</div>
-              </div>
-            </button>
-          )}
         </div>
-
-        {/* ═══════ البيانات الشخصية ═══════ */}
-        <form
-          onSubmit={handleSubmit}
-          className="mt-4 rounded-2xl bg-white p-5 shadow-sm"
-        >
-          <h2 className="mb-4 text-base font-black">البيانات الشخصية</h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-bold text-gray-700">
-                الاسم الكامل <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-bold text-gray-700">
-                البريد الإلكتروني
-              </label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="email"
-                  value={user.email}
-                  disabled
-                  className="w-full cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 py-2.5 pr-10 pl-3 text-sm text-gray-500 outline-none"
-                />
-              </div>
-              <p className="mt-1 text-[10px] text-gray-400">
-                لا يمكن تغيير البريد الإلكتروني حالياً
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-bold text-gray-700">
-                رقم الهاتف
-              </label>
-              <div className="relative">
-                <Phone className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="0612345678"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
-              ✓ تم حفظ التغييرات بنجاح
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-5 flex items-center gap-2 rounded-lg bg-[#ff5c00] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            حفظ التغييرات
-          </button>
-        </form>
-
-        {/* ═══════ زر خروج إضافي (للمدير) ═══════ */}
-        {isAdmin && (
-          <button
-            onClick={handleLogout}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50"
-          >
-            <LogOut className="h-4 w-4" />
-            تسجيل الخروج
-          </button>
-        )}
       </div>
 
-      <Footer />
-    </main>
+      {/* ═══════ Quick Stats (Floating) ═══════ */}
+      <div className="-mt-14 px-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-3 gap-3">
+          <Link
+            href="/orders"
+            className="rounded-2xl bg-white p-4 text-center shadow-md transition hover:shadow-lg"
+          >
+            <div className="text-2xl font-black text-[#ff5c00]">
+              {orderStats.total}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-gray-500">
+              طلباتي
+            </div>
+          </Link>
+          <Link
+            href="/orders?filter=active"
+            className="rounded-2xl bg-white p-4 text-center shadow-md transition hover:shadow-lg"
+          >
+            <div className="text-2xl font-black text-blue-600">
+              {orderStats.active}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-gray-500">
+              نشطة
+            </div>
+          </Link>
+          <Link
+            href="/loyalty"
+            className="rounded-2xl bg-white p-4 text-center shadow-md transition hover:shadow-lg"
+          >
+            <div className="text-2xl font-black text-purple-600">
+              {loyaltyStats.balance}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-gray-500">
+              نقاط
+            </div>
+          </Link>
+        </div>
+      </div>
+
+      {/* ═══════ Sections ═══════ */}
+      <div className="mx-auto mt-6 max-w-3xl space-y-4 px-4">
+        {/* ═══ التسوق ═══ */}
+        <Section title="التسوق 🛒">
+          <MenuItem
+            href="/orders"
+            icon={Package}
+            label="طلباتي"
+            badge={orderStats.total > 0 ? orderStats.total : undefined}
+            color="text-[#ff5c00]"
+          />
+          <MenuItem
+            href="/orders?filter=active"
+            icon={Truck}
+            label="تتبع الطلبات"
+            badge={orderStats.active > 0 ? orderStats.active : undefined}
+            color="text-blue-600"
+          />
+          <MenuItem
+            href="/favorites"
+            icon={Heart}
+            label="المفضلة"
+            color="text-red-500"
+          />
+          <MenuItem
+            href="/profile/reviews"
+            icon={Star}
+            label="تقييماتي"
+            color="text-amber-500"
+          />
+        </Section>
+
+        {/* ═══ حسابي ═══ */}
+        <Section title="حسابي 👤">
+          <MenuItem
+            href="/profile/addresses"
+            icon={MapPin}
+            label="عناوين التوصيل"
+            color="text-teal-600"
+          />
+          <MenuItem
+            href="/profile/edit"
+            icon={User}
+            label="معلوماتي الشخصية"
+            color="text-indigo-600"
+          />
+          <MenuItem
+            href="/loyalty"
+            icon={Gift}
+            label="نقاطي ومكافآتي"
+            badge={loyaltyStats.balance > 0 ? loyaltyStats.balance : undefined}
+            color="text-purple-600"
+          />
+          <MenuItem
+            href="/profile/coupons"
+            icon={Tag}
+            label="كوبوناتي"
+            color="text-pink-600"
+          />
+          <MenuItem
+            href="/referral"
+            icon={Users}
+            label="دعوة الأصدقاء"
+            color="text-green-600"
+          />
+        </Section>
+
+        {/* ═══ المساعدة ═══ */}
+        <Section title="المساعدة ❓">
+          <MenuItem
+            href="/help"
+            icon={HelpCircle}
+            label="مركز المساعدة"
+            color="text-gray-600"
+          />
+          <MenuItem
+            href="/contact"
+            icon={MessageCircle}
+            label="التواصل معنا"
+            color="text-blue-500"
+          />
+          <MenuItem
+            href="/terms"
+            icon={FileText}
+            label="الشروط والخصوصية"
+            color="text-gray-500"
+          />
+        </Section>
+
+        {/* ═══ إدارة (فقط للتاجر/الأدمن) ═══ */}
+        {(isSeller || isAdmin) && (
+          <Section title="إدارة ⚙️">
+            {isSeller && (
+              <MenuItem
+                href="/seller"
+                icon={Package}
+                label="لوحة التاجر"
+                color="text-orange-600"
+              />
+            )}
+            {isAdmin && (
+              <MenuItem
+                href="/admin"
+                icon={Settings}
+                label="لوحة الإدارة"
+                color="text-purple-700"
+              />
+            )}
+          </Section>
+        )}
+
+        {/* ═══ الإعدادات + خروج ═══ */}
+        <Section title="الإعدادات ⚙️">
+          <MenuItem
+            href="/profile/settings"
+            icon={Settings}
+            label="الإعدادات"
+            color="text-gray-600"
+          />
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-right transition hover:bg-red-50 disabled:opacity-50"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50">
+              {loggingOut ? (
+                <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+              ) : (
+                <LogOut className="h-4 w-4 text-red-600" />
+              )}
+            </div>
+            <span className="flex-1 text-sm font-bold text-red-600">
+              {loggingOut ? "جاري الخروج..." : "تسجيل الخروج"}
+            </span>
+          </button>
+        </Section>
+
+        {/* Footer */}
+        <div className="py-6 text-center text-[10px] text-gray-400">
+          متجر نخبة · {new Date().getFullYear()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════ Helpers ═══════
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2.5">
+        <div className="text-xs font-black text-gray-700">{title}</div>
+      </div>
+      <div className="divide-y divide-gray-50">{children}</div>
+    </div>
+  );
+}
+
+function MenuItem({
+  href,
+  icon: Icon,
+  label,
+  badge,
+  color,
+}: {
+  href: string;
+  icon: any;
+  label: string;
+  badge?: number;
+  color: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 px-4 py-3 text-right transition hover:bg-gray-50"
+    >
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+        <Icon className={`h-4 w-4 ${color}`} />
+      </div>
+      <span className="flex-1 text-sm font-bold text-gray-800">{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span className="rounded-full bg-[#fff4ed] px-2 py-0.5 text-[10px] font-black text-[#ff5c00]">
+          {badge}
+        </span>
+      )}
+      <ChevronLeft className="h-4 w-4 shrink-0 text-gray-300" />
+    </Link>
   );
 }

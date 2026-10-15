@@ -292,3 +292,11 @@ export function parseExtendedPlaceId(
     variant: m[3] || null,
   };
 }
+// ═══ Independent lat/lng checks (for Zod refines) ═══
+export function isValidMoroccoLat(lat: number): boolean {
+  return lat >= 20.7 && lat <= 36.1;
+}
+
+export function isValidMoroccoLng(lng: number): boolean {
+  return lng >= -17.2 && lng <= -0.99;
+}
