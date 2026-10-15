@@ -6,16 +6,14 @@ import Link from "next/link";
 import { ArrowRight, Loader2, Printer } from "lucide-react";
 import QRCode from "qrcode";
 
-type Order = {
+type LabelData = {
   id: number;
   orderNumber: string;
   status: string;
-  total: number | string;
-  shippingCost: number | string;
+  total: number;
   createdAt: string;
   deliveryToken: string | null;
-  shippingAddressSnapshot: any;
-  customerSnapshot: any;
+  customerFullName: string;
   shippingCityColor: string | null;
   shippingDistrictColor: string | null;
   items: {
@@ -35,7 +33,7 @@ export default function OrderLabelPage() {
   const params = useParams();
   const orderId = params.id as string;
 
-  const [order, setOrder] = useState<Order | null>(null);
+  const [order, setOrder] = useState<LabelData | null>(null);
   const [seller, setSeller] = useState<Seller | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,7 +46,7 @@ export default function OrderLabelPage() {
     async function load() {
       try {
         const [orderRes, sellerRes] = await Promise.all([
-          fetch(`/api/seller/orders/${orderId}`),
+          fetch(`/api/seller/orders/${orderId}/label`),
           fetch("/api/seller/profile"),
         ]);
 
@@ -135,45 +133,20 @@ export default function OrderLabelPage() {
     );
   }
 
-  const address = order.shippingAddressSnapshot || {};
-  const customer = order.customerSnapshot || {};
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
 
-  // ═══ الاسم الكامل — من جميع المصادر ═══
-  const customerFullName =
-    address.fullName ||
-    (address.firstName || address.lastName
-      ? `${address.firstName || ""} ${address.lastName || ""}`.trim()
-      : "") ||
-    customer.name ||
-    customer.fullName ||
-    "—";
-
-  // ═══ الألوان ═══
   const cityColor = order.shippingCityColor || null;
   const districtColor = order.shippingDistrictColor || null;
-
-  // ═══ لون نص الشريط — حسب الإضاءة ═══
   const cityTextColor = cityColor ? getContrastText(cityColor) : "#fff";
   const districtTextColor = districtColor
     ? getContrastText(districtColor)
     : "#fff";
 
-  // ═══ العنوان الكامل ═══
-  const fullStreet =
-    address.fullAddress ||
-    address.fullAddressText ||
-    address.street ||
-    "";
-
-  const districtName = address.district || address.districtText || "";
-  const cityName = address.city || address.cityText || "";
-
   return (
     <div className="min-h-screen bg-gray-200 p-4 print:bg-white print:p-0">
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      <div className="mx-auto mb-2 flex w-full max-w-[500px] gap-2 print:hidden">
+      <div className="mx-auto mb-2 flex w-full max-w-[420px] gap-2 print:hidden">
         <Link
           href={`/seller/orders/${orderId}`}
           className="flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-[#ff5c00]"
@@ -197,9 +170,10 @@ export default function OrderLabelPage() {
         </div>
       </div>
 
+      {/* ═══ الملصق ═══ */}
       <div
-        className="mx-auto rounded-xl bg-white p-2 shadow-xl print:shadow-none"
-        style={{ width: "33%", minWidth: "320px", maxWidth: "500px" }}
+        className="mx-auto rounded-xl bg-white p-1.5 shadow-xl print:shadow-none"
+        style={{ width: "33%", minWidth: "280px", maxWidth: "420px" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b-2 border-[#0a1f44] pb-1">
@@ -212,15 +186,15 @@ export default function OrderLabelPage() {
         </div>
 
         {/* ═══ QR + Color Bars ═══ */}
-        <div className="mt-1 flex items-stretch justify-center gap-1">
+        <div className="mt-1 flex items-stretch justify-center gap-0.5">
           {/* شريط المدينة (يمين) */}
           {cityColor && (
             <div
-              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              className="flex w-10 shrink-0 items-center justify-center rounded-md"
               style={{ backgroundColor: cityColor }}
             >
               <span
-                className="text-xl font-black"
+                className="text-2xl font-black"
                 style={{ color: cityTextColor }}
               >
                 M
@@ -229,32 +203,30 @@ export default function OrderLabelPage() {
           )}
 
           {/* QR */}
-          <div className="flex-1">
-            <div className="flex justify-center">
-              <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
-                {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt="QR"
-                    className="h-44 w-44 object-contain"
-                  />
-                ) : (
-                  <div className="flex h-44 w-44 items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
-                  </div>
-                )}
-              </div>
+          <div className="flex justify-center">
+            <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt="QR"
+                  className="h-44 w-44 object-contain"
+                />
+              ) : (
+                <div className="flex h-44 w-44 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
+                </div>
+              )}
             </div>
           </div>
 
           {/* شريط الحي (يسار) */}
           {districtColor && (
             <div
-              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              className="flex w-10 shrink-0 items-center justify-center rounded-md"
               style={{ backgroundColor: districtColor }}
             >
               <span
-                className="text-xl font-black"
+                className="text-2xl font-black"
                 style={{ color: districtTextColor }}
               >
                 H
@@ -267,37 +239,15 @@ export default function OrderLabelPage() {
           📱 امسح الرمز لبدء التوصيل
         </div>
 
-        {/* ═══ Recipient ═══ */}
+        {/* ═══ Recipient — الاسم فقط ═══ */}
         <div className="mt-1 rounded-lg border-2 border-gray-300 p-1.5">
           <div className="flex items-baseline gap-1.5">
             <span className="shrink-0 text-[10px] font-black uppercase leading-none text-gray-400">
               إلى
             </span>
-            <span className="text-2xl font-black leading-none text-[#0a1f44]">
-              {customerFullName}
+            <span className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">
+              {order.customerFullName || "—"}
             </span>
-          </div>
-
-          {address.phone && (
-            <div
-              className="mt-1 font-mono text-xl font-bold leading-none text-gray-800"
-              dir="ltr"
-            >
-              {address.phone}
-            </div>
-          )}
-
-          <div className="mt-1 text-base leading-tight text-gray-700">
-            {fullStreet && <div>{fullStreet}</div>}
-            {districtName && (
-              <div className="font-bold">{districtName}</div>
-            )}
-            {cityName && <div className="font-bold">{cityName}</div>}
-            {address.postalCode && (
-              <div className="font-mono text-sm" dir="ltr">
-                {address.postalCode}
-              </div>
-            )}
           </div>
         </div>
 
