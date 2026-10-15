@@ -108,9 +108,10 @@ export default function AddressForm({
       const r = json.result;
 
       // ═══ بناء placeIds pseudo من النتيجة (نستخدم lat/lng كـfallback) ═══
+      // ═══ City place ═══
       const cityPlace: GeocodingPlace | null = r.city
         ? {
-            placeId: r.placeId,
+            placeId: r.placeId, // base ID
             name: r.city,
             displayName: r.city,
             city: r.city,
@@ -125,7 +126,7 @@ export default function AddressForm({
       const districtName = r.suburb || r.neighbourhood || r.district;
       const districtPlace: GeocodingPlace | null = districtName
         ? {
-            placeId: r.placeId + "_d",
+            placeId: r.placeId + "_d", // extended with _d suffix
             name: districtName,
             displayName: districtName,
             city: r.city,
@@ -140,7 +141,7 @@ export default function AddressForm({
       const fullAddrName = r.street || r.name || r.displayName.split(",")[0];
       const fullAddrPlace: GeocodingPlace | null = fullAddrName
         ? {
-            placeId: r.placeId + "_f",
+            placeId: r.placeId + "_f", // extended with _f suffix
             name: fullAddrName,
             displayName: r.displayName,
             city: r.city,

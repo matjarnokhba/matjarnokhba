@@ -13,7 +13,12 @@ async function requireAuth() {
 
 // ═══════ Schema ═══════
 const placeSchema = z.object({
-  placeId: z.string().refine(isValidPlaceId, "Place ID غير صالح"),
+  placeId: z
+    .string()
+    .refine(
+      (v) => /^([NWR])_(\d+)(_[df])?$/.test(v),
+      "Place ID غير صالح"
+    ),
   name: z.string().trim().min(1).max(200),
   displayName: z.string().trim().max(500).optional().default(""),
   lat: z.number(),

@@ -51,7 +51,8 @@ export function parsePlaceId(
 }
 
 export function isValidPlaceId(placeId: string): boolean {
-  return parsePlaceId(placeId) !== null;
+  // Accept both base IDs (N_123) and extended (N_123_d, N_123_f)
+  return /^([NWR])_(\d+)(_[df])?$/.test(placeId);
 }
 
 // ═══ Normalize Nominatim response ═══
@@ -230,15 +231,16 @@ export async function verifyPlace(
   placeId: string,
   expectedName: string
 ): Promise<GeocodingResult | null> {
-  const parsed = parsePlaceId(placeId);
-  if (!parsed) return null;
+  // ═══ Parse (accept extended IDs) ═══
+  const m = placeId.match(/^([NWR])_(\d+)(?:_([df]))?$/);
+  if (!m) return null;
 
-  // Nominatim has /lookup endpoint by OSM ID
-  const osmTypePrefix = parsed.osmType === "N" ? "N" : parsed.osmType === "W" ? "W" : "R";
-  const osmIds = `${osmTypePrefix}${parsed.osmId}`;
+  const osmType = m[1];
+  const osmId = parseInt(m[2]);
 
+  // Nominatim /lookup by OSM ID
   const params = new URLSearchParams();
-  params.set("osm_ids", osmIds);
+  params.set("osm_ids", `${osmType}${osmId}`);
   params.set("format", "jsonv2");
   params.set("addressdetails", "1");
   params.set("accept-language", "ar");
@@ -270,4 +272,23 @@ export async function verifyPlace(
 export function isWithinMorocco(lat: number, lng: number): boolean {
   const [minLng, minLat, maxLng, maxLat] = MOROCCO_BBOX.split(",").map(Number);
   return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
+}
+
+// ═══ Extended place ID for locations chosen via GPS ═══
+// Format: N_12345 | N_12345_d | N_12345_f  (d = district, f = full)
+export function isValidPlaceIdExtended(placeId: string): boolean {
+  const m = placeId.match(/^([NWR])_(\d+)(_[df])?$/);
+  return m !== null;
+}
+
+export function parseExtendedPlaceId(
+  placeId: string
+): { osmType: string; osmId: number; variant: string | null } | null {
+  const m = placeId.match(/^([NWR])_(\d+)(?:_([df]))?$/);
+  if (!m) return null;
+  return {
+    osmType: m[1],
+    osmId: parseInt(m[2]),
+    variant: m[3] || null,
+  };
 }

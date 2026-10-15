@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { moroccanPhoneSchema } from "@/lib/validations/address";
-import { isValidPlaceId, isWithinMorocco } from "@/lib/geocoding";
+import { isWithinMorocco } from "@/lib/geocoding";
 
 async function requireAuth() {
   const current = await SessionService.getCurrent();
@@ -12,7 +12,12 @@ async function requireAuth() {
 }
 
 const placeSchema = z.object({
-  placeId: z.string().refine(isValidPlaceId, "Place ID غير صالح"),
+  placeId: z
+    .string()
+    .refine(
+      (v) => /^([NWR])_(\d+)(_[df])?$/.test(v),
+      "Place ID غير صالح"
+    ),
   name: z.string().trim().min(1).max(200),
   displayName: z.string().trim().max(500).optional().default(""),
   lat: z.number().refine((n) => isWithinMorocco(n, 0), "خط عرض غير صالح"),

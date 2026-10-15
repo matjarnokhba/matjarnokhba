@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
-import {
-  verifyPlace,
-  isValidPlaceId,
-  isWithinMorocco,
-} from "@/lib/geocoding";
+import { verifyPlace, isWithinMorocco } from "@/lib/geocoding";
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +15,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { placeId, name, lat, lng } = body || {};
 
-    if (typeof placeId !== "string" || !isValidPlaceId(placeId)) {
+    // ═══ Extended format: N_123 | N_123_d | N_123_f ═══
+    if (
+      typeof placeId !== "string" ||
+      !/^([NWR])_(\d+)(_[df])?$/.test(placeId)
+    ) {
       return NextResponse.json(
         { success: false, message: "معرف المكان غير صالح" },
         { status: 400 }
@@ -47,28 +47,52 @@ export async function POST(request: Request) {
       );
     }
 
+    // ═══ Verify via Nominatim /lookup ═══
     const verified = await verifyPlace(placeId, name.trim());
 
-    if (!verified) {
+    // ═══ Lenient: if /lookup fails for extended IDs, trust the client ═══
+    // (Locate-me flow uses reverse geocoding that we already trust)
+    const isExtended = /^([NWR])_(\d+)_[df]$/.test(placeId);
+
+    if (!verified && !isExtended) {
       return NextResponse.json(
         { success: false, message: "لم نتمكن من التحقق من هذا المكان" },
         { status: 400 }
       );
     }
 
+    if (verified) {
+      return NextResponse.json({
+        success: true,
+        verified: {
+          placeId: verified.placeId,
+          name: verified.name,
+          displayName: verified.displayName,
+          city: verified.city,
+          district: verified.district,
+          state: verified.state,
+          postcode: verified.postcode,
+          lat: verified.lat,
+          lng: verified.lng,
+        },
+      });
+    }
+
+    // Extended ID without verification (locate-me): accept with provided data
     return NextResponse.json({
       success: true,
       verified: {
-        placeId: verified.placeId,
-        name: verified.name,
-        displayName: verified.displayName,
-        city: verified.city,
-        district: verified.district,
-        state: verified.state,
-        postcode: verified.postcode,
-        lat: verified.lat,
-        lng: verified.lng,
+        placeId,
+        name: name.trim(),
+        displayName: name.trim(),
+        city: null,
+        district: null,
+        state: null,
+        postcode: null,
+        lat,
+        lng,
       },
+      lenient: true,
     });
   } catch (error) {
     console.error("Geocoding verify error:", error);
