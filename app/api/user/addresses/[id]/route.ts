@@ -3,8 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { moroccanPhoneSchema } from "@/lib/validations/address";
-import { isValidPlaceId } from "@/lib/geocoding";
-import { isValidMoroccoLat, isValidMoroccoLng } from "@/lib/geocoding";
 
 async function requireAuth() {
   const current = await SessionService.getCurrent();
@@ -12,26 +10,25 @@ async function requireAuth() {
   return { user: current.user };
 }
 
-// ═══════ Schema ═══════
-const placeSchema = z.object({
-  placeId: z
-    .string()
-    .refine(
-      (v) => /^([NWR])_(\d+)(_[df])?$/.test(v),
-      "Place ID غير صالح"
-    ),
-  name: z.string().trim().min(1).max(200),
-  displayName: z.string().trim().max(500).optional().default(""),
-  lat: z.number().refine(isValidMoroccoLat, "خط عرض غير صالح"),
-  lng: z.number().refine(isValidMoroccoLng, "خط طول غير صالح"),
+const citySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  nameFr: z.string().trim().min(1).max(100),
+  slug: z.string().trim().min(1).max(100),
+  region: z.string().trim().max(100).optional().default(""),
+});
+
+const districtSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  placeId: z.string().trim().max(100).optional().nullable(),
+  verified: z.boolean(),
 });
 
 const patchSchema = z.object({
   firstName: z.string().trim().min(2).max(60).optional(),
   lastName: z.string().trim().min(2).max(60).optional(),
   phone: moroccanPhoneSchema.optional(),
-  city: placeSchema.optional(),
-  district: placeSchema.optional(),
+  city: citySchema.optional(),
+  district: districtSchema.optional(),
   fullAddressText: z.string().trim().min(3).max(300).optional(),
   buildingNumber: z.string().trim().max(50).optional().nullable(),
   landmark: z.string().trim().max(300).optional().nullable(),
@@ -39,9 +36,6 @@ const patchSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 
-// ═══════════════════════════════════════════
-// GET
-// ═══════════════════════════════════════════
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -65,11 +59,7 @@ export async function GET(
     }
 
     const address = await prisma.address.findFirst({
-      where: {
-        id: addressId,
-        userId: auth.user.id,
-        deletedAt: null,
-      },
+      where: { id: addressId, userId: auth.user.id, deletedAt: null },
     });
 
     if (!address) {
@@ -89,9 +79,6 @@ export async function GET(
   }
 }
 
-// ═══════════════════════════════════════════
-// PATCH
-// ═══════════════════════════════════════════
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -152,21 +139,27 @@ export async function PATCH(
     if (data.phone !== undefined) updates.phone = data.phone;
 
     if (data.city !== undefined) {
-      updates.cityPlaceId = data.city.placeId;
-      updates.cityText = data.city.name;
       updates.city = data.city.name;
+      updates.cityText = data.city.name;
+      updates.citySlug = data.city.slug;
+      updates.cityPlaceId = null;
     }
 
     if (data.district !== undefined) {
-      updates.districtPlaceId = data.district.placeId;
-      updates.districtText = data.district.name;
       updates.district = data.district.name;
+      updates.districtText = data.district.name;
+      updates.districtPlaceId = data.district.verified
+        ? data.district.placeId || null
+        : null;
+      updates.districtPlaceIdUnverified = !data.district.verified
+        ? data.district.name
+        : null;
     }
 
     if (data.fullAddressText !== undefined) {
-      updates.fullAddressPlaceId = null;
-      updates.fullAddressText = data.fullAddressText;
       updates.street = data.fullAddressText;
+      updates.fullAddressText = data.fullAddressText;
+      updates.fullAddressPlaceId = null;
     }
 
     if (data.buildingNumber !== undefined)
@@ -204,9 +197,6 @@ export async function PATCH(
   }
 }
 
-// ═══════════════════════════════════════════
-// DELETE
-// ═══════════════════════════════════════════
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -241,13 +231,11 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // Soft delete
       await tx.address.update({
         where: { id: addressId },
         data: { deletedAt: new Date(), isDefault: false },
       });
 
-      // If default → promote latest
       if (existing.isDefault) {
         const next = await tx.address.findFirst({
           where: {

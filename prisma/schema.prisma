@@ -373,6 +373,8 @@ model User {
 model Address {
   id             Int      @id @default(autoincrement())
   userId         Int
+  citySlug                    String?
+  districtPlaceIdUnverified   String?
 
   // ═══ الاسم (جديد + قديم) ═══
   fullName       String   // legacy — kept for old records

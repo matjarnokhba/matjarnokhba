@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
 import { searchPlaces, type GeocodingResult } from "@/lib/geocoding";
 
-// ═══ Cache (10 min) ═══
+// ═══ Cache ═══
 const cache = new Map<string, { data: GeocodingResult[]; expiresAt: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -43,7 +43,6 @@ function checkRate(ip: string): boolean {
   return true;
 }
 
-// ═══ Remove duplicates by placeId ═══
 function dedupe(list: GeocodingResult[]): GeocodingResult[] {
   const seen = new Set<string>();
   const out: GeocodingResult[] = [];
@@ -53,6 +52,33 @@ function dedupe(list: GeocodingResult[]): GeocodingResult[] {
     out.push(r);
   }
   return out;
+}
+
+// ═══ توليد queries بديلة (للأخطاء الإملائية) ═══
+function generateQueryVariants(q: string): string[] {
+  const variants = new Set<string>();
+  variants.add(q);
+
+  // إزالة المسافات
+  const noSpace = q.replace(/\s+/g, "");
+  if (noSpace !== q) variants.add(noSpace);
+
+  // إزالة حروف مكررة: "moumen" → "moumen" (لا تغيير)، "moumenne" → "moumene"
+  const dedup = q.replace(/(.)\1+/g, "$1");
+  if (dedup !== q) variants.add(dedup);
+
+  // استبدال ou ↔ u (فرنسي ↔ عربي)
+  if (q.includes("ou")) variants.add(q.replace(/ou/g, "u"));
+  if (q.includes("u") && !q.includes("ou")) variants.add(q.replace(/u/g, "ou"));
+
+  // استبدال ph ↔ f
+  if (q.includes("ph")) variants.add(q.replace(/ph/g, "f"));
+  if (q.includes("f")) variants.add(q.replace(/f/g, "ph"));
+
+  // إزالة ال التعريف
+  if (q.startsWith("ال")) variants.add(q.slice(2));
+
+  return Array.from(variants).slice(0, 4);
 }
 
 export async function GET(request: Request) {
@@ -110,20 +136,35 @@ export async function GET(request: Request) {
       includeCountryCodes: ["ma"],
     };
 
-    // ═══ بحث مزدوج: ar + fr بالتوازي ═══
-    const [arResults, frResults] = await Promise.all([
+    // ═══ 1. query الأصلي (ar + fr بالتوازي) ═══
+    const [ar1, fr1] = await Promise.all([
       searchPlaces(q, { ...baseOpts, lang: "ar" }),
       searchPlaces(q, { ...baseOpts, lang: "fr" }),
     ]);
 
-    // ═══ دمج + إزالة التكرار ═══
-    // الأولوية: العربية أولًا (لأن المستخدم العربي)
-    const merged = dedupe([...arResults, ...frResults]).slice(0, limit);
+    let merged = dedupe([...ar1, ...fr1]);
 
-    setCached(cacheKey, merged);
+    // ═══ 2. إذا نتائج قليلة → جرّب variants ═══
+    if (merged.length < 3) {
+      const variants = generateQueryVariants(q).slice(1);
+
+      for (const v of variants) {
+        const [ar2, fr2] = await Promise.all([
+          searchPlaces(v, { ...baseOpts, lang: "ar", limit: 5 }),
+          searchPlaces(v, { ...baseOpts, lang: "fr", limit: 5 }),
+        ]);
+        merged = dedupe([...merged, ...ar2, ...fr2]);
+
+        if (merged.length >= limit) break;
+      }
+    }
+
+    const results = merged.slice(0, limit);
+
+    setCached(cacheKey, results);
 
     return NextResponse.json(
-      { success: true, results: merged },
+      { success: true, results },
       { headers: { "Cache-Control": "private, max-age=600" } }
     );
   } catch (error) {

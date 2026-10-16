@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { moroccanPhoneSchema } from "@/lib/validations/address";
-import { isWithinMorocco, isValidMoroccoLat, isValidMoroccoLng } from "@/lib/geocoding";
 
 async function requireAuth() {
   const current = await SessionService.getCurrent();
@@ -11,17 +10,19 @@ async function requireAuth() {
   return { user: current.user };
 }
 
-const placeSchema = z.object({
-  placeId: z
-    .string()
-    .refine(
-      (v) => /^([NWR])_(\d+)(_[df])?$/.test(v),
-      "Place ID غير صالح"
-    ),
-  name: z.string().trim().min(1).max(200),
-  displayName: z.string().trim().max(500).optional().default(""),
-  lat: z.number().refine(isValidMoroccoLat, "خط عرض غير صالح"),
-  lng: z.number().refine(isValidMoroccoLng, "خط طول غير صالح"),
+// ═══ المدينة (من قائمة محلية) ═══
+const citySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  nameFr: z.string().trim().min(1).max(100),
+  slug: z.string().trim().min(1).max(100),
+  region: z.string().trim().max(100).optional().default(""),
+});
+
+// ═══ الحي (نص حر + اختياري verified) ═══
+const districtSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  placeId: z.string().trim().max(100).optional().nullable(),
+  verified: z.boolean(),
 });
 
 const createSchema = z.object({
@@ -29,10 +30,9 @@ const createSchema = z.object({
   lastName: z.string().trim().min(2).max(60),
   phone: moroccanPhoneSchema,
 
-  city: placeSchema,
-  district: placeSchema,
+  city: citySchema,
+  district: districtSchema,
 
-  // ═══ النص الحر للعنوان ═══
   fullAddressText: z.string().trim().min(3).max(300),
 
   buildingNumber: z.string().trim().max(50).optional().nullable(),
@@ -102,19 +102,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ تحقق: المدينة ≠ الحي ═══
-    if (data.city.placeId === data.district.placeId) {
-      return NextResponse.json(
-        { success: false, message: "يجب اختيار أماكن مختلفة" },
-        { status: 400 }
-      );
-    }
-
-    // ═══ تجهيز الحقول ═══
     const fullName = `${data.firstName} ${data.lastName}`.trim();
     const cityText = data.city.name;
     const districtText = data.district.name;
-    const fullAddressText = data.fullAddressText;
 
     const address = await prisma.$transaction(async (tx) => {
       if (data.isDefault) {
@@ -133,26 +123,40 @@ export async function POST(request: Request) {
       return tx.address.create({
         data: {
           userId: auth.user.id,
-          // Legacy
+
+          // الأسماء
           fullName,
-          city: cityText,
-          district: districtText,
-          street: fullAddressText,
-          // New
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone,
           country: "MA",
-          // Geocoding
-          cityPlaceId: data.city.placeId,
+
+          // المدينة
+          city: cityText,
           cityText,
-          districtPlaceId: data.district.placeId,
+          citySlug: data.city.slug,
+          cityPlaceId: null,
+
+          // الحي
+          district: districtText,
           districtText,
-          fullAddressPlaceId: null,
+          districtPlaceId: data.district.verified
+            ? data.district.placeId || null
+            : null,
+          districtPlaceIdUnverified: !data.district.verified
+            ? data.district.name
+            : null,
+
+          // العنوان الحر
+          street: data.fullAddressText,
           fullAddressText: data.fullAddressText,
-          latitude: data.city.lat,
-          longitude: data.city.lng,
-          // Details
+          fullAddressPlaceId: null,
+
+          // إحداثيات (فارغة — غير متوفرة من القائمة المحلية)
+          latitude: null,
+          longitude: null,
+
+          // تفاصيل
           buildingNumber: data.buildingNumber || null,
           landmark: data.landmark || null,
           postalCode: data.postalCode || null,

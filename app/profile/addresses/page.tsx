@@ -1,5 +1,7 @@
 "use client";
 
+import type { LocalCity } from "@/components/address/CityPicker";
+import type { DistrictValue } from "@/components/address/DistrictInput";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -16,7 +18,6 @@ import AddressForm, {
 import AddressCard, {
   type AddressDisplay,
 } from "@/components/address/AddressCard";
-import type { GeocodingPlace } from "@/components/address/GeocodingAddressPicker";
 
 type Mode =
   | { type: "list" }
@@ -73,7 +74,7 @@ export default function ProfileAddressesPage() {
         isDefault: form.isDefault,
       }),
     });
-
+    
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.message || "فشل الحفظ");
@@ -166,31 +167,20 @@ export default function ProfileAddressesPage() {
 
       const a = data.address;
 
-      const city: GeocodingPlace | null = a.cityPlaceId
+      const city: LocalCity | null = a.cityText
         ? {
-            placeId: a.cityPlaceId,
-            name: a.cityText || a.city,
-            displayName: a.cityText || a.city,
-            city: null,
-            district: null,
-            state: null,
-            lat: a.latitude || 0,
-            lng: a.longitude || 0,
-            type: "city",
+            name: a.cityText,
+            nameFr: a.cityText,
+            slug: a.citySlug || a.cityText.toLowerCase().replace(/\s+/g, "-"),
+            region: "",
           }
         : null;
 
-      const district: GeocodingPlace | null = a.districtPlaceId
+      const district: DistrictValue | null = a.districtText
         ? {
-            placeId: a.districtPlaceId,
-            name: a.districtText || a.district || "",
-            displayName: a.districtText || a.district || "",
-            city: null,
-            district: null,
-            state: null,
-            lat: a.latitude || 0,
-            lng: a.longitude || 0,
-            type: "district",
+            name: a.districtText,
+            placeId: a.districtPlaceId || null,
+            verified: !!a.districtPlaceId,
           }
         : null;
 
@@ -203,7 +193,7 @@ export default function ProfileAddressesPage() {
         city,
         district,
         fullAddressText:
-          a.fullAddressText || a.street || a.fullAddress || "",
+          a.fullAddressText || a.street || "",
         buildingNumber: a.buildingNumber || "",
         landmark: a.landmark || "",
         postalCode: a.postalCode || "",
