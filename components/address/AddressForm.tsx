@@ -81,15 +81,40 @@ export default function AddressForm({
     }
 
     try {
-      const position: GeolocationPosition = await new Promise(
-        (resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0,
-          });
+      // ═══ محاولة 1: عالية الدقة ═══
+      let position: GeolocationPosition | null = null;
+
+      try {
+        position = await new Promise<GeolocationPosition>(
+          (resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 12000,
+              maximumAge: 30000,
+            });
+          }
+        );
+      } catch (err: any) {
+        // ═══ iOS: ارجع لـlow accuracy ═══
+        if (err?.code === 2 || err?.code === 3) {
+          // POSITION_UNAVAILABLE or TIMEOUT
+          position = await new Promise<GeolocationPosition>(
+            (resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: false,
+                timeout: 15000,
+                maximumAge: 60000,
+              });
+            }
+          );
+        } else {
+          throw err;
         }
-      );
+      }
+
+      if (!position) {
+        throw new Error("POSITION_FAILED");
+      }
 
       const { latitude, longitude } = position.coords;
 
@@ -165,14 +190,36 @@ export default function AddressForm({
         buildingNumber: r.housenumber || prev.buildingNumber,
       }));
     } catch (err: any) {
-      if (err?.code === 1) {
-        setLocatingError("تم رفض الإذن للوصول إلى الموقع");
+      console.error("Geolocation error:", err);
+
+      const isSecure =
+        typeof window !== "undefined" &&
+        window.location.protocol === "https:";
+      const isLocalhost =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1");
+
+      if (err?.code === 1 || err?.message === "User denied Geolocation") {
+        if (!isSecure && !isLocalhost) {
+          setLocatingError(
+            "⚠️ iOS Safari يطلب HTTPS لتحديد الموقع. استخدم الموقع المنشور أو localhost."
+          );
+        } else {
+          setLocatingError(
+            "❌ رفض الإذن. على iPhone: Settings → Safari → Location → Allow"
+          );
+        }
       } else if (err?.code === 2) {
-        setLocatingError("تعذّر تحديد الموقع — جرّب في مكان مكشوف");
+        setLocatingError(
+          "📡 تعذّر تحديد الموقع — جرّب مكانًا مكشوفًا أو ابحث يدويًا"
+        );
       } else if (err?.code === 3) {
-        setLocatingError("انتهت المهلة — حاول مرة أخرى");
+        setLocatingError("⏱️ انتهت المهلة — حاول مرة أخرى");
+      } else if (err?.message === "POSITION_FAILED") {
+        setLocatingError("فشل تحديد الموقع — استخدم البحث اليدوي");
       } else {
-        setLocatingError("فشل تحديد الموقع");
+        setLocatingError("فشل تحديد الموقع — استخدم البحث اليدوي");
       }
     } finally {
       setLocating(false);
