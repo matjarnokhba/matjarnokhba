@@ -1,53 +1,81 @@
 // ═══════════════════════════════════════════
-// Deterministic color generation for cities & districts
-// Same name → same color, forever
+// Deterministic Color Generator
+// Same place (city/district) → same color FOREVER
+// Source of truth: lib/moroccan-cities.ts
 // ═══════════════════════════════════════════
 
-// ═══ Normalize Arabic/French names for consistent hashing ═══
+import { findCityCanonicalSlug } from "./moroccan-cities";
+
+// ═══════════════════════════════════════════
+// تطبيع النص
+// ═══════════════════════════════════════════
+
 function normalizeName(name: string): string {
   return name
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove accents
-    .replace(/[أإآا]/g, "ا")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
     .replace(/[ىي]/g, "ي")
     .replace(/[ؤئء]/g, "ء")
     .replace(/[ةه]/g, "ه")
-    .replace(/[\s\-_.]+/g, " ");
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[‘’ʻʼ]/g, "'")
+    .replace(/[\s\-_.ـ]+/g, " ")
+    .trim();
 }
 
-// ═══ Simple string hash (FNV-1a 32-bit) ═══
+// ═══════════════════════════════════════════
+// تحويل أي اسم → slug موحّد
+// ═══════════════════════════════════════════
+
+export function canonicalizeName(name: string): string {
+  if (!name) return "";
+
+  const citySlug = findCityCanonicalSlug(name);
+  if (citySlug) return citySlug;
+
+  return normalizeName(name);
+}
+
+// ═══════════════════════════════════════════
+// Hash (FNV-1a 32-bit)
+// ═══════════════════════════════════════════
+
 function fnv1aHash(str: string): number {
-  let hash = 0x811c9dc5; // FNV offset basis
+  let hash = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     hash ^= str.charCodeAt(i);
-    hash = (hash * 0x01000193) >>> 0; // FNV prime, keep 32-bit
+    hash = (hash * 0x01000193) >>> 0;
   }
   return hash >>> 0;
 }
 
-// ═══ Generate Hue (0-359) from name ═══
+// ═══════════════════════════════════════════
+// توليد Hue + Hex + HSL
+// ═══════════════════════════════════════════
+
 export function getColorHue(name: string): number {
-  const normalized = normalizeName(name);
-  if (!normalized) return 0;
-  return fnv1aHash(normalized) % 360;
+  const canonical = canonicalizeName(name);
+  if (!canonical) return 0;
+  return fnv1aHash(canonical) % 360;
 }
 
-// ═══ Generate Color Hex (HSL → Hex) ═══
-// Fixed saturation + lightness for readable labels
 export function getColorHex(name: string): string {
   const hue = getColorHue(name);
-  return hslToHex(hue, 65, 45); // Saturated but not blinding
+  return hslToHex(hue, 65, 45);
 }
 
-// ═══ Generate HSL string for CSS ═══
 export function getColorHsl(name: string): string {
   const hue = getColorHue(name);
   return `hsl(${hue}, 65%, 45%)`;
 }
 
-// ═══ HSL → Hex ═══
+// ═══════════════════════════════════════════
+// HSL → Hex
+// ═══════════════════════════════════════════
+
 function hslToHex(h: number, s: number, l: number): string {
   s /= 100;
   l /= 100;
@@ -94,13 +122,15 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-// ═══ Contrast text color (black or white) ═══
+// ═══════════════════════════════════════════
+// لون النص المقروء (أبيض/أسود)
+// ═══════════════════════════════════════════
+
 export function getContrastText(hex: string): string {
+  if (!hex) return "#FFFFFF";
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-
-  // Relative luminance
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.6 ? "#000000" : "#FFFFFF";
 }
