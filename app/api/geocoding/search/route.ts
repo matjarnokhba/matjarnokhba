@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
 import { searchPlaces, type GeocodingResult } from "@/lib/geocoding";
 
-// ═══ In-memory cache (10 min TTL — Nominatim требует cache) ═══
+// ═══ Cache (10 min) ═══
 const cache = new Map<string, { data: GeocodingResult[]; expiresAt: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -26,10 +26,10 @@ function setCached(key: string, data: GeocodingResult[]) {
   }
 }
 
-// ═══ Rate limit: Nominatim = 1 req/sec globally per IP ═══
+// ═══ Rate limit ═══
 const rateMap = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 60 * 1000;
-const MAX_PER_WINDOW = 55; // safety below 60 (1/sec)
+const MAX_PER_WINDOW = 55;
 
 function checkRate(ip: string): boolean {
   const now = Date.now();
@@ -41,6 +41,18 @@ function checkRate(ip: string): boolean {
   if (entry.count >= MAX_PER_WINDOW) return false;
   entry.count++;
   return true;
+}
+
+// ═══ Remove duplicates by placeId ═══
+function dedupe(list: GeocodingResult[]): GeocodingResult[] {
+  const seen = new Set<string>();
+  const out: GeocodingResult[] = [];
+  for (const r of list) {
+    if (seen.has(r.placeId)) continue;
+    seen.add(r.placeId);
+    out.push(r);
+  }
+  return out;
 }
 
 export async function GET(request: Request) {
@@ -60,20 +72,14 @@ export async function GET(request: Request) {
 
     if (!checkRate(ip)) {
       return NextResponse.json(
-        { success: false, message: "محاولات كثيرة — انتظر قليلاً" },
+        { success: false, message: "محاولات كثيرة" },
         { status: 429 }
       );
     }
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
-
-    const rawLang = searchParams.get("lang") || "ar";
-    const lang = (["ar", "fr", "en"].includes(rawLang)
-      ? rawLang
-      : "ar") as "ar" | "fr" | "en";
-
-    const limit = Math.min(parseInt(searchParams.get("limit") || "8"), 15);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 20);
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
     const typesParam = searchParams.get("types");
@@ -82,7 +88,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, results: [] });
     }
 
-    const cacheKey = `${q.toLowerCase()}|${lang}|${limit}|${lat || ""}|${lng || ""}|${typesParam || ""}`;
+    const cacheKey = `${q.toLowerCase()}|${limit}|${lat || ""}|${lng || ""}|${typesParam || ""}`;
 
     const cached = getCached(cacheKey);
     if (cached) {
@@ -96,19 +102,28 @@ export async function GET(request: Request) {
       ? typesParam.split(",").filter(Boolean)
       : undefined;
 
-    const results = await searchPlaces(q, {
-      lang,
+    const baseOpts = {
       limit,
       lat: lat ? parseFloat(lat) : undefined,
       lng: lng ? parseFloat(lng) : undefined,
       types,
       includeCountryCodes: ["ma"],
-    });
+    };
 
-    setCached(cacheKey, results);
+    // ═══ بحث مزدوج: ar + fr بالتوازي ═══
+    const [arResults, frResults] = await Promise.all([
+      searchPlaces(q, { ...baseOpts, lang: "ar" }),
+      searchPlaces(q, { ...baseOpts, lang: "fr" }),
+    ]);
+
+    // ═══ دمج + إزالة التكرار ═══
+    // الأولوية: العربية أولًا (لأن المستخدم العربي)
+    const merged = dedupe([...arResults, ...frResults]).slice(0, limit);
+
+    setCached(cacheKey, merged);
 
     return NextResponse.json(
-      { success: true, results },
+      { success: true, results: merged },
       { headers: { "Cache-Control": "private, max-age=600" } }
     );
   } catch (error) {

@@ -6,6 +6,7 @@ import { Search, Loader2, X, MapPin, Navigation } from "lucide-react";
 export type GeocodingPlace = {
   placeId: string;
   name: string;
+  nameAlt?: string | null;
   displayName: string;
   city: string | null;
   district: string | null;
@@ -227,7 +228,14 @@ export default function GeocodingAddressPicker({
                   >
                     <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold">{r.name}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-bold">{r.name}</span>
+                        {r.nameAlt && r.nameAlt !== r.name && (
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">
+                            {r.nameAlt}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-gray-500">
                         {r.displayName}
                       </div>

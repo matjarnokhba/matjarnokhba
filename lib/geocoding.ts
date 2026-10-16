@@ -19,6 +19,7 @@ export type GeocodingResult = {
   osmType: string;
 
   name: string;
+  nameAlt?: string | null;
   displayName: string;
   country: string;
   countryCode: string;
@@ -80,6 +81,13 @@ function normalize(result: any): GeocodingResult {
     result.display_name?.split(",")[0] ||
     "—";
 
+  // ═══ اسم بديل (بالفرنسية أو العربية من `name:xx`) ═══
+  const altName =
+    result.namedetails?.["name:fr"] ||
+    result.namedetails?.["name:ar"] ||
+    result.namedetails?.["name:en"] ||
+    null;
+
   return {
     placeId: makePlaceId(
       (result.osm_type || "N").charAt(0).toUpperCase(),
@@ -89,6 +97,7 @@ function normalize(result: any): GeocodingResult {
     osmType: (result.osm_type || "N").charAt(0).toUpperCase(),
 
     name: String(name).trim(),
+    nameAlt: altName,
     displayName: result.display_name || "",
     country: addr.country || "Maroc",
     countryCode: (addr.country_code || "ma").toUpperCase(),
@@ -128,6 +137,7 @@ export async function searchPlaces(
   params.set("q", query.trim());
   params.set("format", "jsonv2");
   params.set("addressdetails", "1");
+  params.set("namedetails", "1"); // ← جديد
   params.set("limit", String(options.limit || 10));
   params.set("accept-language", options.lang || "ar");
 
