@@ -184,7 +184,7 @@ export default function CheckoutPage() {
         phone: form.phone,
         city: form.city,
         district: form.district,
-        fullAddress: form.fullAddress,
+        fullAddressText: form.fullAddressText,
         buildingNumber: form.buildingNumber || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,

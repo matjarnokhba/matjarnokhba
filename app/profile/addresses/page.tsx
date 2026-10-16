@@ -56,9 +56,6 @@ export default function ProfileAddressesPage() {
     load();
   }, []);
 
-  // ═══════════════════════════════════════════
-  // Create
-  // ═══════════════════════════════════════════
   async function handleCreate(form: AddressFormData) {
     const res = await fetch("/api/user/addresses", {
       method: "POST",
@@ -69,7 +66,7 @@ export default function ProfileAddressesPage() {
         phone: form.phone,
         city: form.city,
         district: form.district,
-        fullAddress: form.fullAddress,
+        fullAddressText: form.fullAddressText,
         buildingNumber: form.buildingNumber || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,
@@ -88,9 +85,6 @@ export default function ProfileAddressesPage() {
     setTimeout(() => setMessage(null), 2500);
   }
 
-  // ═══════════════════════════════════════════
-  // Update
-  // ═══════════════════════════════════════════
   async function handleUpdate(form: AddressFormData) {
     if (!form.id) throw new Error("معرف مفقود");
 
@@ -103,7 +97,7 @@ export default function ProfileAddressesPage() {
         phone: form.phone,
         city: form.city,
         district: form.district,
-        fullAddress: form.fullAddress,
+        fullAddressText: form.fullAddressText,
         buildingNumber: form.buildingNumber || null,
         landmark: form.landmark || null,
         postalCode: form.postalCode || null,
@@ -123,9 +117,6 @@ export default function ProfileAddressesPage() {
     setTimeout(() => setMessage(null), 2500);
   }
 
-  // ═══════════════════════════════════════════
-  // Delete
-  // ═══════════════════════════════════════════
   async function handleDelete(id: number) {
     if (!confirm("هل تريد حذف هذا العنوان؟")) return;
 
@@ -146,9 +137,6 @@ export default function ProfileAddressesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════
-  // Set Default
-  // ═══════════════════════════════════════════
   async function handleSetDefault(id: number) {
     try {
       const res = await fetch(`/api/user/addresses/${id}/set-default`, {
@@ -167,9 +155,6 @@ export default function ProfileAddressesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════
-  // Edit — تحويل البيانات لحقول النموذج الجديد
-  // ═══════════════════════════════════════════
   async function handleEdit(id: number) {
     try {
       const res = await fetch(`/api/user/addresses/${id}`);
@@ -181,7 +166,6 @@ export default function ProfileAddressesPage() {
 
       const a = data.address;
 
-      // ═══ إعادة بناء GeocodingPlace من DB ═══
       const city: GeocodingPlace | null = a.cityPlaceId
         ? {
             placeId: a.cityPlaceId,
@@ -204,23 +188,9 @@ export default function ProfileAddressesPage() {
             city: null,
             district: null,
             state: null,
-            lat: 0,
-            lng: 0,
-            type: "district",
-          }
-        : null;
-
-      const fullAddress: GeocodingPlace | null = a.fullAddressPlaceId
-        ? {
-            placeId: a.fullAddressPlaceId,
-            name: a.fullAddressText || a.street,
-            displayName: a.fullAddressText || a.street,
-            city: null,
-            district: null,
-            state: null,
             lat: a.latitude || 0,
             lng: a.longitude || 0,
-            type: "street",
+            type: "district",
           }
         : null;
 
@@ -232,7 +202,8 @@ export default function ProfileAddressesPage() {
         phone: a.phone,
         city,
         district,
-        fullAddress,
+        fullAddressText:
+          a.fullAddressText || a.street || a.fullAddress || "",
         buildingNumber: a.buildingNumber || "",
         landmark: a.landmark || "",
         postalCode: a.postalCode || "",
@@ -355,9 +326,7 @@ export default function ProfileAddressesPage() {
 
             <AddressForm
               initial={editingAddress}
-              onSubmit={
-                mode.type === "create" ? handleCreate : handleUpdate
-              }
+              onSubmit={mode.type === "create" ? handleCreate : handleUpdate}
               onCancel={() => {
                 setMode({ type: "list" });
                 setEditingAddress(undefined);

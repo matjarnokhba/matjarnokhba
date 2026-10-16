@@ -6,8 +6,8 @@ import {
   User,
   Phone,
   Check,
-  MapPin,
   Navigation,
+  MapPin,
 } from "lucide-react";
 import GeocodingAddressPicker, {
   type GeocodingPlace,
@@ -21,7 +21,8 @@ export type AddressFormData = {
 
   city: GeocodingPlace | null;
   district: GeocodingPlace | null;
-  fullAddress: GeocodingPlace | null;
+
+  fullAddressText: string;
 
   buildingNumber: string;
   landmark: string;
@@ -42,7 +43,7 @@ const EMPTY: AddressFormData = {
   phone: "",
   city: null,
   district: null,
-  fullAddress: null,
+  fullAddressText: "",
   buildingNumber: "",
   landmark: "",
   postalCode: "",
@@ -69,7 +70,6 @@ export default function AddressForm({
     setError("");
   }
 
-  // ═══════ 📍 زر تحديد الموقع ═══════
   async function handleLocateMe() {
     setLocating(true);
     setLocatingError("");
@@ -81,29 +81,25 @@ export default function AddressForm({
     }
 
     try {
-      // ═══ تأخير صغير — iOS يحتاج لحظة بعد click ═══
       await new Promise((r) => setTimeout(r, 100));
 
-      // ═══ طلب صريح عبر Permissions API (يدعمه iOS 16+) ═══
       if (navigator.permissions) {
         try {
           const status = await navigator.permissions.query({
             name: "geolocation" as PermissionName,
           });
-
           if (status.state === "denied") {
             setLocatingError(
-              "❌ الموقع محظور لهذا الموقع. افتح: Safari → Aa → Website Settings → Location → Allow"
+              "الموقع محظور على iPhone — استخدم الخانات أدناه"
             );
             setLocating(false);
             return;
           }
         } catch {
-          // Permissions API غير مدعوم — نتابع
+          // ignore
         }
       }
 
-      // ═══ محاولة 1: عالية الدقة ═══
       let position: GeolocationPosition | null = null;
 
       try {
@@ -117,9 +113,7 @@ export default function AddressForm({
           }
         );
       } catch (err: any) {
-        // ═══ iOS: ارجع لـlow accuracy ═══
         if (err?.code === 2 || err?.code === 3) {
-          // POSITION_UNAVAILABLE or TIMEOUT
           position = await new Promise<GeolocationPosition>(
             (resolve, reject) => {
               navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -134,9 +128,7 @@ export default function AddressForm({
         }
       }
 
-      if (!position) {
-        throw new Error("POSITION_FAILED");
-      }
+      if (!position) throw new Error("POSITION_FAILED");
 
       const { latitude, longitude } = position.coords;
 
@@ -147,18 +139,16 @@ export default function AddressForm({
 
       if (!res.ok || !json.success || !json.result) {
         setLocatingError(
-          json.message || "لم نتمكن من تحديد عنوانك — جرّب البحث اليدوي"
+          json.message || "لم نتمكن من تحديد عنوانك — املأ يدويًا"
         );
         return;
       }
 
       const r = json.result;
 
-      // ═══ بناء placeIds pseudo من النتيجة (نستخدم lat/lng كـfallback) ═══
-      // ═══ City place ═══
       const cityPlace: GeocodingPlace | null = r.city
         ? {
-            placeId: r.placeId, // base ID
+            placeId: r.placeId,
             name: r.city,
             displayName: r.city,
             city: r.city,
@@ -173,7 +163,7 @@ export default function AddressForm({
       const districtName = r.suburb || r.neighbourhood || r.district;
       const districtPlace: GeocodingPlace | null = districtName
         ? {
-            placeId: r.placeId + "_d", // extended with _d suffix
+            placeId: r.placeId + "_d",
             name: districtName,
             displayName: districtName,
             city: r.city,
@@ -185,31 +175,17 @@ export default function AddressForm({
           }
         : null;
 
-      const fullAddrName = r.street || r.name || r.displayName.split(",")[0];
-      const fullAddrPlace: GeocodingPlace | null = fullAddrName
-        ? {
-            placeId: r.placeId + "_f", // extended with _f suffix
-            name: fullAddrName,
-            displayName: r.displayName,
-            city: r.city,
-            district: districtName,
-            state: r.state,
-            street: r.street,
-            housenumber: r.housenumber,
-            postcode: r.postcode,
-            lat: r.lat,
-            lng: r.lng,
-            type: "street",
-          }
-        : null;
+      const streetPart = r.street || "";
+      const numberPart = r.housenumber || "";
+      const textAddress = [streetPart, numberPart].filter(Boolean).join(" ");
 
       setData((prev) => ({
         ...prev,
         city: cityPlace || prev.city,
         district: districtPlace || prev.district,
-        fullAddress: fullAddrPlace || prev.fullAddress,
+        fullAddressText: textAddress || prev.fullAddressText,
         postalCode: r.postcode || prev.postalCode,
-        buildingNumber: r.housenumber || prev.buildingNumber,
+        buildingNumber: numberPart || prev.buildingNumber,
       }));
     } catch (err: any) {
       console.error("Geolocation error:", err);
@@ -217,32 +193,21 @@ export default function AddressForm({
       const isSecure =
         typeof window !== "undefined" &&
         window.location.protocol === "https:";
-      const isLocalhost =
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" ||
-          window.location.hostname === "127.0.0.1");
 
       if (err?.code === 1 || err?.message === "User denied Geolocation") {
-        if (!isSecure && !isLocalhost) {
-          setLocatingError(
-            "⚠️ iOS يطلب HTTPS لتحديد الموقع. استخدم الموقع المنشور."
-          );
+        if (!isSecure) {
+          setLocatingError("⚠️ iOS يطلب HTTPS لتحديد الموقع.");
         } else {
-          // ═══ iOS: تعليمات دقيقة ═══
           setLocatingError(
-            "❌ الموقع محظور لهذا الموقع تحديدًا. الحل:\n1) اضغط Aa يسار العنوان\n2) Website Settings → Location → Allow\n3) أعد تحميل الصفحة"
+            "الموقع محظور على iPhone — استخدم الخانات أدناه"
           );
         }
       } else if (err?.code === 2) {
-        setLocatingError(
-          "📡 تعذّر تحديد الموقع — جرّب مكانًا مكشوفًا أو ابحث يدويًا"
-        );
+        setLocatingError("تعذّر تحديد الموقع — جرّب في مكان مكشوف");
       } else if (err?.code === 3) {
-        setLocatingError("⏱️ انتهت المهلة — حاول مرة أخرى");
-      } else if (err?.message === "POSITION_FAILED") {
-        setLocatingError("فشل تحديد الموقع — استخدم البحث اليدوي");
+        setLocatingError("انتهت المهلة — حاول مرة أخرى");
       } else {
-        setLocatingError("فشل تحديد الموقع — استخدم البحث اليدوي");
+        setLocatingError("فشل تحديد الموقع — املأ يدويًا");
       }
     } finally {
       setLocating(false);
@@ -270,15 +235,18 @@ export default function AddressForm({
       return;
     }
     if (!data.city) {
-      setError("اختر المدينة من القائمة");
+      setError("اختر المدينة");
       return;
     }
     if (!data.district) {
-      setError("اختر الحي / المنطقة من القائمة");
+      setError("اختر الحي");
       return;
     }
-    if (!data.fullAddress) {
-      setError("اختر العنوان الكامل من القائمة");
+    if (
+      !data.fullAddressText.trim() ||
+      data.fullAddressText.trim().length < 3
+    ) {
+      setError("العنوان الكامل مطلوب (3 أحرف على الأقل)");
       return;
     }
 
@@ -294,7 +262,7 @@ export default function AddressForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* ═══════ زر تحديد موقعي ═══════ */}
+      {/* زر تحديد الموقع */}
       <div className="rounded-xl border-2 border-dashed border-[#ff5c00] bg-[#fff4ed] p-3">
         <button
           type="button"
@@ -307,10 +275,10 @@ export default function AddressForm({
           ) : (
             <Navigation className="h-4 w-4" />
           )}
-          {locating ? "جاري تحديد موقعك..." : "📍 تحديد موقعي تلقائيًا"}
+          {locating ? "جاري تحديد موقعك..." : "📍 تحديد موقعي تلقائيًا (اختياري)"}
         </button>
         <p className="mt-2 text-center text-[10px] text-gray-600">
-          سيتم ملء المدينة والحي والعنوان تلقائيًا حسب موقعك الحالي
+          يعبئ المدينة والحي تلقائيًا — يمكنك تجاوزه يدويًا
         </p>
 
         {locatingError && (
@@ -326,14 +294,14 @@ export default function AddressForm({
                 افتح Google Maps
               </a>
               <span className="text-[11px] text-amber-700">
-                أو ابحث يدويًا في الخانات أدناه
+                وانسخ اسم مدينتك وحيّك هنا
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* ═══════ الاسم الشخصي + العائلي ═══════ */}
+      {/* الأسماء */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
@@ -367,7 +335,7 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══════ الهاتف ═══════ */}
+      {/* الهاتف */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           رقم الهاتف <span className="text-red-500">*</span>
@@ -385,17 +353,16 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══════ المدينة ═══════ */}
+      {/* المدينة */}
       <GeocodingAddressPicker
         label="المدينة"
-        placeholder="ابحث عن مدينتك..."
+        placeholder="اكتب اسم مدينتك..."
         value={data.city}
         onChange={(city) => {
           setData((prev) => ({
             ...prev,
             city,
             district: null,
-            fullAddress: null,
           }));
           setError("");
         }}
@@ -407,10 +374,10 @@ export default function AddressForm({
           "village",
           "municipality",
         ]}
-        hint="اكتب 2 أحرف على الأقل ثم اختر من القائمة"
+        hint="اكتب حرفين على الأقل ثم اختر من القائمة"
       />
 
-      {/* ═══════ الحي ═══════ */}
+      {/* الحي */}
       <GeocodingAddressPicker
         label="الحي / المنطقة"
         placeholder={
@@ -418,11 +385,7 @@ export default function AddressForm({
         }
         value={data.district}
         onChange={(district) => {
-          setData((prev) => ({
-            ...prev,
-            district,
-            fullAddress: null,
-          }));
+          setData((prev) => ({ ...prev, district }));
           setError("");
         }}
         disabled={!data.city}
@@ -437,67 +400,58 @@ export default function AddressForm({
           "village",
         ]}
         bias={
-          data.city ? { lat: data.city.lat, lng: data.city.lng } : undefined
+          data.city
+            ? { lat: data.city.lat, lng: data.city.lng }
+            : undefined
         }
         parentCity={data.city?.name || null}
         hint={
           data.city
-            ? "ابحث عن حيّك — إن لم تجده، اختر أقرب منطقة"
+            ? "ابحث عن حيّك — أو اختر أقرب منطقة"
             : "اختر المدينة أولاً"
         }
       />
 
-      {/* ═══════ العنوان الكامل ═══════ */}
-      <GeocodingAddressPicker
-        label="العنوان الكامل (شارع + رقم)"
-        placeholder={
-          data.city ? `ابحث في ${data.city.name}` : "اختر المدينة أولاً"
-        }
-        value={data.fullAddress}
-        onChange={(addr) => {
-          setData((prev) => ({ ...prev, fullAddress: addr }));
-          setError("");
-        }}
-        disabled={!data.city}
-        required
-        types={[
-          "road",
-          "street",
-          "residential",
-          "pedestrian",
-          "footway",
-          "house",
-          "building",
-          "amenity",
-          "shop",
-        ]}
-        bias={
-          data.district
-            ? { lat: data.district.lat, lng: data.district.lng }
-            : data.city
-              ? { lat: data.city.lat, lng: data.city.lng }
-              : undefined
-        }
-        hint="ابحث عن الشارع — ثم أضف رقم المنزل أدناه"
-      />
+      {/* العنوان الكامل — نص حر */}
+      <div>
+        <label className="mb-1 block text-xs font-bold text-[#4b5563]">
+          العنوان الكامل <span className="text-red-500">*</span>
+        </label>
+        <div className="relative">
+          <MapPin className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-gray-400" />
+          <textarea
+            value={data.fullAddressText}
+            onChange={(e) => set("fullAddressText", e.target.value)}
+            rows={3}
+            maxLength={300}
+            placeholder="مثال: شارع الحسن الثاني، عمارة 12، الطابق 3، شقة 4"
+            className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 py-2.5 pr-10 pl-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
+          />
+        </div>
+        <p className="mt-1 text-[10px] text-gray-500">
+          اكتب العنوان كما تريده — الشارع، رقم المنزل، الطابق، أي تفاصيل
+        </p>
+      </div>
 
-      {/* ═══════ رقم المنزل + الرمز البريدي ═══════ */}
+      {/* رقم المنزل + الرمز البريدي */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-            رقم المنزل / العمارة
+            رقم المنزل / العمارة{" "}
+            <span className="text-gray-400">(اختياري)</span>
           </label>
           <input
             type="text"
             value={data.buildingNumber}
             onChange={(e) => set("buildingNumber", e.target.value)}
-            placeholder="45 / عمارة A"
+            placeholder="45"
             className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 px-3 text-sm outline-none transition focus:border-[#ff5c00] focus:bg-white"
           />
         </div>
         <div>
           <label className="mb-1 block text-xs font-bold text-[#4b5563]">
-            الرمز البريدي
+            الرمز البريدي{" "}
+            <span className="text-gray-400">(اختياري)</span>
           </label>
           <input
             type="text"
@@ -511,7 +465,7 @@ export default function AddressForm({
         </div>
       </div>
 
-      {/* ═══════ علامة مميزة ═══════ */}
+      {/* علامة مميزة */}
       <div>
         <label className="mb-1 block text-xs font-bold text-[#4b5563]">
           علامة مميزة{" "}
@@ -527,7 +481,7 @@ export default function AddressForm({
         />
       </div>
 
-      {/* ═══════ Default ═══════ */}
+      {/* Default */}
       <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 transition hover:bg-gray-100">
         <input
           type="checkbox"
@@ -538,17 +492,19 @@ export default function AddressForm({
         <div className="flex-1">
           <div className="text-sm font-bold">تعيين كعنوان افتراضي</div>
           <div className="text-[10px] text-gray-500">
-            سيُستخدم تلقائياً في الطلبات القادمة
+            سيُستخدم تلقائيًا في الطلبات القادمة
           </div>
         </div>
       </label>
 
+      {/* Error */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {error}
         </div>
       )}
 
+      {/* Actions */}
       <div className="flex gap-2 pt-2">
         {onCancel && (
           <button
@@ -570,7 +526,7 @@ export default function AddressForm({
           ) : (
             <Check className="h-4 w-4" />
           )}
-          {submitting ? "جاري التحقق..." : submitLabel}
+          {submitting ? "جاري الحفظ..." : submitLabel}
         </button>
       </div>
     </form>

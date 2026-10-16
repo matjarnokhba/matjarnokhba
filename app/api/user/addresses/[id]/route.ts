@@ -32,7 +32,7 @@ const patchSchema = z.object({
   phone: moroccanPhoneSchema.optional(),
   city: placeSchema.optional(),
   district: placeSchema.optional(),
-  fullAddress: placeSchema.optional(),
+  fullAddressText: z.string().trim().min(3).max(300).optional(),
   buildingNumber: z.string().trim().max(50).optional().nullable(),
   landmark: z.string().trim().max(300).optional().nullable(),
   postalCode: z.string().trim().max(10).optional().nullable(),
@@ -163,12 +163,10 @@ export async function PATCH(
       updates.district = data.district.name;
     }
 
-    if (data.fullAddress !== undefined) {
-      updates.fullAddressPlaceId = data.fullAddress.placeId;
-      updates.fullAddressText = data.fullAddress.name;
-      updates.street = data.fullAddress.name;
-      updates.latitude = data.fullAddress.lat;
-      updates.longitude = data.fullAddress.lng;
+    if (data.fullAddressText !== undefined) {
+      updates.fullAddressPlaceId = null;
+      updates.fullAddressText = data.fullAddressText;
+      updates.street = data.fullAddressText;
     }
 
     if (data.buildingNumber !== undefined)

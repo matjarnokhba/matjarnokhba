@@ -31,7 +31,9 @@ const createSchema = z.object({
 
   city: placeSchema,
   district: placeSchema,
-  fullAddress: placeSchema,
+
+  // ═══ النص الحر للعنوان ═══
+  fullAddressText: z.string().trim().min(3).max(300),
 
   buildingNumber: z.string().trim().max(50).optional().nullable(),
   landmark: z.string().trim().max(300).optional().nullable(),
@@ -100,11 +102,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ تحقق جغرافي: المدينة = الحي؟ ═══
-    if (
-      data.city.placeId === data.district.placeId ||
-      data.city.placeId === data.fullAddress.placeId
-    ) {
+    // ═══ تحقق: المدينة ≠ الحي ═══
+    if (data.city.placeId === data.district.placeId) {
       return NextResponse.json(
         { success: false, message: "يجب اختيار أماكن مختلفة" },
         { status: 400 }
@@ -115,7 +114,7 @@ export async function POST(request: Request) {
     const fullName = `${data.firstName} ${data.lastName}`.trim();
     const cityText = data.city.name;
     const districtText = data.district.name;
-    const fullAddressText = data.fullAddress.name;
+    const fullAddressText = data.fullAddressText;
 
     const address = await prisma.$transaction(async (tx) => {
       if (data.isDefault) {
@@ -149,10 +148,10 @@ export async function POST(request: Request) {
           cityText,
           districtPlaceId: data.district.placeId,
           districtText,
-          fullAddressPlaceId: data.fullAddress.placeId,
-          fullAddressText,
-          latitude: data.fullAddress.lat,
-          longitude: data.fullAddress.lng,
+          fullAddressPlaceId: null,
+          fullAddressText: data.fullAddressText,
+          latitude: data.city.lat,
+          longitude: data.city.lng,
           // Details
           buildingNumber: data.buildingNumber || null,
           landmark: data.landmark || null,
