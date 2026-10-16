@@ -81,6 +81,28 @@ export default function AddressForm({
     }
 
     try {
+      // ═══ تأخير صغير — iOS يحتاج لحظة بعد click ═══
+      await new Promise((r) => setTimeout(r, 100));
+
+      // ═══ طلب صريح عبر Permissions API (يدعمه iOS 16+) ═══
+      if (navigator.permissions) {
+        try {
+          const status = await navigator.permissions.query({
+            name: "geolocation" as PermissionName,
+          });
+
+          if (status.state === "denied") {
+            setLocatingError(
+              "❌ الموقع محظور لهذا الموقع. افتح: Safari → Aa → Website Settings → Location → Allow"
+            );
+            setLocating(false);
+            return;
+          }
+        } catch {
+          // Permissions API غير مدعوم — نتابع
+        }
+      }
+
       // ═══ محاولة 1: عالية الدقة ═══
       let position: GeolocationPosition | null = null;
 
@@ -203,11 +225,12 @@ export default function AddressForm({
       if (err?.code === 1 || err?.message === "User denied Geolocation") {
         if (!isSecure && !isLocalhost) {
           setLocatingError(
-            "⚠️ iOS Safari يطلب HTTPS لتحديد الموقع. استخدم الموقع المنشور أو localhost."
+            "⚠️ iOS يطلب HTTPS لتحديد الموقع. استخدم الموقع المنشور."
           );
         } else {
+          // ═══ iOS: تعليمات دقيقة ═══
           setLocatingError(
-            "❌ رفض الإذن. على iPhone: Settings → Safari → Location → Allow"
+            "❌ الموقع محظور لهذا الموقع تحديدًا. الحل:\n1) اضغط Aa يسار العنوان\n2) Website Settings → Location → Allow\n3) أعد تحميل الصفحة"
           );
         }
       } else if (err?.code === 2) {
@@ -289,10 +312,24 @@ export default function AddressForm({
         <p className="mt-2 text-center text-[10px] text-gray-600">
           سيتم ملء المدينة والحي والعنوان تلقائيًا حسب موقعك الحالي
         </p>
+
         {locatingError && (
-          <p className="mt-2 text-center text-[10px] text-red-600">
-            {locatingError}
-          </p>
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs text-amber-800">{locatingError}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <a
+                href="https://maps.google.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700"
+              >
+                افتح Google Maps
+              </a>
+              <span className="text-[11px] text-amber-700">
+                أو ابحث يدويًا في الخانات أدناه
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
