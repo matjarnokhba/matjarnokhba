@@ -141,8 +141,9 @@ export async function GET(
           city: address.city || null,
           postalCode: address.postalCode || null,
 
-          // عدد الطرود
+          // عدد الطرود = عدد الطلبات الفريدة
           parcelCount: uniqueOrderIds.size,
+          ordersCount: uniqueOrderIds.size,
 
           // التجار (للمرجع)
           sellers: Array.from(sellerMap.values()),

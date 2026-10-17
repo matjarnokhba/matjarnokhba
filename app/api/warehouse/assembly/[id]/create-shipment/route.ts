@@ -63,7 +63,6 @@ export async function POST(
 
     const { allowPartial, notes } = parsed.data;
 
-    // ═══ Recompute first ═══
     await prisma.$transaction(async (tx) => {
       await AssemblyService.recompute(tx, assemblyId);
     });
@@ -71,7 +70,13 @@ export async function POST(
     const assembly: any = await prisma.assemblyFile.findUnique({
       where: { id: assemblyId },
       include: {
-        order: { select: { orderNumber: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          },
+        },
         items: {
           include: {
             fulfillmentItem: {
@@ -88,6 +93,12 @@ export async function POST(
                     productId: true,
                     total: true,
                     sellerId: true,
+                    order: {
+                      select: {
+                        id: true,
+                        orderNumber: true,
+                      },
+                    },
                   },
                 },
               },
@@ -130,7 +141,6 @@ export async function POST(
       );
     }
 
-    // ═══ العناصر القابلة للشحن ═══
     const shippableItems = (assembly.items as any[]).filter(
       (ai: any) =>
         !ai.includedInShipment &&
@@ -150,6 +160,14 @@ export async function POST(
     );
 
     const isPartial = waitingItems.length > 0;
+
+    // ═══ الطلبات الفريدة داخل الشحنة ═══
+    const uniqueOrderIds = Array.from(
+      new Set(
+        shippableItems.map((ai: any) => ai.fulfillmentItem.orderItem.orderId)
+      )
+    );
+
     const totalCOD = shippableItems.reduce(
       (s: number, ai: any) => s + Number(ai.fulfillmentItem.orderItem.total),
       0
@@ -177,7 +195,7 @@ export async function POST(
           createdById: auth.user.id,
           customerId: assembly.userId,
           totalCOD,
-          totalOrders: 1,
+          totalOrders: uniqueOrderIds.length, // ← عدد الطلبات الفعلية
           notes: notes || null,
         },
       });
@@ -229,20 +247,11 @@ export async function POST(
           data: {
             userId: assembly.userId,
             type: "SHIPPING_UPDATED",
-            title: "📦 تم شحن جزء من طلبك",
-            message: `تم شحن ${shippableItems.length} من ${assembly.items.length} منتجات من طلبك ${assembly.order.orderNumber}. بانتظار ${remainingCount} منتج إضافي.`,
-            link: `/orders/${assembly.orderId}`,
+            title: "📦 تم شحن جزء من طلباتك",
+            message: `تم شحن ${shippableItems.length} منتج من ${uniqueOrderIds.length} طلب. بانتظار ${remainingCount} منتج إضافي.`,
+            link: `/orders`,
             category: "ORDER",
             severity: "INFO",
-            metadata: {
-              assemblyId: assembly.id,
-              assemblyCode: assembly.assemblyCode,
-              shipmentId: shipment.id,
-              shipmentNumber,
-              shippedItems: shippableItems.length,
-              waitingItems: remainingCount,
-              isPartial: true,
-            },
           },
         });
       }
@@ -257,9 +266,9 @@ export async function POST(
           shipmentNumber,
           assemblyCode: assembly.assemblyCode,
           itemsCount: shippableItems.length,
+          ordersCount: uniqueOrderIds.length,
           totalCOD,
           isPartial,
-          waitingItems: waitingItems.length,
         },
         ipAddress: reqInfo.ipAddress,
         userAgent: reqInfo.userAgent,
@@ -269,6 +278,7 @@ export async function POST(
         shipmentId: shipment.id,
         shipmentNumber,
         itemsCount: shippableItems.length,
+        ordersCount: uniqueOrderIds.length,
         totalCOD,
         isPartial,
         waitingItems: waitingItems.length,

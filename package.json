@@ -11,7 +11,6 @@
     "seed": "tsx prisma/seed.ts",
     "recalc": "tsx scripts/recalc-products.ts",
     "recalc-sellers": "tsx scripts/recalc-seller-performance.ts",
-    "backfill-assemblies": "tsx --env-file=.env scripts/backfill-assemblies.ts",
     "seed-cities": "tsx --env-file=.env prisma/seed-cities.ts"
   },
   "dependencies": {

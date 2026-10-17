@@ -7,6 +7,7 @@ import { ArrowRight, Loader2, Printer, AlertCircle } from "lucide-react";
 import QRCode from "qrcode";
 
 type Label = {
+  ordersCount?: number;
   id: number;
   shipmentNumber: string;
   status: string;
@@ -214,6 +215,11 @@ export default function ShipmentLabelPage() {
             <div className="mt-2 text-[10px] font-bold text-gray-500">
               {label.itemsCount} منتج
             </div>
+            {label.ordersCount && label.ordersCount > 1 && (
+              <div className="mt-0.5 text-[9px] font-bold text-gray-400">
+                ({label.ordersCount} طلب)
+              </div>
+            )}
           </div>
         </div>
 

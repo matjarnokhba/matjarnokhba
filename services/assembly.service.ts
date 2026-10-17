@@ -12,35 +12,47 @@ const RECEIVED_STATUSES = [
 const SHIPPED_STATUSES = ["ALLOCATED", "SHIPPED", "DELIVERED"];
 
 export const AssemblyService = {
-  // ═══════ إنشاء Assembly File لطلب (Lazy) ═══════
-  async ensureForOrder(tx: any, orderId: number) {
+  // ═══════ إنشاء Assembly File لعميل (Lazy) ═══════
+  async ensureForUser(tx: any, userId: number) {
     const existing = await tx.assemblyFile.findUnique({
-      where: { orderId },
+      where: { userId },
       select: { id: true },
     });
     if (existing) return existing;
 
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
+    // ═══ كل عناصر الـfulfillment للعميل (كل طلباته) ═══
+    const fulfillmentItems = await tx.fulfillmentItem.findMany({
+      where: {
+        orderItem: {
+          order: {
+            userId,
+            status: { notIn: ["CANCELLED"] },
+          },
+        },
+      },
       select: {
         id: true,
-        userId: true,
-        shippingAddressSnapshot: true,
-        items: {
+        quantity: true,
+        orderItem: {
           select: {
-            quantity: true,
-            fulfillmentItems: {
-              select: { id: true, quantity: true },
+            order: {
+              select: {
+                shippingAddressSnapshot: true,
+              },
             },
           },
         },
       },
     });
-    if (!order) throw new Error("Order not found");
 
-    const addr = (order.shippingAddressSnapshot || {}) as any;
-    const expectedItems = order.items.reduce(
-      (s: number, i: any) => s + i.quantity,
+    if (fulfillmentItems.length === 0) return null;
+
+    // ═══ العنوان من أحدث طلب ═══
+    const addr = (fulfillmentItems[0]?.orderItem?.order
+      ?.shippingAddressSnapshot || {}) as any;
+
+    const expectedItems = fulfillmentItems.reduce(
+      (s: number, fi: any) => s + fi.quantity,
       0
     );
 
@@ -54,8 +66,7 @@ export const AssemblyService = {
     const assembly = await tx.assemblyFile.create({
       data: {
         assemblyCode,
-        orderId: order.id,
-        userId: order.userId,
+        userId,
         status: "PENDING",
         expectedItems,
         deliveryCity: addr.city || null,
@@ -63,9 +74,7 @@ export const AssemblyService = {
       },
     });
 
-    // AssemblyItems
-    const allFIs = order.items.flatMap((i: any) => i.fulfillmentItems);
-    for (const fi of allFIs) {
+    for (const fi of fulfillmentItems) {
       await tx.assemblyItem.create({
         data: {
           assemblyId: assembly.id,
@@ -99,7 +108,6 @@ export const AssemblyService = {
 
       if (RECEIVED_STATUSES.includes(fiStatus)) {
         received += item.expectedQuantity;
-        // Update receivedAt (idempotent)
         if (!item.receivedAt) {
           await tx.assemblyItem.update({
             where: { id: item.id },

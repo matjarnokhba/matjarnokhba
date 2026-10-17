@@ -28,32 +28,38 @@ export async function GET(request: Request) {
     const city = searchParams.get("city") || "ALL";
     const search = searchParams.get("q")?.trim().toLowerCase() || "";
 
-    // ═══ 1. Lazy: ensure assemblies for orders needing them ═══
-    const ordersNeedingAssembly = await prisma.order.findMany({
+    // ═══ 1. Lazy: ensure assemblies for users with fulfillment items ═══
+    const usersNeedingAssembly = await prisma.user.findMany({
       where: {
         assemblyFile: null,
-        items: { some: { fulfillmentItems: { some: {} } } },
+        orders: {
+          some: {
+            items: { some: { fulfillmentItems: { some: {} } } },
+          },
+        },
       },
       select: { id: true },
       take: 200,
     });
 
-    for (const o of ordersNeedingAssembly) {
+    for (const u of usersNeedingAssembly) {
       try {
         await prisma.$transaction(async (tx) => {
-          await AssemblyService.ensureForOrder(tx, o.id);
+          await AssemblyService.ensureForUser(tx, u.id);
         });
       } catch (err) {
-        console.error(`Ensure assembly for order ${o.id} failed:`, err);
+        console.error(`Ensure assembly for user ${u.id} failed:`, err);
       }
     }
 
-    // ═══ 2. Recompute active assemblies ═══
+    // ═══ 2. Recompute ONLY PENDING/READY/PARTIALLY (max 50 at a time) ═══
     const activeAssemblies = await prisma.assemblyFile.findMany({
       where: {
         status: { in: ["PENDING", "READY", "PARTIALLY_SHIPPED"] },
       },
       select: { id: true },
+      take: 50,
+      orderBy: { updatedAt: "asc" },
     });
 
     for (const a of activeAssemblies) {
@@ -80,32 +86,25 @@ export async function GET(request: Request) {
     const assemblies = await prisma.assemblyFile.findMany({
       where,
       include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            customerSnapshot: true,
-            shippingAddressSnapshot: true,
-            total: true,
-          },
-        },
         user: { select: { id: true, name: true, phone: true, email: true } },
         items: {
-          include: {
+          select: {
+            id: true,
+            expectedQuantity: true,
+            receivedAt: true,
+            includedInShipment: true,
             fulfillmentItem: {
               select: {
                 id: true,
                 status: true,
                 quantity: true,
-                sellerId: true,
                 orderItem: {
                   select: {
-                    id: true,
+                    orderId: true,
                     productName: true,
-                    variantName: true,
                     imageUrl: true,
                     quantity: true,
-                    sellerId: true,
+                    order: { select: { orderNumber: true } },
                   },
                 },
               },
@@ -113,26 +112,28 @@ export async function GET(request: Request) {
           },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }],
       take: 500,
     });
 
-    // ═══ 4. Search filter (in memory) ═══
+    // ═══ Search filter (in memory) ═══
     let filtered = assemblies;
     if (search) {
       filtered = assemblies.filter((a) => {
-        const cust = (a.order.customerSnapshot || {}) as any;
         return (
           a.assemblyCode.toLowerCase().includes(search) ||
-          a.order.orderNumber.toLowerCase().includes(search) ||
           a.user.name.toLowerCase().includes(search) ||
-          (cust?.name || "").toLowerCase().includes(search) ||
-          (cust?.phone || "").includes(search)
+          (a.user.phone || "").includes(search) ||
+          a.items.some((ai) =>
+            ai.fulfillmentItem.orderItem.order.orderNumber
+              .toLowerCase()
+              .includes(search)
+          )
         );
       });
     }
 
-    // ═══ 5. Cities ═══
+    // ═══ Cities ═══
     const cityRows = await prisma.assemblyFile.findMany({
       where: {
         status: { in: ["PENDING", "READY", "PARTIALLY_SHIPPED"] },

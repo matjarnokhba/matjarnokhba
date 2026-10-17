@@ -353,7 +353,7 @@ model User {
   loyaltyAccount LoyaltyAccount?
   sessions       Session[]
   passwordResetTokens PasswordResetToken[]
-  assemblyFiles      AssemblyFile[]
+  assemblyFile       AssemblyFile?
 
   referredBy         User?             @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
   referralsGiven     User[]            @relation("UserReferrals")
@@ -776,7 +776,6 @@ model Order {
   notes                   String?
   shippingAddressId       Int?
   sellerNotes             String?
-  assemblyFile            AssemblyFile?
   loyaltyPointsAwarded    Int           @default(0)
   loyaltyPointsRevoked    Int           @default(0)
   loyaltyAwardedAt        DateTime?
@@ -2047,8 +2046,7 @@ model CollectionBatchItem {
 model AssemblyFile {
   id            Int            @id @default(autoincrement())
   assemblyCode  String         @unique
-  orderId       Int            @unique
-  userId        Int
+  userId        Int            @unique
   status        AssemblyStatus @default(PENDING)
 
   expectedItems Int @default(0)
@@ -2066,8 +2064,7 @@ model AssemblyFile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  order Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  user  User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   items AssemblyItem[]
 
   @@index([userId])
