@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { ShipmentQRService } from "@/services/shipment-qr.service";
+import { getColorHex } from "@/lib/address-colors";
 
 async function requireWarehouse() {
   const current = await SessionService.getCurrent();
@@ -148,9 +149,13 @@ export async function GET(
           // التجار (للمرجع)
           sellers: Array.from(sellerMap.values()),
 
-          // ═══ ألوان المدينة والحي ═══
-          cityColor: firstItem?.order?.shippingCityColor || null,
-          districtColor: firstItem?.order?.shippingDistrictColor || null,
+          // ═══ ألوان المدينة والحي — مع fallback للطلبات القديمة ═══
+          cityColor:
+            firstItem?.order?.shippingCityColor ||
+            (address.city ? getColorHex(address.city) : null),
+          districtColor:
+            firstItem?.order?.shippingDistrictColor ||
+            (address.district ? getColorHex(address.district) : null),
 
           // QR
           qrToken: rawToken,

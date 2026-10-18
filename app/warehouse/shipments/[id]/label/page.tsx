@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Loader2, Printer, AlertCircle } from "lucide-react";
 import QRCode from "qrcode";
 
 type Label = {
-  ordersCount?: number;
   id: number;
   shipmentNumber: string;
   status: string;
-  totalCOD: number;
+  totalCOD: number | string;
   totalOrders: number;
   itemsCount: number;
   createdAt: string;
@@ -22,6 +21,7 @@ type Label = {
   city: string | null;
   postalCode: string | null;
   parcelCount: number;
+  ordersCount?: number;
   sellers: Array<{ id: number; storeName: string; city: string | null }>;
   cityColor: string | null;
   districtColor: string | null;
@@ -38,7 +38,9 @@ export default function ShipmentLabelPage() {
   const [error, setError] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [qrGenerating, setQrGenerating] = useState(false);
 
+  // ═══ تحميل البيانات ═══
   useEffect(() => {
     async function load() {
       try {
@@ -62,23 +64,34 @@ export default function ShipmentLabelPage() {
 
   // ═══ توليد QR ═══
   useEffect(() => {
-    if (!label || !label.qrToken || !canvasRef.current) return;
+    if (loading || !label || !label.qrToken || !canvasRef.current) return;
     if (qrDataUrl) return;
 
-    const canvas = canvasRef.current;
-    const origin =
-      typeof window !== "undefined" ? window.location.origin : "";
-    const url = `${origin}/sd/${label.qrToken}`;
+    async function generate() {
+      setQrGenerating(true);
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
 
-    QRCode.toCanvas(canvas, url, {
-      width: 800,
-      margin: 1,
-      color: { dark: "#0a1f44", light: "#ffffff" },
-      errorCorrectionLevel: "H",
-    })
-      .then(() => setQrDataUrl(canvas.toDataURL("image/png")))
-      .catch((err) => console.error("QR gen failed:", err));
-  }, [label, qrDataUrl]);
+        const origin = window.location.origin;
+        const url = `${origin}/sd/${label!.qrToken}`;
+
+        await QRCode.toCanvas(canvas, url, {
+          width: 800,
+          margin: 1,
+          color: { dark: "#0a1f44", light: "#ffffff" },
+          errorCorrectionLevel: "H",
+        });
+
+        setQrDataUrl(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.error("QR generation failed:", err);
+      } finally {
+        setQrGenerating(false);
+      }
+    }
+    generate();
+  }, [loading, label, qrDataUrl]);
 
   function handlePrint() {
     window.print();
@@ -87,7 +100,7 @@ export default function ShipmentLabelPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-10 w-10 animate-spin text-teal-600" />
+        <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
       </div>
     );
   }
@@ -109,202 +122,180 @@ export default function ShipmentLabelPage() {
     );
   }
 
+  const total = Number(label.totalCOD || 0);
+  const orderCount = label.ordersCount || label.parcelCount || 1;
+  const cityColor = label.cityColor || null;
+  const districtColor = label.districtColor || null;
+  const cityTextColor = cityColor ? getContrastText(cityColor) : "#fff";
+  const districtTextColor = districtColor
+    ? getContrastText(districtColor)
+    : "#fff";
+
   return (
     <div className="min-h-screen bg-gray-200 p-4 print:bg-white print:p-0">
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      {/* ═══ Toolbar (يختفي عند الطباعة) ═══ */}
-      <div className="mx-auto mb-4 flex w-full max-w-[600px] items-center justify-between gap-2 print:hidden">
+      {/* ═══ Toolbar ═══ */}
+      <div className="mx-auto mb-2 flex w-full max-w-[500px] gap-2 print:hidden">
         <Link
           href={`/warehouse/shipments/${shipmentId}`}
-          className="flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-teal-600"
+          className="flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-[#ff5c00]"
         >
           <ArrowRight className="h-3.5 w-3.5" />
           رجوع
         </Link>
-
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 rounded-lg bg-[#0a1f44] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1a2f54]"
-        >
-          <Printer className="h-4 w-4" />
-          طباعة الملصق
-        </button>
+        <div className="ml-auto">
+          <button
+            onClick={handlePrint}
+            disabled={qrGenerating}
+            className="flex items-center gap-2 rounded-lg bg-[#0a1f44] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1a2f54] disabled:opacity-50"
+          >
+            {qrGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="h-4 w-4" />
+            )}
+            طباعة الملصق
+          </button>
+        </div>
       </div>
 
       {/* ═══ الملصق ═══ */}
       <div
-        className="mx-auto bg-white shadow-xl print:shadow-none"
-        style={{ width: "100%", maxWidth: "600px" }}
+        className="mx-auto rounded-xl bg-white p-2 shadow-xl print:shadow-none"
+        style={{ width: "33%", minWidth: "320px", maxWidth: "500px" }}
       >
         {/* ═══ Header ═══ */}
-        <div className="flex items-center justify-between border-b-4 border-[#0a1f44] bg-white px-5 py-3">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-              متجر نخبة
-            </div>
-            <div className="mt-0.5 text-lg font-black text-[#0a1f44]">
-              ملصق شحن
-            </div>
+        <div className="flex items-center justify-between gap-2 border-b-2 border-[#0a1f44] pb-1">
+          <div className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">
+            متجر نخبة
           </div>
-          <div className="text-right">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              رقم الشحنة
-            </div>
-            <div className="font-mono text-xl font-black text-[#ff5c00]">
-              {label.shipmentNumber}
-            </div>
+          <div className="shrink-0 font-mono text-xl font-black leading-none text-[#ff5c00]">
+            {label.shipmentNumber}
           </div>
         </div>
 
-        {/* ═══ QR + Parcel Count + Color Bars ═══ */}
-        <div className="flex items-stretch border-b-2 border-gray-200">
-          {/* ═══ شريط المدينة (يمين) ═══ */}
-          {label.cityColor && (
+        {/* ═══ QR + Color Bars ═══ */}
+        <div className="mt-1 flex items-stretch justify-center gap-1">
+          {/* شريط المدينة (يمين) */}
+          {cityColor && (
             <div
-              className="flex w-12 flex-col items-center justify-center gap-2 py-4"
-              style={{ backgroundColor: label.cityColor }}
+              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: cityColor }}
             >
-              <div
-                className="text-3xl font-black"
-                style={{ color: getContrastText(label.cityColor) }}
+              <span
+                className="text-xl font-black"
+                style={{ color: cityTextColor }}
               >
                 M
-              </div>
+              </span>
             </div>
           )}
 
           {/* QR */}
-          <div className="flex flex-1 items-center justify-center bg-white p-4">
-            {qrDataUrl ? (
-              <img
-                src={qrDataUrl}
-                alt="QR"
-                className="h-44 w-44 object-contain"
-              />
-            ) : (
-              <div className="flex h-44 w-44 items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+          <div className="flex-1">
+            <div className="flex justify-center">
+              <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR"
+                    className="h-44 w-44 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-44 w-44 items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
-          {/* ═══ شريط الحي (يسار) ═══ */}
-          {label.districtColor && (
+          {/* شريط الحي (يسار) */}
+          {districtColor && (
             <div
-              className="flex w-12 flex-col items-center justify-center gap-2 py-4"
-              style={{ backgroundColor: label.districtColor }}
+              className="flex w-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: districtColor }}
             >
-              <div
-                className="text-3xl font-black"
-                style={{ color: getContrastText(label.districtColor) }}
+              <span
+                className="text-xl font-black"
+                style={{ color: districtTextColor }}
               >
                 H
-              </div>
+              </span>
             </div>
           )}
+        </div>
 
-          {/* Parcel count */}
-          <div className="flex w-32 flex-col items-center justify-center border-l-2 border-gray-200 bg-[#fff4ed] p-3">
-            <div className="text-[10px] font-black uppercase tracking-wider text-gray-500">
-              عدد الطرود
-            </div>
-            <div className="mt-1 text-6xl font-black leading-none text-[#ff5c00]">
-              {label.parcelCount}
-            </div>
-            <div className="mt-2 text-[10px] font-bold text-gray-500">
-              {label.itemsCount} منتج
-            </div>
-            {label.ordersCount && label.ordersCount > 1 && (
-              <div className="mt-0.5 text-[9px] font-bold text-gray-400">
-                ({label.ordersCount} طلب)
-              </div>
-            )}
-          </div>
+        <div className="mt-1 text-center text-sm font-bold leading-none text-gray-600">
+          📱 امسح الرمز لبدء التوصيل
         </div>
 
         {/* ═══ Recipient ═══ */}
-        <div className="border-b-2 border-gray-200 px-5 py-4">
-          <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-            المستلم
-          </div>
-
-          <div className="mt-1 text-3xl font-black leading-tight text-[#0a1f44]">
-            {label.customerName}
+        <div className="mt-1 rounded-lg border-2 border-gray-300 p-1.5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="shrink-0 text-[10px] font-black uppercase leading-none text-gray-400">
+              إلى
+            </span>
+            <span className="text-2xl font-black leading-none text-[#0a1f44]">
+              {label.customerName || "—"}
+            </span>
           </div>
 
           {label.customerPhone && (
             <div
-              className="mt-2 font-mono text-2xl font-bold text-gray-800"
+              className="mt-1 font-mono text-xl font-bold leading-none text-gray-800"
               dir="ltr"
             >
               {label.customerPhone}
             </div>
           )}
 
-          <div className="mt-3 text-base leading-snug text-gray-700">
+          <div className="mt-1 text-base leading-tight text-gray-700">
             {label.street && <div>{label.street}</div>}
-            {label.district && (
-              <div className="text-lg font-bold">{label.district}</div>
-            )}
-            <div className="text-lg font-black text-[#0a1f44]">
-              {label.city}
-            </div>
+            {label.district && <div className="font-bold">{label.district}</div>}
+            {label.city && <div className="font-bold">{label.city}</div>}
             {label.postalCode && (
-              <div
-                className="mt-1 font-mono text-sm text-gray-500"
-                dir="ltr"
-              >
+              <div className="font-mono text-sm" dir="ltr">
                 {label.postalCode}
               </div>
             )}
           </div>
         </div>
 
-        {/* ═══ COD Amount ═══ */}
-        <div className="flex items-center justify-between border-b-2 border-gray-200 bg-gray-50 px-5 py-4">
-          <div className="text-sm font-black text-gray-700">
-            المبلغ المطلوب (COD)
-          </div>
-          <div className="text-right">
-            <span className="text-3xl font-black text-[#ff5c00]">
-              {Number(label.totalCOD || 0).toFixed(2)}
+        {/* ═══ Totals ═══ */}
+        <div className="mt-1 flex items-center justify-between gap-2 border-t-2 border-dashed border-gray-300 pt-1">
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs font-bold leading-none text-gray-500">
+              عدد:
             </span>
-            <span className="mr-1 text-sm font-bold text-gray-500">د.م</span>
+            <span className="text-4xl font-black leading-none text-[#0a1f44]">
+              {label.itemsCount}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs font-bold leading-none text-gray-500">
+              المبلغ:
+            </span>
+            <span className="text-4xl font-black leading-none text-[#ff5c00]">
+              {total.toFixed(2)}
+            </span>
+            <span className="text-sm font-bold leading-none text-gray-500">
+              د.م
+            </span>
           </div>
         </div>
 
-        {/* ═══ Sellers ═══ */}
-        {label.sellers.length > 0 && (
-          <div className="border-b-2 border-gray-200 px-5 py-3">
-            <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-              من
-            </div>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {label.sellers.map((s) => (
-                <span
-                  key={s.id}
-                  className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-700"
-                >
-                  {s.storeName}
-                </span>
-              ))}
-            </div>
+        {/* ═══ Order Count (if > 1) ═══ */}
+        {orderCount > 1 && (
+          <div className="mt-1 rounded bg-[#fff4ed] py-0.5 text-center text-xs font-black leading-none text-[#ff5c00]">
+            {orderCount} طلبات
           </div>
         )}
 
         {/* ═══ Footer ═══ */}
-        <div className="flex items-center justify-between bg-[#0a1f44] px-5 py-2.5 text-white">
-          <div className="text-[10px] font-bold">
-            متجر نخبة — Matjar Nokhba
-          </div>
-          <div className="font-mono text-[10px] opacity-75">
-            {new Date(label.createdAt).toLocaleDateString("ar-MA", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })}
-          </div>
+        <div className="mt-0.5 border-t border-gray-200 pt-0.5 text-center text-xs leading-none text-gray-400">
+          متجر نخبة — Matjar Nokhba
         </div>
       </div>
 
@@ -313,7 +304,6 @@ export default function ShipmentLabelPage() {
         @media print {
           body {
             background: white !important;
-            margin: 0 !important;
           }
           @page {
             margin: 8mm;
@@ -330,6 +320,7 @@ export default function ShipmentLabelPage() {
 }
 
 function getContrastText(hex: string): string {
+  if (!hex) return "#FFFFFF";
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
