@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 // ═══════════════════════════════════════════
@@ -27,6 +27,9 @@ function getDashboardPath(role: string): string {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const verified = searchParams.get("verified");
+  const authError = searchParams.get("error");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,6 +83,16 @@ export default function LoginPage() {
           مرحباً بك في متجر نخبة
         </p>
 
+{verified === "true" && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg text-sm mb-4">
+            ✅ تم تأكيد بريدك الإلكتروني بنجاح. يمكنك تسجيل الدخول الآن.
+          </div>
+        )}
+        {authError === "invalid_token" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
+            ❌ رابط التأكيد غير صالح أو منتهي الصلاحية.
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { ReferralService } from "@/services/referral.service";
+import { EmailService } from "@/services/email.service";
 import {
   registerSchema,
   loginSchema,
@@ -25,13 +27,16 @@ export const AuthService = {
       throw new Error("البريد الإلكتروني مسجل بالفعل");
     }
 
-    // 3. شف​ر كلمة المرور
+    // 3. شفر كلمة المرور
     const passwordHash = await bcrypt.hash(data.password, 12);
 
     // 4. ولّد كود إحالة فريد للمستخدم الجديد
     const referralCode = await ReferralService.generateUniqueCode();
 
-    // 5. أنشئ المستخدم
+    // 5. توليد رمز تأكيد البريد
+    const emailVerificationToken = crypto.randomBytes(32).toString("hex");
+
+    // 6. أنشئ المستخدم
     const user = await prisma.user.create({
       data: {
         name: data.name,
@@ -40,6 +45,7 @@ export const AuthService = {
         phone: data.phone || null,
         role: "CUSTOMER",
         referralCode,
+        emailVerificationToken,
       },
       select: {
         id: true,
@@ -48,16 +54,27 @@ export const AuthService = {
         phone: true,
         role: true,
         createdAt: true,
+        emailVerified: true,
       },
     });
 
-    // 6. ربط الإحالة إن وُجد كود
+    // 7. إرسال إيميل التأكيد (في الخلفية لا نوقف التسجيل إذا فشل)
+    try {
+      await EmailService.sendVerificationEmail(
+        user.email,
+        user.name,
+        emailVerificationToken
+      );
+    } catch (err) {
+      console.error("Verification email failed:", err);
+    }
+
+    // 8. ربط الإحالة إن وُجد كود
     const incomingCode = data.referralCode;
     if (incomingCode && typeof incomingCode === "string" && incomingCode.trim()) {
       try {
         await ReferralService.linkReferral(user.id, incomingCode);
       } catch (err) {
-        // لا نُفشل التسجيل إن فشل الربط
         console.error("Referral link failed:", err);
       }
     }
@@ -99,6 +116,7 @@ export const AuthService = {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      emailVerified: user.emailVerified,
     };
   },
 };

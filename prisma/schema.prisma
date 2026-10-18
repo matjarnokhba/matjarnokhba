@@ -334,6 +334,8 @@ model User {
   referralCode String    @unique @default(cuid())
   referredById Int?
   passwordHash String
+  emailVerified          Boolean   @default(false)
+  emailVerificationToken String?   @unique
   name         String
   phone        String?
   role         UserRole  @default(CUSTOMER)

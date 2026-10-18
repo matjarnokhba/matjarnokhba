@@ -22,6 +22,7 @@ type UserData = {
   name: string;
   email: string;
   role: string;
+  emailVerified: boolean; // 👈 تمت الإضافة
 };
 
 type UserMenuProps = {
@@ -207,13 +208,22 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
         }`}
         aria-label="القائمة"
       >
+        {/* 👈 بداية التعديل: إضافة النقطة الحمراء */}
         <div
-          className={`flex items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 font-black text-white transition-all duration-300 ${
+          className={`relative flex items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-orange-500 font-black text-white transition-all duration-300 ${
             compact ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"
           }`}
         >
           {firstName.charAt(0)}
+          {!user.emailVerified && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 border border-white"></span>
+            </span>
+          )}
         </div>
+        {/* 👈 نهاية التعديل */}
+
         <span
           className={`hidden font-bold text-[#111827] transition-all duration-300 lg:inline ${
             compact ? "text-[10px]" : "text-xs"

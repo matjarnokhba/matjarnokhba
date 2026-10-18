@@ -26,6 +26,7 @@ export async function GET() {
         email: current.user.email,
         phone: current.user.phone,
         role: current.user.role,
+        emailVerified: current.user.emailVerified,
       },
     });
   } catch (error) {

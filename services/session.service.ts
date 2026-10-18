@@ -65,6 +65,7 @@ export const SessionService = {
             phone: true,
             role: true,
             deletedAt: true,
+            emailVerified: true, // <--- تم إضافة هذا السطر هنا
             // ═══ معلومات البائع (للـMulti-Vendor) ═══
             seller: {
               select: {
