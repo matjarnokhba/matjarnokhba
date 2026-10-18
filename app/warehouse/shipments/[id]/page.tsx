@@ -173,6 +173,7 @@ export default function ShipmentDetailPage() {
   }
 
   const canAssign = !shipment.deliveryPerson && shipment.status === "READY";
+  const canCancel = shipment.status === "READY" && !shipment.deliveryPerson;
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
@@ -360,35 +361,37 @@ export default function ShipmentDetailPage() {
 
       {/* Actions */}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {/* ═══ زر طباعة الملصق ═══ */}
+        {/* ═══ زر طباعة الملصق — لون أوضح ═══ */}
         <Link
           href={`/warehouse/shipments/${shipmentId}/label`}
-          className="flex items-center justify-center gap-2 rounded-xl bg-[#0a1f44] py-3.5 text-sm font-bold text-white transition hover:bg-[#1a2f54]"
+          className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
         >
           <Printer className="h-4 w-4" />
           طباعة الملصق
         </Link>
 
+        {/* ═══ QR للمسح — بدل "لوحة المستودع" ═══ */}
+        <Link
+          href="/warehouse/scan"
+          className="flex items-center justify-center gap-2 rounded-xl border border-teal-600 bg-white py-3.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50"
+        >
+          <QrCode className="h-4 w-4" />
+          QR للمسح
+        </Link>
+
+        {/* ═══ إسناد سائق ═══ */}
         {canAssign && (
           <button
             onClick={() => setShowAssignModal(true)}
-            className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white transition hover:bg-teal-700"
+            className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white transition hover:bg-teal-700 sm:col-span-2"
           >
             <Truck className="h-4 w-4" />
             إسناد سائق
           </button>
         )}
 
-        <Link
-          href={`/warehouse`}
-          className="flex items-center justify-center gap-2 rounded-xl border border-teal-600 bg-white py-3.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50"
-        >
-          <QrCode className="h-4 w-4" />
-          لوحة المستودع
-        </Link>
-
-        {/* ═══ زر الإلغاء — فقط قبل الإسناد ═══ */}
-        {shipment.status === "READY" && (
+        {/* ═══ إلغاء الشحنة ═══ */}
+        {canCancel && (
           <button
             onClick={() => setShowCancelModal(true)}
             className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 transition hover:bg-red-100 sm:col-span-2"
@@ -443,7 +446,7 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {/* Assign Modal */}
+      {/* ═══ Assign Modal ═══ */}
       {showAssignModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6">

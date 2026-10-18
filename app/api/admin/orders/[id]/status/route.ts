@@ -4,6 +4,7 @@ import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
 import { LoyaltyService } from "@/services/loyalty.service";
 import { ReferralService } from "@/services/referral.service";
+import { AssemblyService } from "@/services/assembly.service";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING", "CANCELLED"],
@@ -20,8 +21,15 @@ const STATUS_LABELS: Record<string, string> = {
   SHIPPED: "تم الشحن",
   DELIVERED: "تم التسليم",
   CANCELLED: "ملغى",
-  RETURNED: "مُرتجع",
+  RETURNED: "مُرتَجع",
 };
+
+// ═══ الحالات التي تُوقف دورة التجهيز ═══
+const FINAL_FULFILLMENT_FOR_DELIVERED = [
+  "DELIVERED",
+  "CANCELLED",
+  "RETURNED",
+] as any;
 
 export async function PATCH(
   request: Request,
@@ -88,7 +96,7 @@ export async function PATCH(
 
     // ═══════ Transaction ═══════
     await prisma.$transaction(async (tx) => {
-      // 1. تحديث حالة الطلب
+      // ═══ 1. تحديث حالة الطلب ═══
       await tx.order.update({
         where: { id: orderId },
         data: {
@@ -99,7 +107,7 @@ export async function PATCH(
         },
       });
 
-      // 2. OrderStatusHistory
+      // ═══ 2. OrderStatusHistory ═══
       await tx.orderStatusHistory.create({
         data: {
           orderId,
@@ -110,7 +118,47 @@ export async function PATCH(
         },
       });
 
-      // ═══ 3. CANCELLED: إرجاع المخزون (COD = Sale عند الإنشاء) ═══
+      // ═══════════════════════════════════════════
+      // 🔧 إصلاح جذري: مزامنة FulfillmentItems
+      // ═══════════════════════════════════════════
+      if (newStatus === "DELIVERED") {
+        await tx.fulfillmentItem.updateMany({
+          where: {
+            orderItem: { orderId },
+            status: { notIn: FINAL_FULFILLMENT_FOR_DELIVERED },
+          },
+          data: { status: "DELIVERED" },
+        });
+
+        // إعادة حساب Assembly (لأن FulfillmentItems تغيّرت)
+        const assembly = await tx.assemblyFile.findUnique({
+          where: { userId: order.userId },
+          select: { id: true },
+        });
+        if (assembly) {
+          await AssemblyService.recompute(tx, assembly.id);
+        }
+      }
+
+      if (newStatus === "CANCELLED") {
+        await tx.fulfillmentItem.updateMany({
+          where: {
+            orderItem: { orderId },
+            status: { notIn: ["DELIVERED", "RETURNED", "CANCELLED"] },
+          },
+          data: { status: "CANCELLED" },
+        });
+
+        const assembly = await tx.assemblyFile.findUnique({
+          where: { userId: order.userId },
+          select: { id: true },
+        });
+        if (assembly) {
+          await AssemblyService.recompute(tx, assembly.id);
+        }
+      }
+
+      // ═══ 3. CANCELLED: إرجاع المخزون ═══
       if (newStatus === "CANCELLED") {
         const alreadyReturned = await tx.inventoryMovement.findFirst({
           where: {
@@ -142,9 +190,8 @@ export async function PATCH(
         }
       }
 
-      // ═══ 4. DELIVERED: زيادة المبيعات + منح نقاط الولاء + مكافأة الإحالة ═══
+      // ═══ 4. DELIVERED: مبيعات + ولاء + إحالة ═══
       if (newStatus === "DELIVERED" && oldStatus !== "DELIVERED") {
-        // 4a. زيادة sold
         const soldByProduct = new Map<number, number>();
         const fullItems = await tx.orderItem.findMany({
           where: { orderId },
@@ -164,7 +211,6 @@ export async function PATCH(
           });
         }
 
-        // 4b. منح نقاط الولاء
         try {
           const award = await LoyaltyService.awardForOrder(tx, {
             userId: order.userId,
@@ -223,7 +269,6 @@ export async function PATCH(
           console.error("Loyalty award failed:", loyaltyErr);
         }
 
-        // 4c. مكافأة الإحالة عند أول طلب مؤهل
         try {
           await ReferralService.awardOnFirstOrder(tx, order.userId, order.id);
         } catch (refErr) {
@@ -231,7 +276,7 @@ export async function PATCH(
         }
       }
 
-      // ═══ 5. إشعار الحالة (عام) ═══
+      // ═══ 5. إشعار الحالة ═══
       await tx.notification.create({
         data: {
           userId: order.userId,

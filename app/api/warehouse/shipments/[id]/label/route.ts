@@ -118,7 +118,7 @@ export async function GET(
           id: shipment.id,
           shipmentNumber: shipment.shipmentNumber,
           status: shipment.status,
-          totalCOD: shipment.totalCOD,
+          totalCOD: Number(shipment.totalCOD),
           totalOrders: shipment.totalOrders,
           itemsCount: shipment.items.length,
           createdAt: shipment.createdAt,

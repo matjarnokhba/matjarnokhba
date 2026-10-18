@@ -268,7 +268,7 @@ export default function ShipmentLabelPage() {
           </div>
           <div className="text-right">
             <span className="text-3xl font-black text-[#ff5c00]">
-              {label.totalCOD.toFixed(2)}
+              {Number(label.totalCOD || 0).toFixed(2)}
             </span>
             <span className="mr-1 text-sm font-bold text-gray-500">د.م</span>
           </div>
