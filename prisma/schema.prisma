@@ -333,7 +333,8 @@ model User {
   email        String    @unique
   referralCode String    @unique @default(cuid())
   referredById Int?
-  passwordHash String
+  passwordHash String?
+  googleId     String?   @unique
   emailVerified          Boolean   @default(false)
   emailVerificationToken String?   @unique
   name         String
