@@ -20,32 +20,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 
 const CURRENCY = "د.م";
-
-type OrderItem = {
-  assemblyItemId: number;
-  fulfillmentItemId: number;
-  status: string;
-  includedInShipment: boolean;
-  receivedAt: string | null;
-  productName: string;
-  variantName: string | null;
-  imageUrl: string | null;
-  quantity: number;
-  total: number;
-  seller: { id: number; storeName: string; city: string | null } | null;
-};
-
-type Order = {
-  id: number;
-  orderNumber: string;
-  createdAt: string;
-  total: number;
-  status: "READY" | "PARTIAL" | "PENDING" | "COMPLETED";
-  items: OrderItem[];
-};
 
 export default function AssemblyDetailPage() {
   const params = useParams();
@@ -80,6 +59,14 @@ export default function AssemblyDetailPage() {
     if (assemblyId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assemblyId]);
+
+  // ═══ إعادة تحميل تلقائية عند العودة من scanner ═══
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener("focus", handler);
+    return () => window.removeEventListener("focus", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleOrder(orderId: number) {
     setExpandedOrders((prev) => {
@@ -148,33 +135,25 @@ export default function AssemblyDetailPage() {
   }
 
   const address = assembly.shippingAddress || {};
-  const orders: Order[] = assembly.orders || [];
+  const orders: any[] = assembly.orders || [];
+  const readiness = assembly.readiness || {
+    mustScan: [],
+    inTransit: [],
+    canShipFull: false,
+    canShipPartial: false,
+  };
 
-  const readyOrders = orders.filter((o) => o.status === "READY");
-  const partialOrders = orders.filter((o) => o.status === "PARTIAL");
-  const pendingOrders = orders.filter((o) => o.status === "PENDING");
-  const completedOrders = orders.filter((o) => o.status === "COMPLETED");
-
-  const shippableNowItems = orders
-    .filter((o) => o.status !== "COMPLETED")
-    .flatMap((o) => o.items.filter((i) => !i.includedInShipment && i.receivedAt));
+  const readyItems = orders
+    .filter((o: any) => o.status !== "COMPLETED")
+    .flatMap((o: any) => o.items.filter((i: any) => !i.includedInShipment && i.receivedAt));
 
   const readyOrdersCount = new Set(
-    shippableNowItems.map((i) => i.fulfillmentItemId)
-  ).size > 0
-    ? new Set(
-        orders
-          .filter((o) => o.status !== "COMPLETED")
-          .filter((o) => o.items.every((i) => i.includedInShipment || i.receivedAt))
-          .map((o) => o.id)
-      ).size
-    : 0;
+    orders
+      .filter((o: any) => o.status === "READY")
+      .map((o: any) => o.id)
+  ).size;
 
-  const isReady = assembly.status === "READY";
-  const isPartial = assembly.status === "PARTIALLY_SHIPPED";
   const isCompleted = assembly.status === "COMPLETED";
-  const isPending = assembly.status === "PENDING";
-
   const progress = assembly.expectedItems
     ? Math.round((assembly.receivedItems / assembly.expectedItems) * 100)
     : 0;
@@ -189,16 +168,14 @@ export default function AssemblyDetailPage() {
         رجوع للتجميع
       </Link>
 
-      {/* Header */}
+      {/* ═══ Header ═══ */}
       <div
         className={`rounded-2xl p-5 text-white shadow-md ${
           isCompleted
             ? "bg-gradient-to-br from-blue-600 to-blue-800"
-            : isPartial
-              ? "bg-gradient-to-br from-orange-600 to-orange-800"
-              : isReady
-                ? "bg-gradient-to-br from-green-600 to-green-800"
-                : "bg-gradient-to-br from-teal-600 to-teal-800"
+            : readiness.canShipFull
+              ? "bg-gradient-to-br from-green-600 to-green-800"
+              : "bg-gradient-to-br from-teal-600 to-teal-800"
         }`}
       >
         <div className="flex items-start justify-between gap-3">
@@ -234,14 +211,16 @@ export default function AssemblyDetailPage() {
       </div>
 
       {message && (
-        <div className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
-          message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-        }`}>
+        <div
+          className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
+            message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+          }`}
+        >
           {message.text}
         </div>
       )}
 
-      {/* Address */}
+      {/* ═══ عنوان العميل ═══ */}
       {address.city && (
         <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
           <h2 className="mb-2 flex items-center gap-2 text-sm font-black">
@@ -251,57 +230,58 @@ export default function AssemblyDetailPage() {
           <div className="text-xs leading-relaxed text-gray-700">
             {address.fullName && <div className="font-bold">{address.fullName}</div>}
             {address.phone && <div className="text-gray-500" dir="ltr">{address.phone}</div>}
-            <div className="mt-1">
-              {[address.street, address.buildingNumber].filter(Boolean).join("، ")}
-            </div>
+            <div className="mt-1">{[address.street, address.buildingNumber].filter(Boolean).join("، ")}</div>
             <div>{[address.district, address.city].filter(Boolean).join("، ")}</div>
             {address.postalCode && <div className="font-mono text-gray-500">{address.postalCode}</div>}
           </div>
         </div>
       )}
 
-      {/* Ready orders summary */}
-      {(isReady || isPartial || isPending) && readyOrders.length > 0 && (
-        <div className="mt-4 rounded-2xl border-2 border-green-300 bg-green-50 p-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-green-600" />
-            <div className="flex-1">
-              <div className="text-sm font-black text-green-900">
-                {readyOrders.length} طلب جاهز للشحن الآن
-              </div>
-              <div className="mt-0.5 text-[11px] text-green-700">
-                {shippableNowItems.reduce((s, i) => s + i.quantity, 0)} منتج ·{" "}
-                {shippableNowItems.reduce((s, i) => s + i.total, 0).toFixed(2)} {CURRENCY}
-              </div>
-            </div>
+      {/* ═══ حالة المسح ═══ */}
+      {!isCompleted && (
+        <div className="mt-4 rounded-2xl border-2 border-teal-200 bg-teal-50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <ScanLine className="h-5 w-5 text-teal-700" />
+            <h2 className="text-sm font-black text-teal-900">مسح QR الطلبيات</h2>
           </div>
+
+          {readiness.mustScan.length > 0 ? (
+            <div className="mb-3 rounded-lg bg-amber-100 p-3 text-xs text-amber-900">
+              ⚠️ <strong>{readiness.mustScan.length} طلب</strong> في المستودع لم يمسح بعد
+            </div>
+          ) : readiness.inTransit.length > 0 ? (
+            <div className="mb-3 rounded-lg bg-blue-100 p-3 text-xs text-blue-900">
+              🚚 <strong>{readiness.inTransit.length} طلب</strong> في الطريق — يمكنك انتظارها أو الشحن الجزئي
+            </div>
+          ) : (
+            <div className="mb-3 rounded-lg bg-green-100 p-3 text-xs font-bold text-green-900">
+              ✅ كل الطلبات في المستودع تم مسحها
+            </div>
+          )}
+
+          <Link
+            href={`/warehouse/assembly/${assemblyId}/scan`}
+            className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700"
+          >
+            <QrCode className="h-5 w-5" />
+            فتح الماسح
+          </Link>
         </div>
       )}
 
-      {/* Pending summary */}
-      {(isReady || isPartial || isPending) && (pendingOrders.length > 0 || partialOrders.length > 0) && (
-        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-amber-600" />
-            <div className="text-xs font-bold text-amber-800">
-              {pendingOrders.length + partialOrders.length} طلب بانتظار منتجات
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Orders List */}
+      {/* ═══ الطلبات ═══ */}
       <div className="mt-4 space-y-2">
-        <h2 className="text-sm font-black text-gray-700 px-1">
+        <h2 className="px-1 text-sm font-black text-gray-700">
           الطلبات ({orders.length})
         </h2>
-        {orders.map((order) => {
+        {orders.map((order: any) => {
           const expanded = expandedOrders.has(order.id);
-          const readyItems = order.items.filter((i) => !i.includedInShipment && i.receivedAt);
-          const orderRevenue = readyItems.reduce((s, i) => s + i.total, 0);
+          const scanned = !!order.warehouseScannedAt;
+          const readyItemsInOrder = order.items.filter((i: any) => !i.includedInShipment && i.receivedAt);
+          const orderRevenue = readyItemsInOrder.reduce((s: number, i: any) => s + i.total, 0);
 
           return (
-            <div key={order.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div key={order.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <button
                 onClick={() => toggleOrder(order.id)}
                 className="flex w-full items-center gap-3 p-3 text-right transition hover:bg-gray-50"
@@ -310,30 +290,32 @@ export default function AssemblyDetailPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-black">{order.orderNumber}</span>
                     <OrderStatusBadge status={order.status} />
-                  </div>
-                  <div className="mt-1 text-[10px] text-gray-500">
-                    {order.items.length} منتج ·{" "}
-                    {readyItems.length > 0 && (
-                      <span className="font-bold text-green-700">
-                        {readyItems.length} جاهز ({orderRevenue.toFixed(2)} {CURRENCY})
+                    {scanned ? (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                        ✓ ممسوح
+                      </span>
+                    ) : order.status !== "COMPLETED" && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                        لم يمسح
                       </span>
                     )}
-                    {readyItems.length === 0 && (
-                      <span>بانتظار</span>
+                  </div>
+                  <div className="mt-1 text-[10px] text-gray-500">
+                    {order.items.length} منتج
+                    {readyItemsInOrder.length > 0 && (
+                      <span className="mr-1 font-bold text-green-700">
+                        · {readyItemsInOrder.length} جاهز ({orderRevenue.toFixed(2)} {CURRENCY})
+                      </span>
                     )}
                   </div>
                 </div>
-                {expanded ? (
-                  <ChevronUp className="h-4 w-4 text-gray-400" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-400" />
-                )}
+                {expanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
               </button>
 
               {expanded && (
                 <div className="border-t border-gray-100 p-3">
                   <div className="space-y-2">
-                    {order.items.map((item) => (
+                    {order.items.map((item: any) => (
                       <div key={item.assemblyItemId} className="flex gap-2 rounded-lg bg-gray-50 p-2">
                         {item.imageUrl ? (
                           <img src={item.imageUrl} alt={item.productName} className="h-12 w-12 shrink-0 rounded object-cover" />
@@ -344,9 +326,7 @@ export default function AssemblyDetailPage() {
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="line-clamp-1 text-xs font-bold">{item.productName}</div>
-                          {item.variantName && (
-                            <div className="text-[10px] text-gray-500">{item.variantName}</div>
-                          )}
+                          {item.variantName && <div className="text-[10px] text-gray-500">{item.variantName}</div>}
                           {item.seller && (
                             <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-500">
                               <Store className="h-2.5 w-2.5" />
@@ -357,19 +337,6 @@ export default function AssemblyDetailPage() {
                         <div className="shrink-0 text-right">
                           <div className="text-[10px] font-black">×{item.quantity}</div>
                           <div className="text-[10px] text-gray-500">{item.total.toFixed(2)}</div>
-                          {item.includedInShipment ? (
-                            <span className="mt-0.5 inline-block rounded bg-blue-100 px-1 text-[8px] font-bold text-blue-700">
-                              مُشحَن
-                            </span>
-                          ) : item.receivedAt ? (
-                            <span className="mt-0.5 inline-block rounded bg-green-100 px-1 text-[8px] font-bold text-green-700">
-                              جاهز
-                            </span>
-                          ) : (
-                            <span className="mt-0.5 inline-block rounded bg-amber-100 px-1 text-[8px] font-bold text-amber-700">
-                              بانتظار
-                            </span>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -381,12 +348,12 @@ export default function AssemblyDetailPage() {
         })}
       </div>
 
-      {/* Shipments created */}
+      {/* ═══ الشحنات ═══ */}
       {assembly.shipments?.length > 0 && (
         <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
             <Truck className="h-4 w-4 text-teal-600" />
-            الشحنات المنشأة ({assembly.shipments.length})
+            الشحنات ({assembly.shipments.length})
           </h2>
           <div className="space-y-2">
             {assembly.shipments.map((s: any) => (
@@ -397,12 +364,9 @@ export default function AssemblyDetailPage() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-black">{s.shipmentNumber}</span>
-                      <ShipmentStatusBadge status={s.status} />
-                    </div>
+                    <span className="font-mono text-xs font-black">{s.shipmentNumber}</span>
                     <div className="mt-0.5 text-[10px] text-gray-500">
-                      {s._count.items} منتج · {s.totalOrders} طلب · {Number(s.totalCOD).toFixed(2)} {CURRENCY}
+                      {s._count.items} منتج · {s.totalOrders} طلب
                     </div>
                   </div>
                   <ArrowRight className="h-3.5 w-3.5 text-gray-400" />
@@ -413,27 +377,33 @@ export default function AssemblyDetailPage() {
         </div>
       )}
 
-      {/* Actions */}
-      {!isCompleted && shippableNowItems.length > 0 && (
+      {/* ═══ Actions ═══ */}
+      {!isCompleted && readyItems.length > 0 && (
         <div className="mt-4 space-y-2">
-          {isReady && (
+          {readiness.canShipFull && (
             <button
               onClick={() => setShowConfirm("full")}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-4 text-sm font-bold text-white shadow-md transition hover:bg-green-700"
             >
               <Send className="h-5 w-5" />
-              إنشاء شحنة كاملة — {readyOrders.length} طلب ({shippableNowItems.length} منتج)
+              إنشاء شحنة كاملة — {readyOrdersCount} طلب ({readyItems.length} منتج)
             </button>
           )}
 
-          {(isPending || isPartial) && (
+          {readiness.canShipPartial && readiness.inTransit.length > 0 && (
             <button
               onClick={() => setShowConfirm("partial")}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 py-4 text-sm font-bold text-white shadow-md transition hover:bg-orange-700"
             >
               <AlertTriangle className="h-5 w-5" />
-              شحن الجزء المتوفر — {readyOrders.length} طلب ({shippableNowItems.length} منتج)
+              شحن جزئي — بدون {readiness.inTransit.length} طلب في الطريق
             </button>
+          )}
+
+          {readiness.mustScan.length > 0 && (
+            <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 p-4 text-center text-xs text-amber-900">
+              ⚠️ امسح QR كل طلب في المستودع قبل إنشاء الشحنة
+            </div>
           )}
         </div>
       )}
@@ -445,7 +415,7 @@ export default function AssemblyDetailPage() {
         </div>
       )}
 
-      {/* Confirm Modal */}
+      {/* ═══ Confirm Modal ═══ */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6">
@@ -462,28 +432,23 @@ export default function AssemblyDetailPage() {
             </div>
 
             {showConfirm === "partial" && (
-              <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                  <div className="text-xs text-amber-800">
-                    سيتم شحن <strong>{readyOrders.length}</strong> طلب فقط. الطلبات الأخرى تبقى في التجميع.
-                  </div>
-                </div>
+              <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+                سيتم الشحن بدون <strong>{readiness.inTransit.length} طلب</strong> في الطريق. ستبقى للشحنة القادمة.
               </div>
             )}
 
             <div className="mb-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-teal-50 p-2">
-                <div className="text-xl font-black text-teal-900">{readyOrders.length}</div>
+                <div className="text-xl font-black text-teal-900">{readyOrdersCount}</div>
                 <div className="mt-0.5 text-[10px] text-teal-700">طلبات</div>
               </div>
               <div className="rounded-xl bg-green-50 p-2">
-                <div className="text-xl font-black text-green-900">{shippableNowItems.length}</div>
+                <div className="text-xl font-black text-green-900">{readyItems.length}</div>
                 <div className="mt-0.5 text-[10px] text-green-700">منتجات</div>
               </div>
               <div className="rounded-xl bg-blue-50 p-2">
                 <div className="text-xl font-black text-blue-900">
-                  {shippableNowItems.reduce((s, i) => s + i.total, 0).toFixed(0)}
+                  {readyItems.reduce((s: number, i: any) => s + i.total, 0).toFixed(0)}
                 </div>
                 <div className="mt-0.5 text-[10px] text-blue-700">{CURRENCY}</div>
               </div>
@@ -521,18 +486,6 @@ function OrderStatusBadge({ status }: { status: string }) {
     PARTIAL: { label: "🔀 جزئي", cls: "bg-orange-100 text-orange-700" },
     PENDING: { label: "⏳ بانتظار", cls: "bg-amber-100 text-amber-700" },
     COMPLETED: { label: "📦 مكتمل", cls: "bg-blue-100 text-blue-700" },
-  };
-  const info = map[status] || { label: status, cls: "bg-gray-100 text-gray-700" };
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${info.cls}`}>{info.label}</span>;
-}
-
-function ShipmentStatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    READY: { label: "جاهزة", cls: "bg-blue-100 text-blue-700" },
-    ASSIGNED: { label: "مُسندة", cls: "bg-indigo-100 text-indigo-700" },
-    PICKED_UP: { label: "استُلمت", cls: "bg-purple-100 text-purple-700" },
-    OUT_FOR_DELIVERY: { label: "قيد التوصيل", cls: "bg-orange-100 text-orange-700" },
-    DELIVERED: { label: "تم التسليم", cls: "bg-green-100 text-green-700" },
   };
   const info = map[status] || { label: status, cls: "bg-gray-100 text-gray-700" };
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${info.cls}`}>{info.label}</span>;

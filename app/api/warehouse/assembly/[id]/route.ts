@@ -183,11 +183,36 @@ export async function GET(
       ?.fulfillmentItem?.orderItem?.order
       ?.shippingAddressSnapshot || {}) as any;
 
+    // ═══ فحص المسح ═══
+    const readiness = await prisma.$transaction(async (tx) => {
+      return AssemblyService.checkScanReadiness(tx, assemblyId);
+    });
+
+    // ═══ إضافة warehouseScannedAt لكل طلب ═══
+    const ordersWithScan = await Promise.all(
+      orders.map(async (o) => {
+        const dbOrder = await prisma.order.findUnique({
+          where: { id: o.id },
+          select: {
+            warehouseScannedAt: true,
+            warehouseScannedById: true,
+            status: true,
+          },
+        });
+        return {
+          ...o,
+          warehouseScannedAt: dbOrder?.warehouseScannedAt || null,
+          warehouseScannedById: dbOrder?.warehouseScannedById || null,
+        };
+      })
+    );
+
     const combined = {
       ...assembly,
-      orders,
+      orders: ordersWithScan,
       shipments,
       shippingAddress: latestAddr,
+      readiness,
     };
 
     const serialized = JSON.parse(

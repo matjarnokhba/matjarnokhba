@@ -176,4 +176,110 @@ export const AssemblyService = {
       data: { includedInShipment: true, shipmentId },
     });
   },
+  // ═══════ فحص اكتمال المسح ═══════
+  async checkScanReadiness(tx: any, assemblyId: number) {
+    const assembly = await tx.assemblyFile.findUnique({
+      where: { id: assemblyId },
+      select: {
+        userId: true,
+        items: {
+          select: {
+            fulfillmentItem: {
+              select: {
+                status: true,
+                orderItem: {
+                  select: {
+                    orderId: true,
+                    order: {
+                      select: {
+                        id: true,
+                        orderNumber: true,
+                        warehouseScannedAt: true,
+                        status: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!assembly) return null;
+
+    // ═══ تجميع حسب Order ═══
+    const orderMap = new Map<
+      number,
+      {
+        id: number;
+        orderNumber: string;
+        scanned: boolean;
+        inWarehouse: boolean;   // VERIFIED/RECEIVED (جاهز أو مستلم)
+        inTransit: boolean;     // IN_TRANSIT_TO_WAREHOUSE
+        shipped: boolean;       // ALLOCATED/SHIPPED/DELIVERED
+        rejected: boolean;      // RETURNED/CANCELLED
+        itemStatuses: string[];
+      }
+    >();
+
+    for (const ai of assembly.items) {
+      const o = ai.fulfillmentItem.orderItem.order;
+      const status = ai.fulfillmentItem.status;
+
+      if (!orderMap.has(o.id)) {
+        orderMap.set(o.id, {
+          id: o.id,
+          orderNumber: o.orderNumber,
+          scanned: !!o.warehouseScannedAt,
+          inWarehouse: false,
+          inTransit: false,
+          shipped: false,
+          rejected: false,
+          itemStatuses: [],
+        });
+      }
+
+      const entry = orderMap.get(o.id)!;
+      entry.itemStatuses.push(status);
+
+      if (status === "VERIFIED" || status === "RECEIVED" || status === "AVAILABLE_FOR_SHIPMENT") {
+        entry.inWarehouse = true;
+      }
+      if (status === "IN_TRANSIT_TO_WAREHOUSE") {
+        entry.inTransit = true;
+      }
+      if (status === "ALLOCATED" || status === "SHIPPED" || status === "DELIVERED") {
+        entry.shipped = true;
+      }
+      if (status === "RETURNED" || status === "CANCELLED") {
+        entry.rejected = true;
+      }
+    }
+
+    const orders = Array.from(orderMap.values());
+
+    // ═══ الطلبات التي يجب أن تُمسح (في المستودع ولم تُمسح ولم تُشحَن) ═══
+    const mustScan = orders.filter(
+      (o) => o.inWarehouse && !o.scanned && !o.shipped && !o.rejected
+    );
+
+    // ═══ الطلبات في الطريق ═══
+    const inTransit = orders.filter((o) => o.inTransit && !o.shipped);
+
+    // ═══ هل يمكن إنشاء شحنة كاملة؟ ═══
+    const canShipFull = mustScan.length === 0 && inTransit.length === 0;
+
+    // ═══ هل يمكن إنشاء شحنة جزئية (تجاهل الطلبات في الطريق)؟ ═══
+    const canShipPartial = mustScan.length === 0;
+
+    return {
+      orders,
+      mustScan,
+      inTransit,
+      canShipFull,
+      canShipPartial,
+    };
+  },
 };

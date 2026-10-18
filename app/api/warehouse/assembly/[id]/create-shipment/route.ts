@@ -141,6 +141,48 @@ export async function POST(
       );
     }
 
+    // ═══ فحص المسح الإلزامي ═══
+    const readiness = await prisma.$transaction(async (tx) => {
+      return AssemblyService.checkScanReadiness(tx, assemblyId);
+    });
+
+    if (!readiness) {
+      return NextResponse.json(
+        { success: false, message: "فشل فحص المسح" },
+        { status: 500 }
+      );
+    }
+
+    // ═══ إذا لم تمسح كل الطلبات في المستودع → رفض ═══
+    if (readiness.mustScan.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `${readiness.mustScan.length} طلب لم يمسح بعد. امسح QR كل طلب أولاً.`,
+          mustScan: readiness.mustScan.map((o: any) => ({
+            id: o.id,
+            orderNumber: o.orderNumber,
+          })),
+        },
+        { status: 400 }
+      );
+    }
+
+    // ═══ إذا هناك طلبات في الطريق + لا allowPartial → رفض ═══
+    if (readiness.inTransit.length > 0 && !allowPartial) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `${readiness.inTransit.length} طلب في الطريق. فعّل "الشحن الجزئي" للمتابعة بدونه.`,
+          inTransit: readiness.inTransit.map((o: any) => ({
+            id: o.id,
+            orderNumber: o.orderNumber,
+          })),
+        },
+        { status: 400 }
+      );
+    }
+
     const shippableItems = (assembly.items as any[]).filter(
       (ai: any) =>
         !ai.includedInShipment &&

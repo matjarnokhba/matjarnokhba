@@ -784,6 +784,8 @@ model Order {
   updatedAt               DateTime      @updatedAt
   shippingCityColor     String?
   shippingDistrictColor String?
+  warehouseScannedAt    DateTime?
+  warehouseScannedById  Int?
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   seller           Seller?              @relation(fields: [sellerId], references: [id], onDelete: Restrict)
