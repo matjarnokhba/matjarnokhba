@@ -1,21 +1,27 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const fromEmail = process.env.EMAIL_FROM || "onboarding@resend.dev";
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.SMTP_EMAIL,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 export const EmailService = {
   async sendPasswordReset(to: string, name: string, token: string) {
-    if (!process.env.RESEND_API_KEY) {
-      console.warn("RESEND_API_KEY is not set. Email not sent.");
+    if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
+      console.warn("SMTP credentials missing. Email not sent.");
       return;
     }
 
     const resetLink = `${siteUrl}/reset-password?token=${token}`;
 
     try {
-      await resend.emails.send({
-        from: `متجر نخبة <${fromEmail}>`,
+      await transporter.sendMail({
+        from: `"متجر نخبة" <${process.env.SMTP_EMAIL}>`,
         to,
         subject: "استعادة كلمة المرور - متجر نخبة",
         html: `
