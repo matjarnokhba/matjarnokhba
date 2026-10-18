@@ -4,6 +4,16 @@ import { SessionService } from "@/services/session.service";
 
 const STATUS_FLOW = ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
 
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  PENDING: ["PROCESSING", "CANCELLED"],
+  PROCESSING: ["SHIPPED", "CANCELLED"],
+  SHIPPED: ["DELIVERED", "CANCELLED"],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+
+class RewardValidationError extends Error {}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -25,6 +35,13 @@ export async function PATCH(
 
     const { id } = await params;
     const rewardId = parseInt(id);
+    if (isNaN(rewardId)) {
+      return NextResponse.json(
+        { success: false, message: "معرف غير صحيح" },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
 
     const reward = await prisma.loyaltyReward.findUnique({
@@ -39,96 +56,139 @@ export async function PATCH(
       );
     }
 
-    const updates: any = {};
-
-    // ═══ تعيين منتج هدية ═══
-    if (body.giftProductId !== undefined) {
-      if (body.giftProductId === null) {
-        updates.giftProductId = null;
-      } else {
-        const gp = await prisma.loyaltyGiftProduct.findUnique({
-          where: { id: body.giftProductId, isActive: true },
-        });
-        if (!gp) {
-          return NextResponse.json(
-            { success: false, message: "منتج الهدية غير متاح" },
-            { status: 400 }
-          );
-        }
-
-        // تحقق من المخزون
-        const available = gp.stock - gp.reservedStock;
-        if (available <= 0) {
-          return NextResponse.json(
-            { success: false, message: "منتج الهدية غير متوفر في المخزون" },
-            { status: 400 }
-          );
-        }
-
-        // ═══ الحجز: ننقص من المخزون المتاح ═══
-        await prisma.loyaltyGiftProduct.update({
-          where: { id: gp.id },
-          data: { reservedStock: { increment: 1 } },
-        });
-
-        updates.giftProductId = gp.id;
-      }
-    }
-
-    // ═══ تغيير الحالة ═══
-    if (body.status !== undefined) {
+    // ═══ التحقق المبكر من انتقال الحالة ═══
+    if (body.status !== undefined && body.status !== reward.status) {
       if (!STATUS_FLOW.includes(body.status)) {
         return NextResponse.json(
           { success: false, message: "حالة غير صحيحة" },
           { status: 400 }
         );
       }
-      updates.status = body.status;
+      const allowed = VALID_TRANSITIONS[reward.status] || [];
+      if (!allowed.includes(body.status)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `لا يمكن الانتقال من ${reward.status} إلى ${body.status}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
-      if (body.status === "DELIVERED") {
-        updates.deliveredAt = new Date();
+    // ═══ تنفيذ التحديث داخل transaction ذرية ═══
+    await prisma.$transaction(async (tx) => {
+      const fresh = await tx.loyaltyReward.findUnique({
+        where: { id: rewardId },
+        select: { status: true, giftProductId: true },
+      });
+      if (!fresh) throw new RewardValidationError("المكافأة غير موجودة");
 
-        // ═══ خصم فعلي من المخزون عند التسليم ═══
-        if (reward.giftProductId) {
-          await prisma.loyaltyGiftProduct.update({
-            where: { id: reward.giftProductId },
-            data: {
-              stock: { decrement: 1 },
-              reservedStock: { decrement: 1 },
+      const updates: any = {};
+
+      // ═══ giftProductId ═══
+      if (body.giftProductId !== undefined) {
+        if (["SHIPPED", "DELIVERED"].includes(fresh.status)) {
+          throw new RewardValidationError("لا يمكن تغيير الهدية بعد الشحن");
+        }
+        if (body.giftProductId === null) {
+          if (fresh.giftProductId) {
+            await tx.loyaltyGiftProduct.updateMany({
+              where: { id: fresh.giftProductId, reservedStock: { gte: 1 } },
+              data: { reservedStock: { decrement: 1 } },
+            });
+          }
+          updates.giftProductId = null;
+        } else {
+          if (fresh.giftProductId) {
+            throw new RewardValidationError("الهدية معينة بالفعل");
+          }
+          const gp = await tx.loyaltyGiftProduct.findUnique({
+            where: { id: body.giftProductId },
+            select: { id: true, isActive: true, stock: true },
+          });
+          if (!gp || !gp.isActive) {
+            throw new RewardValidationError("منتج الهدية غير متاح");
+          }
+          const reserved = await tx.loyaltyGiftProduct.updateMany({
+            where: {
+              id: gp.id,
+              isActive: true,
+              reservedStock: { lt: gp.stock },
             },
+            data: { reservedStock: { increment: 1 } },
           });
+          if (reserved.count === 0) {
+            throw new RewardValidationError("منتج الهدية غير متوفر في المخزون");
+          }
+          updates.giftProductId = gp.id;
         }
       }
 
-      if (body.status === "CANCELLED") {
-        // ═══ تحرير الحجز إن وجد ═══
-        if (reward.giftProductId) {
-          await prisma.loyaltyGiftProduct.update({
-            where: { id: reward.giftProductId },
-            data: { reservedStock: { decrement: 1 } },
-          });
+      // ═══ status ═══
+      if (body.status !== undefined) {
+        if (!STATUS_FLOW.includes(body.status)) {
+          throw new RewardValidationError("حالة غير صحيحة");
+        }
+        if (body.status !== fresh.status) {
+          const allowed = VALID_TRANSITIONS[fresh.status] || [];
+          if (!allowed.includes(body.status)) {
+            throw new RewardValidationError(
+              `لا يمكن الانتقال من ${fresh.status} إلى ${body.status}`
+            );
+          }
+        }
+        updates.status = body.status;
+
+        if (body.status === "DELIVERED") {
+          updates.deliveredAt = new Date();
+          if (fresh.giftProductId) {
+            const delivered = await tx.loyaltyGiftProduct.updateMany({
+              where: {
+                id: fresh.giftProductId,
+                reservedStock: { gte: 1 },
+                stock: { gte: 1 },
+              },
+              data: {
+                stock: { decrement: 1 },
+                reservedStock: { decrement: 1 },
+              },
+            });
+            if (delivered.count === 0) {
+              throw new RewardValidationError(
+                "تعذر خصم الهدية من المخزون — تحقق من الحجز"
+              );
+            }
+          }
+        }
+
+        if (body.status === "CANCELLED") {
+          if (fresh.giftProductId) {
+            await tx.loyaltyGiftProduct.updateMany({
+              where: { id: fresh.giftProductId, reservedStock: { gte: 1 } },
+              data: { reservedStock: { decrement: 1 } },
+            });
+          }
         }
       }
-    }
 
-    // ═══ ملاحظة أدمن ═══
-    if (body.adminNote !== undefined) {
-      updates.adminNote = typeof body.adminNote === "string" ? body.adminNote.trim() : null;
-    }
+      // ═══ adminNote ═══
+      if (body.adminNote !== undefined) {
+        updates.adminNote =
+          typeof body.adminNote === "string" ? body.adminNote.trim() : null;
+      }
 
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json(
-        { success: false, message: "لا توجد تغييرات" },
-        { status: 400 }
-      );
-    }
+      if (Object.keys(updates).length === 0) {
+        throw new RewardValidationError("لا توجد تغييرات");
+      }
 
-    await prisma.loyaltyReward.update({
-      where: { id: rewardId },
-      data: updates,
+      await tx.loyaltyReward.update({
+        where: { id: rewardId },
+        data: updates,
+      });
     });
 
-    // ═══ إشعار للعميل ═══
+    // ═══ إشعار للعميل (خارج الـtransaction) ═══
     if (body.status && body.status !== reward.status) {
       const statusMessages: Record<string, string> = {
         PROCESSING: "🎁 مكافأتك قيد التجهيز",
@@ -163,6 +223,12 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof RewardValidationError) {
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: 400 }
+      );
+    }
     console.error("Admin reward PATCH error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },

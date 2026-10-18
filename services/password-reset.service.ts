@@ -14,7 +14,7 @@ function hashToken(token: string): string {
 
 export const PasswordResetService = {
   // ═══════ إنشاء Token ═══════
-  async createToken(email: string): Promise<string | null> {
+  async createToken(email: string): Promise<{ token: string; name: string } | null> {
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
@@ -38,7 +38,7 @@ export const PasswordResetService = {
       },
     });
 
-    return token;
+    return { token, name: user.name || "عميلنا العزيز" };
   },
 
   // ═══════ التحقق من Token ═══════

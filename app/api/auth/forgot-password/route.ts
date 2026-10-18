@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { PasswordResetService } from "@/services/password-reset.service";
+import { EmailService } from "@/services/email.service";
 import { rateLimit, getClientIp, formatRetryAfter } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -42,14 +43,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = await PasswordResetService.createToken(parsed.data.email);
+    const result = await PasswordResetService.createToken(parsed.data.email);
 
     let resetUrl: string | undefined;
 
-    if (token) {
+    if (result) {
       const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-      resetUrl = `${baseUrl}/reset-password?token=${token}`;
+      resetUrl = `${baseUrl}/reset-password?token=${result.token}`;
+
+      // ═══ إرسال البريد ═══
+      await EmailService.sendPasswordReset(
+        parsed.data.email,
+        result.name,
+        result.token
+      );
 
       // ═══ Logs فقط في بيئة التطوير ═══
       if (process.env.NODE_ENV !== "production") {

@@ -81,6 +81,7 @@ export const OrderService = {
             id: true,
             name: true,
             sellerId: true,
+            freeShipping: true,
             status: true,
             deletedAt: true,
             seller: {
@@ -164,6 +165,7 @@ export const OrderService = {
         variantId: variant.id,
         sellerId: variant.product.sellerId,
         productName: variant.product.name,
+        productFreeShipping: variant.product.freeShipping,
         variantName,
         imageUrl,
         sku: variant.sku,
@@ -175,9 +177,6 @@ export const OrderService = {
 
     const serverSubtotal = itemsWithPrice.reduce((s, i) => s + i.lineTotal, 0);
 
-    const serverShipping =
-      serverSubtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
-
     // ═══ 4. تجميع حسب البائع ═══
     const itemsBySeller = new Map<number, typeof itemsWithPrice>();
     for (const item of itemsWithPrice) {
@@ -186,6 +185,38 @@ export const OrderService = {
       }
       itemsBySeller.get(item.sellerId)!.push(item);
     }
+
+    // ═══ 4.b الشحن حسب المنطقة ═══
+    let zoneCost = SHIPPING_FEE;
+    let zoneThreshold = FREE_SHIPPING_THRESHOLD;
+    const cityNormalized = (data.address.city || "").trim().toLowerCase();
+    if (cityNormalized) {
+      const zc = await prisma.shippingZoneCity.findUnique({
+        where: { cityNormalized },
+        include: {
+          shippingZone: {
+            select: { cost: true, freeThreshold: true, isActive: true },
+          },
+        },
+      });
+      if (zc?.shippingZone?.isActive) {
+        zoneCost = Number(zc.shippingZone.cost);
+        zoneThreshold = zc.shippingZone.freeThreshold
+          ? Number(zc.shippingZone.freeThreshold)
+          : zoneCost;
+      }
+    }
+
+    const sellerAllFree = new Map<number, boolean>();
+    let allItemsFreeShipping = true;
+    for (const [sid, sellerItems] of itemsBySeller) {
+      const isFree = sellerItems.every((i) => i.productFreeShipping);
+      sellerAllFree.set(sid, isFree);
+      if (!isFree) allItemsFreeShipping = false;
+    }
+
+    const serverShipping =
+      allItemsFreeShipping || serverSubtotal >= zoneThreshold ? 0 : zoneCost;
 
     // ═══ 5. جلب بيانات التجار ═══
     const sellerIds = Array.from(itemsBySeller.keys());
@@ -197,45 +228,57 @@ export const OrderService = {
 
     // ═══ 6. توزيع الشحن (Largest Remainder) ═══
     const shippingBySeller = new Map<number, number>();
+    for (const sellerId of itemsBySeller.keys()) {
+      shippingBySeller.set(sellerId, 0);
+    }
 
     if (serverShipping > 0 && serverSubtotal > 0) {
-      type Share = {
-        sellerId: number;
-        amountCents: number;
-        remainder: number;
-      };
-      const shares: Share[] = [];
-      let sumFloors = 0;
+      const paidSellers = Array.from(itemsBySeller.entries())
+        .filter(([sid]) => !sellerAllFree.get(sid))
+        .map(([sid, sItems]) => ({
+          sellerId: sid,
+          subtotal: sItems.reduce((s, i) => s + i.lineTotal, 0),
+        }));
+      const paidSubtotal = paidSellers.reduce((s, p) => s + p.subtotal, 0);
 
-      for (const [sellerId, items] of itemsBySeller) {
-        const sellerSubtotal = items.reduce((s, i) => s + i.lineTotal, 0);
-        const ratio = sellerSubtotal / serverSubtotal;
-        const exactCents = serverShipping * ratio * 100;
-        const floorCents = Math.floor(exactCents);
-        const remainder = exactCents - floorCents;
+      if (paidSubtotal > 0) {
+        type Share = {
+          sellerId: number;
+          amountCents: number;
+          remainder: number;
+        };
+        const shares: Share[] = [];
+        let sumFloors = 0;
 
-        shares.push({ sellerId, amountCents: floorCents, remainder });
-        sumFloors += floorCents;
-      }
+        for (const ps of paidSellers) {
+          const ratio = ps.subtotal / paidSubtotal;
+          const exactCents = serverShipping * ratio * 100;
+          const floorCents = Math.floor(exactCents);
+          const remainder = exactCents - floorCents;
 
-      const totalCents = Math.round(serverShipping * 100);
-      let leftoverCents = totalCents - sumFloors;
+          shares.push({
+            sellerId: ps.sellerId,
+            amountCents: floorCents,
+            remainder,
+          });
+          sumFloors += floorCents;
+        }
 
-      shares.sort((a, b) => b.remainder - a.remainder);
+        const totalCents = Math.round(serverShipping * 100);
+        let leftoverCents = totalCents - sumFloors;
 
-      let i = 0;
-      while (leftoverCents > 0) {
-        shares[i % shares.length].amountCents += 1;
-        leftoverCents -= 1;
-        i++;
-      }
+        shares.sort((a, b) => b.remainder - a.remainder);
 
-      for (const s of shares) {
-        shippingBySeller.set(s.sellerId, s.amountCents / 100);
-      }
-    } else {
-      for (const sellerId of itemsBySeller.keys()) {
-        shippingBySeller.set(sellerId, 0);
+        let i = 0;
+        while (leftoverCents > 0) {
+          shares[i % shares.length].amountCents += 1;
+          leftoverCents -= 1;
+          i++;
+        }
+
+        for (const s of shares) {
+          shippingBySeller.set(s.sellerId, s.amountCents / 100);
+        }
       }
     }
 

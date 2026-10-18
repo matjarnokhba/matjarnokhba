@@ -65,6 +65,16 @@ export async function PATCH(
 
     const data = parsed.data;
 
+    if (data.stock !== undefined && data.stock < existing.reservedStock) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `لا يمكن تخفيض المخزون تحت ${existing.reservedStock} (محجوز لمكافآت)`,
+        },
+        { status: 400 }
+      );
+    }
+
     await prisma.loyaltyGiftProduct.update({
       where: { id: productId },
       data: {

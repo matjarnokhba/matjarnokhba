@@ -21,11 +21,7 @@ import TopBar from "@/components/layout/TopBar";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { useCart } from "@/lib/hooks/useCart";
-import {
-  CURRENCY,
-  SHIPPING_FEE,
-  FREE_SHIPPING_THRESHOLD,
-} from "@/lib/data/products";
+import { CURRENCY } from "@/lib/data/products";
 import AddressForm, {
   type AddressFormData,
 } from "@/components/address/AddressForm";
@@ -72,9 +68,49 @@ export default function CheckoutPage() {
   } | null>(null);
   const [search, setSearch] = useState("");
 
-  // ═══════ Shipping ═══════
-  const shippingCost =
-    subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+  // ═══════ Shipping (server-authoritative) ═══════
+  const [shippingCost, setShippingCost] = useState(0);
+
+  const itemsKey = items
+    .map((i) => `${i.variantId}:${i.quantity}`)
+    .join(",");
+
+  useEffect(() => {
+    if (!selectedAddressId || items.length === 0) {
+      setShippingCost(0);
+      return;
+    }
+    const address = addresses.find((a) => a.id === selectedAddressId);
+    if (!address) return;
+
+    const city = address.cityText || address.city || "";
+    let cancelled = false;
+
+    fetch("/api/shipping/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        city,
+        items: items.map((i) => ({
+          variantId: i.variantId,
+          quantity: i.quantity,
+        })),
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d.success) {
+          setShippingCost(Number(d.shippingCost) || 0);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAddressId, addresses, itemsKey]);
+
   const total = Math.max(0, subtotal + shippingCost - couponDiscount);
 
   // ═══════ Redirect if cart empty ═══════
