@@ -100,6 +100,10 @@ export const AuthService = {
     }
 
     // 4. تحقق من كلمة المرور
+    if (!user.passwordHash) {
+      throw new Error("هذا الحساب مسجل بواسطة Google. يرجى استخدام زر Google لتسجيل الدخول.");
+    }
+
     const isValidPassword = await bcrypt.compare(
       data.password,
       user.passwordHash
