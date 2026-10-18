@@ -389,52 +389,99 @@ function ScannerContent() {
     await handleOrderToken(token);
   }
 
-  async function handleOrderToken(token: string) {
-    if (!token || token.length < 20) {
-      setOrderResult({ status: "error", message: "رمز غير صحيح" });
+  async function handleOrderToken(rawToken: string) {
+  if (loading) return;
+
+  // ═══ استخراج UUID من أي رابط ملصق ═══
+  let token = rawToken.trim();
+
+  // إذا كان رابط كامل → استخرج UUID
+  if (token.includes("/d/")) {
+    const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
+    if (match) token = match[1];
+  } else if (token.includes("/r/")) {
+    setOrderResult({
+      status: "error",
+      message: "هذا رمز إرجاع — ليس طلبية. استخدم الماسح العام.",
+    });
+    return;
+  } else if (token.includes("/p/")) {
+    setOrderResult({
+      status: "error",
+      message: "هذا رمز منتج — ليس طلبية.",
+    });
+    return;
+  } else if (token.includes("/sd/") || token.includes("/cb/")) {
+    setOrderResult({
+      status: "error",
+      message: "هذا رمز شحنة/دفعة — ليس طلبية.",
+    });
+    return;
+  }
+
+  // ═══ تحقق الطول ═══
+  if (!token || token.length < 20) {
+    setOrderResult({
+      status: "error",
+      message: "رمز غير صحيح — امسح QR الطلبية (UUID طويل)",
+    });
+    return;
+  }
+
+  setLoading(true);
+  setScanError("");
+
+  try {
+    const res = await fetch(
+      `/api/seller/orders/by-token/${encodeURIComponent(token)}/ready`,
+      { method: "POST" }
+    );
+
+    // ═══ قراءة آمنة (حتى لو استجابة فارغة) ═══
+    const rawText = await res.text();
+    let data: any = null;
+
+    if (rawText.trim().length > 0) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = null;
+      }
+    }
+
+    if (!res.ok || !data || !data.success) {
+      setOrderResult({
+        status: "error",
+        message:
+          data?.message ||
+          `فشل الاتصال بالخادم (${res.status}) — جرّب مرة أخرى`,
+      });
       return;
     }
 
-    setLoading(true);
-    setScanError("");
-
-    try {
-      const res = await fetch(`/api/seller/orders/by-token/${token}/ready`, {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setOrderResult({
-          status: "error",
-          message: data.message || "فشل التحديث",
-        });
-        return;
-      }
-
-      if (data.alreadyReady) {
-        setOrderResult({
-          status: "already_ready",
-          orderNumber: data.orderNumber,
-          orderId: data.orderId,
-        });
-      } else {
-        setOrderResult({
-          status: "success",
-          orderNumber: data.orderNumber,
-          orderId: data.orderId,
-        });
-      }
-    } catch (err) {
-      console.error(err);
+    // ═══ نجاح ═══
+    if (data.alreadyReady) {
       setOrderResult({
-        status: "error",
-        message: "فشل الاتصال بالخادم",
+        status: "already_ready",
+        orderNumber: data.orderNumber,
+        orderId: data.orderId,
       });
-    } finally {
-      setLoading(false);
+    } else {
+      setOrderResult({
+        status: "success",
+        orderNumber: data.orderNumber,
+        orderId: data.orderId,
+      });
     }
+  } catch (err) {
+    setOrderResult({
+      status: "error",
+      message: "فشل الاتصال بالخادم",
+    });
+  } finally {
+    setLoading(false);
   }
+}
 
   // ═══════════════════════════════════════════
   // SUCCESS SCREEN (Product Mode)
