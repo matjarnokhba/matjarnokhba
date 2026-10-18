@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") || "PENDING";
 
-    let where: any = {};
+    const where: any = {};
     if (status === "PENDING") {
       where.status = "PENDING_PICKUP";
     } else if (status === "PICKED_UP") {

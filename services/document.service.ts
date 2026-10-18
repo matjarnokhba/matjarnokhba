@@ -143,6 +143,7 @@ export const DocumentService = {
       createdAt: d.createdAt,
       seller: d.seller,
       downloadUrl: `/api/admin/documents/${d.id}/download`,
+      storageKey: d.storageKey,
     }));
   },
 

@@ -62,7 +62,7 @@ export default function WarehouseScanPage() {
   }
 
   function handleScan(text: string) {
-    let value = text.trim();
+    const value = text.trim();
 
     // ═══ Batch QR: /cb/[token] ═══
     if (value.includes("/cb/")) {

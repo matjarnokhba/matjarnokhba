@@ -45,7 +45,25 @@ export async function GET(
       );
     }
 
-    return NextResponse.redirect(doc.storageKey, 302);
+    // ═══ Proxy الملف عبر الخادم — الرابط لا يصل للمتصفح ═══
+    const upstream = await fetch(doc.storageKey);
+    if (!upstream.ok) {
+      return NextResponse.json(
+        { success: false, message: "فشل جلب الملف" },
+        { status: 502 }
+      );
+    }
+
+    const ext = doc.mimeType === "application/pdf" ? "pdf" : "bin";
+    const filename = `document-${doc.id}.${ext}`;
+
+    return new NextResponse(upstream.body, {
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") || doc.mimeType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "private, no-store, max-age=0",
+      },
+    });
   } catch (error) {
     console.error("Document download error:", error);
     return NextResponse.json(

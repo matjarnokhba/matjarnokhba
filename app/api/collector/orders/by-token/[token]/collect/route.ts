@@ -79,17 +79,16 @@ export async function POST(
     }
 
     // ═══ التحقق: هل الجامع مُسند لهذا الطلب؟ ═══
-    const assignedToOther = allItems.some(
-      (i) =>
-        i.assignedCollectorId !== null &&
-        i.assignedCollectorId !== auth.user.id
+    // يجب أن تكون كل العناصر مُسندة لهذا الجامع تحديدًا
+    const notAssignedToMe = allItems.some(
+      (i) => i.assignedCollectorId !== auth.user.id
     );
 
-    if (assignedToOther) {
+    if (notAssignedToMe) {
       return NextResponse.json(
         {
           success: false,
-          message: "هذا الطلب مُسند لجامع آخر",
+          message: "هذا الطلب غير مُسند إليك",
         },
         { status: 403 }
       );

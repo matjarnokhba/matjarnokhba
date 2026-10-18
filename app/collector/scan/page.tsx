@@ -130,7 +130,7 @@ export default function CollectorScanPage() {
   async function handleScan(text: string) {
     if (processing) return;
 
-    let raw = text.trim();
+    const raw = text.trim();
 
     // ═══ Return QR: /r/[token] ═══
     if (raw.includes("/r/")) {

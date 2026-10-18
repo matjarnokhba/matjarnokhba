@@ -28,6 +28,12 @@ async function requireDelivery() {
   return { user: current.user, person };
 }
 
+class ShipmentAlreadyProcessedError extends Error {
+  constructor() {
+    super("Shipment already processed");
+  }
+}
+
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("delivered") }),
   z.object({
@@ -130,10 +136,24 @@ const actionSchema = z.discriminatedUnion("action", [
     await prisma.$transaction(
       async (tx) => {
         if (data.action === "delivered") {
-          await tx.shipment.update({
-            where: { id: shipmentId },
+          const statusUpdated = await tx.shipment.updateMany({
+            where: {
+              id: shipmentId,
+              status: {
+                in: [
+                  "ASSIGNED",
+                  "IN_TRANSIT",
+                  "PICKED_UP",
+                  "OUT_FOR_DELIVERY",
+                ],
+              },
+            },
             data: { status: "DELIVERED" },
           });
+
+          if (statusUpdated.count === 0) {
+            throw new ShipmentAlreadyProcessedError();
+          }
 
           // 1. FulfillmentItems → DELIVERED
           for (const shipmentItem of shipment.items) {
@@ -256,10 +276,24 @@ const actionSchema = z.discriminatedUnion("action", [
             userAgent: reqInfo.userAgent,
           });
         } else if (data.action === "postponed") {
-          await tx.shipment.update({
-            where: { id: shipmentId },
+          const statusUpdated = await tx.shipment.updateMany({
+            where: {
+              id: shipmentId,
+              status: {
+                in: [
+                  "ASSIGNED",
+                  "IN_TRANSIT",
+                  "PICKED_UP",
+                  "OUT_FOR_DELIVERY",
+                ],
+              },
+            },
             data: { status: "POSTPONED" },
           });
+
+          if (statusUpdated.count === 0) {
+            throw new ShipmentAlreadyProcessedError();
+          }
 
           const reqInfo = AuditService.getRequestInfo(request);
           await AuditService.logInTransaction(tx, {
@@ -303,10 +337,24 @@ const actionSchema = z.discriminatedUnion("action", [
             ? "رفض التوصيل — إرجاع للمخزون"
             : "إرجاع الشحنة — إرجاع للمخزون";
 
-          await tx.shipment.update({
-            where: { id: shipmentId },
+          const statusUpdated = await tx.shipment.updateMany({
+            where: {
+              id: shipmentId,
+              status: {
+                in: [
+                  "ASSIGNED",
+                  "IN_TRANSIT",
+                  "PICKED_UP",
+                  "OUT_FOR_DELIVERY",
+                ],
+              },
+            },
             data: { status: newStatus },
           });
+
+          if (statusUpdated.count === 0) {
+            throw new ShipmentAlreadyProcessedError();
+          }
 
           // 1. FulfillmentItems → RETURNED
           for (const shipmentItem of shipment.items) {
@@ -451,6 +499,12 @@ const actionSchema = z.discriminatedUnion("action", [
               : "تم تسجيل الإرجاع",
     });
   } catch (error) {
+    if (error instanceof ShipmentAlreadyProcessedError) {
+      return NextResponse.json(
+        { success: false, message: "تمت معالجة الشحنة بالفعل" },
+        { status: 409 }
+      );
+    }
     console.error("Shipment action error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },

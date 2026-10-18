@@ -117,6 +117,7 @@ export const QRRoutingService = {
                 id: true,
                 status: true,
                 sellerId: true,
+                assignedCollectorId: true,
                 readyAt: true,
                 collectedAt: true,
                 departedAt: true,
@@ -236,6 +237,20 @@ export const QRRoutingService = {
 
     // ═══ COLLECTOR ═══
     if (current.user.role === "COLLECTOR") {
+      // التحقق من الإسناد: هل كل العناصر مُسندة لهذا الجامع؟
+      const allItems = order.items.flatMap((i: any) => i.fulfillmentItems);
+      const notAssignedToMe = allItems.some(
+        (fi: any) => fi.assignedCollectorId !== current.user.id
+      );
+
+      if (allItems.length === 0 || notAssignedToMe) {
+        return {
+          view: "collector",
+          redirect: "/collector",
+          actions: [],
+        };
+      }
+
       return {
         view: "collector",
         order,
