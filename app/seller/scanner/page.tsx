@@ -94,29 +94,103 @@ function ScannerContent() {
   const [orderResult, setOrderResult] = useState<any>(null);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const lastScanTimeRef = useRef<number>(0); // لحفظ وقت آخر عملية مسح
+  const lastScanTimeRef = useRef<number>(0);
+  const activeStreamRef = useRef<MediaStream | null>(null);
   const scannerDivId = "qr-reader";
 
   // ═══════════════════════════════════════════
-  // SCANNER CONTROLS (Updated for explicit Barcode support)
+  // SCANNER CONTROLS (Native + Fallback)
   // ═══════════════════════════════════════════
-  // ═══ دالة للتحقق من صحة الباركود (لمنع القراءات الخاطئة) ═══
-  function isValidEAN13(code: string) {
-    if (!/^\d{13}$/.test(code)) return false;
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
-    }
-    const checkDigit = (10 - (sum % 10)) % 10;
-    return checkDigit === parseInt(code[12]);
-  }
-
   async function startScanner() {
     setScanError("");
     setScanning(true);
 
     setTimeout(async () => {
       try {
+        // ═══ 1. استخدام مستشعر الهاتف المدمج (الأسرع والأذكى) ═══
+        if ("BarcodeDetector" in window) {
+          try {
+            const BarcodeDetectorClass = (window as any).BarcodeDetector;
+            const formats = await BarcodeDetectorClass.getSupportedFormats();
+            if (formats.includes("ean_13") && formats.includes("qr_code")) {
+              const detector = new BarcodeDetectorClass({
+                formats: ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e"],
+              });
+
+              const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+              });
+              
+              activeStreamRef.current = stream;
+
+              const video = document.createElement("video");
+              video.srcObject = stream;
+              video.setAttribute("playsinline", "true");
+              video.style.width = "100%";
+              video.style.borderRadius = "12px";
+              video.play();
+
+              const container = document.getElementById(scannerDivId);
+              if (container) {
+                container.innerHTML = "";
+                container.appendChild(video);
+              }
+
+              // محاولة تفعيل التركيز التلقائي
+              const track = stream.getVideoTracks()[0];
+              if (track) {
+                const capabilities = track.getCapabilities() as any;
+                if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
+                  track.applyConstraints({ advanced: [{ focusMode: "continuous" } as any] }).catch(() => {});
+                }
+              }
+
+              const scanLoop = async () => {
+                if (!activeStreamRef.current) return;
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                  try {
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                      const text = barcodes[0].rawValue;
+                      const now = Date.now();
+                      if (now - lastScanTimeRef.current > 1500) {
+                        lastScanTimeRef.current = now;
+                        
+                        try {
+                          if (navigator.vibrate) navigator.vibrate(100);
+                          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                          const osc = ctx.createOscillator();
+                          const gain = ctx.createGain();
+                          osc.type = "sine";
+                          osc.frequency.setValueAtTime(800, ctx.currentTime);
+                          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                          osc.connect(gain);
+                          gain.connect(ctx.destination);
+                          osc.start();
+                          osc.stop(ctx.currentTime + 0.1);
+                        } catch (e) {}
+                        
+                        handleScan(text);
+                      }
+                    }
+                  } catch (e) {
+                    // ignore frame errors
+                  }
+                }
+                if (activeStreamRef.current) {
+                  requestAnimationFrame(scanLoop);
+                }
+              };
+
+              requestAnimationFrame(scanLoop);
+              return; // نجح استخدام المستشعر المدمج
+            }
+          } catch (nativeErr) {
+            console.log("Native BarcodeDetector failed, falling back...", nativeErr);
+          }
+        }
+
+        // ═══ 2. الخطة البديلة (للمتصفحات القديمة) ═══
         scannerRef.current = new Html5Qrcode(scannerDivId, {
           formatsToSupport: [
             Html5QrcodeSupportedFormats.QR_CODE,
@@ -124,55 +198,41 @@ function ScannerContent() {
             Html5QrcodeSupportedFormats.EAN_8,
             Html5QrcodeSupportedFormats.UPC_A,
             Html5QrcodeSupportedFormats.UPC_E,
-            // تمت إزالة CODE_128 لتجنب التقاط الأرقام التسلسلية داخل المنتجات
           ],
-          useBarCodeDetectorIfSupported: true,
+          useBarCodeDetectorIfSupported: false,
           verbose: false,
         });
 
         await scannerRef.current.start(
           { facingMode: "environment" },
           { 
-            fps: 30, // 30 إطار في الثانية (سرعة فائقة)
-            qrbox: (viewfinderWidth, viewfinderHeight) => {
-              return {
-                width: Math.floor(viewfinderWidth * 0.95), // إطار يغطي الشاشة
-                height: Math.floor(viewfinderHeight * 0.5) // مستطيل ممتاز للباركود
-              };
-            }
+            fps: 30, 
+            aspectRatio: 1.777, // شاشة عريضة لمسح الباركود بسهولة
           },
           (decodedText) => {
             const now = Date.now();
             if (now - lastScanTimeRef.current < 1500) return;
-
-            // التحقق من صحة الباركود (إذا كان 13 رقماً، يجب أن يكون باركود حقيقي)
-            if (decodedText.length < 6) return;
-            if (decodedText.length === 13 && !isValidEAN13(decodedText)) return;
-
             lastScanTimeRef.current = now;
-
-            // تشغيل صوت واهتزاز
+            
             try {
               if (navigator.vibrate) navigator.vibrate(100);
-              
               const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
               const osc = ctx.createOscillator();
               const gain = ctx.createGain();
-              osc.type = 'sine';
+              osc.type = "sine";
               osc.frequency.setValueAtTime(800, ctx.currentTime);
               gain.gain.setValueAtTime(0.1, ctx.currentTime);
               osc.connect(gain);
               gain.connect(ctx.destination);
               osc.start();
               osc.stop(ctx.currentTime + 0.1);
-            } catch(e) {}
+            } catch (e) {}
 
             handleScan(decodedText);
           },
           () => {}
         );
 
-        // ═══ الحل العبقري: تفعيل التركيز التلقائي المستمر للكاميرا ═══
         setTimeout(() => {
           const video = document.querySelector(`#${scannerDivId} video`) as HTMLVideoElement;
           if (video && video.srcObject) {
@@ -180,9 +240,7 @@ function ScannerContent() {
             if (track) {
               const capabilities = track.getCapabilities() as any;
               if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
-                track.applyConstraints({
-                  advanced: [{ focusMode: "continuous" } as any]
-                }).catch(e => console.log("Focus error", e));
+                track.applyConstraints({ advanced: [{ focusMode: "continuous" } as any] }).catch(e => console.log(e));
               }
             }
           }
@@ -197,6 +255,10 @@ function ScannerContent() {
   }
 
   async function stopScanner() {
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((t) => t.stop());
+      activeStreamRef.current = null;
+    }
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop();
@@ -217,7 +279,7 @@ function ScannerContent() {
   // SCAN HANDLER
   // ═══════════════════════════════════════════
   async function handleScan(text: string) {
-    if (loading) return; // منع المسح المتكرر
+    if (loading) return; 
     
     let code = text.trim();
     if (code.includes("/p/")) {
@@ -233,7 +295,7 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // LOAD PRODUCT
+  // LOAD PRODUCT (WITH AUTO-LOOKUP)
   // ═══════════════════════════════════════════
   async function loadByCode(code: string) {
     setLoading(true);
@@ -244,11 +306,9 @@ function ScannerContent() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        // إذا لم يجده في منتجات التاجر، نبحث عنه في قاعدة نخبة أو الإنترنت
         if (res.status === 404) {
           await stopScanner();
           
-          // جلب البيانات من الـ API الجديد
           const lookupRes = await fetch(`/api/products/lookup?code=${encodeURIComponent(code)}`);
           const lookupData = await lookupRes.json();
 
@@ -394,7 +454,7 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // ORDER MODE (Legacy Ready logic)
+  // ORDER MODE
   // ═══════════════════════════════════════════
   async function handleOrderToken(rawToken: string) {
     if (loading) return;
