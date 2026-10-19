@@ -209,10 +209,25 @@ function ScannerContent() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        // إذا كان المنتج غير موجود، نوجهه لصفحة إضافة منتج جديد
+        // إذا لم يجده في منتجات التاجر، نبحث عنه في قاعدة نخبة أو الإنترنت
         if (res.status === 404) {
           await stopScanner();
-          router.push(`/seller/products/new?barcode=${encodeURIComponent(code)}`);
+          
+          // جلب البيانات من الـ API الجديد
+          const lookupRes = await fetch(`/api/products/lookup?code=${encodeURIComponent(code)}`);
+          const lookupData = await lookupRes.json();
+
+          let url = `/seller/products/new?barcode=${encodeURIComponent(code)}`;
+          
+          if (lookupData.success) {
+            const info = lookupData.data;
+            url += `&name=${encodeURIComponent(info.name)}`;
+            url += `&brand=${encodeURIComponent(info.brand)}`;
+            if (info.image) url += `&image=${encodeURIComponent(info.image)}`;
+            if (info.categoryId) url += `&category=${info.categoryId}`;
+          }
+          
+          router.push(url);
           return;
         }
         

@@ -46,11 +46,21 @@ export default function NewSellerProductPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // قراءة الباركود من الرابط (إذا تم التحويل من الماسح)
+  // قراءة البيانات من الماسح
   useEffect(() => {
-    const scannedBarcode = searchParams.get("barcode");
-    if (scannedBarcode) {
-      setBarcode(scannedBarcode);
+    const scanBarcode = searchParams.get("barcode");
+    const scanName = searchParams.get("name");
+    const scanBrand = searchParams.get("brand");
+    const scanImage = searchParams.get("image");
+    const scanCategory = searchParams.get("category");
+
+    if (scanBarcode) setBarcode(scanBarcode);
+    if (scanName) setName(scanName);
+    if (scanBrand) setBrand(scanBrand);
+    if (scanImage) setImageUrls([scanImage]);
+    if (scanCategory) {
+      // تأخير بسيط لضمان تحميل الفئات قبل اختيار الفئة
+      setTimeout(() => setCategoryId(scanCategory), 500); 
     }
   }, [searchParams]);
 
