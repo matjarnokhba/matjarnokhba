@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 import {
   Scan,
   ShoppingBag,
@@ -20,6 +21,7 @@ import {
   Plus,
   Minus,
   Edit3,
+  Camera,
 } from "lucide-react";
 
 type Variant = {
@@ -93,13 +95,12 @@ function ScannerContent() {
   // Order Mode State
   const [orderResult, setOrderResult] = useState<any>(null);
 
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const controlsRef = useRef<any>(null);
   const lastScanTimeRef = useRef<number>(0);
-  const activeStreamRef = useRef<MediaStream | null>(null);
   const scannerDivId = "qr-reader";
 
   // ═══════════════════════════════════════════
-  // SCANNER CONTROLS (Native + Fallback)
+  // SCANNER CONTROLS (ZXing)
   // ═══════════════════════════════════════════
   async function startScanner() {
     setScanError("");
@@ -107,164 +108,76 @@ function ScannerContent() {
 
     setTimeout(async () => {
       try {
-        // ═══ 1. استخدام مستشعر الهاتف المدمج (الأسرع والأذكى) ═══
-        if ("BarcodeDetector" in window) {
-          try {
-            const BarcodeDetectorClass = (window as any).BarcodeDetector;
-            const formats = await BarcodeDetectorClass.getSupportedFormats();
-            if (formats.includes("ean_13") && formats.includes("qr_code")) {
-              const detector = new BarcodeDetectorClass({
-                formats: ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e"],
-              });
+        const container = document.getElementById(scannerDivId);
+        if (!container) return;
+        container.innerHTML = "";
 
-              const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-              });
-              
-              activeStreamRef.current = stream;
+        const video = document.createElement("video");
+        video.setAttribute("playsinline", "true");
+        video.style.width = "100%";
+        video.style.height = "100%";
+        video.style.objectFit = "cover";
+        container.appendChild(video);
 
-              const video = document.createElement("video");
-              video.srcObject = stream;
-              video.setAttribute("playsinline", "true");
-              video.style.width = "100%";
-              video.style.borderRadius = "12px";
-              video.play();
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.QR_CODE,
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
 
-              const container = document.getElementById(scannerDivId);
-              if (container) {
-                container.innerHTML = "";
-                container.appendChild(video);
-              }
+        const codeReader = new BrowserMultiFormatReader(hints);
 
-              // محاولة تفعيل التركيز التلقائي
-              const track = stream.getVideoTracks()[0];
-              if (track) {
-                const capabilities = track.getCapabilities() as any;
-                if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
-                  track.applyConstraints({ advanced: [{ focusMode: "continuous" } as any] }).catch(() => {});
-                }
-              }
+        const controls = await codeReader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+          },
+          video,
+          (result: any, error: any) => {
+            if (result) {
+              const text = result.getText();
+              const now = Date.now();
+              if (now - lastScanTimeRef.current < 1500) return;
+              lastScanTimeRef.current = now;
 
-              const scanLoop = async () => {
-                if (!activeStreamRef.current) return;
-                if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                  try {
-                    const barcodes = await detector.detect(video);
-                    if (barcodes.length > 0) {
-                      const text = barcodes[0].rawValue;
-                      const now = Date.now();
-                      if (now - lastScanTimeRef.current > 1500) {
-                        lastScanTimeRef.current = now;
-                        
-                        try {
-                          if (navigator.vibrate) navigator.vibrate(100);
-                          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                          const osc = ctx.createOscillator();
-                          const gain = ctx.createGain();
-                          osc.type = "sine";
-                          osc.frequency.setValueAtTime(800, ctx.currentTime);
-                          gain.gain.setValueAtTime(0.1, ctx.currentTime);
-                          osc.connect(gain);
-                          gain.connect(ctx.destination);
-                          osc.start();
-                          osc.stop(ctx.currentTime + 0.1);
-                        } catch (e) {}
-                        
-                        handleScan(text);
-                      }
-                    }
-                  } catch (e) {
-                    // ignore frame errors
-                  }
-                }
-                if (activeStreamRef.current) {
-                  requestAnimationFrame(scanLoop);
-                }
-              };
+              try {
+                if (navigator.vibrate) navigator.vibrate(100);
+                const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(800, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+              } catch (e) {}
 
-              requestAnimationFrame(scanLoop);
-              return; // نجح استخدام المستشعر المدمج
+              handleScan(text);
             }
-          } catch (nativeErr) {
-            console.log("Native BarcodeDetector failed, falling back...", nativeErr);
           }
-        }
-
-        // ═══ 2. الخطة البديلة (للمتصفحات القديمة) ═══
-        scannerRef.current = new Html5Qrcode(scannerDivId, {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-          ],
-          useBarCodeDetectorIfSupported: false,
-          verbose: false,
-        });
-
-        await scannerRef.current.start(
-          { facingMode: "environment" },
-          { 
-            fps: 30, 
-            aspectRatio: 1.777, // شاشة عريضة لمسح الباركود بسهولة
-          },
-          (decodedText) => {
-            const now = Date.now();
-            if (now - lastScanTimeRef.current < 1500) return;
-            lastScanTimeRef.current = now;
-            
-            try {
-              if (navigator.vibrate) navigator.vibrate(100);
-              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.type = "sine";
-              osc.frequency.setValueAtTime(800, ctx.currentTime);
-              gain.gain.setValueAtTime(0.1, ctx.currentTime);
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.1);
-            } catch (e) {}
-
-            handleScan(decodedText);
-          },
-          () => {}
         );
-
-        setTimeout(() => {
-          const video = document.querySelector(`#${scannerDivId} video`) as HTMLVideoElement;
-          if (video && video.srcObject) {
-            const track = (video.srcObject as MediaStream).getVideoTracks()[0];
-            if (track) {
-              const capabilities = track.getCapabilities() as any;
-              if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
-                track.applyConstraints({ advanced: [{ focusMode: "continuous" } as any] }).catch(e => console.log(e));
-              }
-            }
-          }
-        }, 1000);
-
+        controlsRef.current = controls;
       } catch (err) {
         console.error(err);
-        setScanError("تعذر فتح الكاميرا. تأكد من إعطاء المتصفح صلاحية الكاميرا.");
+        setScanError("تعذر فتح الكاميرا. تأكد من الصلاحيات.");
         setScanning(false);
       }
     }, 300);
   }
 
   async function stopScanner() {
-    if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach((t) => t.stop());
-      activeStreamRef.current = null;
-    }
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-        scannerRef.current.clear();
-      } catch {}
-      scannerRef.current = null;
+    if (controlsRef.current) {
+      controlsRef.current.stop();
+      controlsRef.current = null;
     }
     setScanning(false);
   }
@@ -276,10 +189,32 @@ function ScannerContent() {
   }, []);
 
   // ═══════════════════════════════════════════
+  // PHOTO CAPTURE (الخدعة الذكية للـ iPhone)
+  // ═══════════════════════════════════════════
+  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const url = URL.createObjectURL(file);
+    try {
+      const codeReader = new BrowserMultiFormatReader();
+      const result = await codeReader.decodeFromImageUrl(url);
+      if (result) {
+        handleScan(result.getText());
+      }
+    } catch (err) {
+      setScanError("لم نتمكن من قراءة الباركود من الصورة. حاول تقريب الكاميرا أكثر.");
+    } finally {
+      URL.revokeObjectURL(url);
+      e.target.value = ""; 
+    }
+  }
+
+  // ═══════════════════════════════════════════
   // SCAN HANDLER
   // ═══════════════════════════════════════════
   async function handleScan(text: string) {
-    if (loading) return; 
+    if (loading) return;
     
     let code = text.trim();
     if (code.includes("/p/")) {
@@ -295,7 +230,7 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // LOAD PRODUCT (WITH AUTO-LOOKUP)
+  // LOAD PRODUCT
   // ═══════════════════════════════════════════
   async function loadByCode(code: string) {
     setLoading(true);
@@ -408,9 +343,6 @@ function ScannerContent() {
 
   const cartTotal = lines.reduce((s, l) => s + l.price * l.quantity, 0);
 
-  // ═══════════════════════════════════════════
-  // SUBMIT POS SALE
-  // ═══════════════════════════════════════════
   async function submitPosSale() {
     if (lines.length === 0) return;
     setSubmitting(true);
@@ -453,9 +385,6 @@ function ScannerContent() {
     }
   }
 
-  // ═══════════════════════════════════════════
-  // ORDER MODE
-  // ═══════════════════════════════════════════
   async function handleOrderToken(rawToken: string) {
     if (loading) return;
     let token = rawToken.trim();
@@ -501,7 +430,7 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // RENDER: SUCCESS POS
+  // RENDER
   // ═══════════════════════════════════════════
   if (posStep === "success" && successSale) {
     return (
@@ -537,9 +466,6 @@ function ScannerContent() {
     );
   }
 
-  // ═══════════════════════════════════════════
-  // RENDER: REVIEW POS
-  // ═══════════════════════════════════════════
   if (posStep === "review") {
     return (
       <div className="p-4 pt-16 pb-24 lg:p-8 lg:pt-8">
@@ -606,9 +532,6 @@ function ScannerContent() {
     );
   }
 
-  // ═══════════════════════════════════════════
-  // RENDER: MAIN SCANNER (POS + ORDER)
-  // ═══════════════════════════════════════════
   return (
     <div className="p-4 pt-16 pb-24 lg:p-8 lg:pt-8 relative min-h-screen">
       <div className="mb-6">
@@ -627,7 +550,6 @@ function ScannerContent() {
         </button>
       </div>
 
-      {/* ORDER MODE UI */}
       {mode === "order" && !orderResult && (
          <div className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-sm">
          {orderSummary && (
@@ -665,7 +587,7 @@ function ScannerContent() {
 
          {scanning && (
            <div className="mt-4 overflow-hidden rounded-xl">
-             <div id={scannerDivId} className="w-full" />
+             <div id={scannerDivId} className="relative w-full min-h-[300px] bg-black flex items-center justify-center" />
              <p className="mt-3 text-center text-xs text-gray-500">وجّه الكاميرا نحو QR الملصق</p>
            </div>
          )}
@@ -684,7 +606,6 @@ function ScannerContent() {
        </div>
       )}
 
-      {/* PRODUCT MODE UI (POS) */}
       {mode === "product" && (
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-4">
@@ -701,8 +622,14 @@ function ScannerContent() {
 
               {scanning && (
                 <div className="mt-4 overflow-hidden rounded-xl">
-                  <div id={scannerDivId} className="w-full" />
-                  <p className="mt-3 text-center text-xs text-gray-500">امسح الباركود أو QR للمنتج</p>
+                  <div id={scannerDivId} className="relative w-full min-h-[300px] bg-black flex items-center justify-center" />
+                  <p className="mt-3 text-center text-xs text-gray-500">وجّه الكاميرا نحو الباركود بمسافة مناسبة</p>
+                  
+                  <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-gray-100 py-2.5 text-xs font-bold text-gray-700 hover:bg-gray-200 transition">
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
+                    <Camera className="h-4 w-4" />
+                    التقاط صورة للباركود (إذا لم يتعرف عليه)
+                  </label>
                 </div>
               )}
 
@@ -791,7 +718,6 @@ function ScannerContent() {
         </div>
       )}
 
-      {/* ORDER MODE RESULT */}
       {mode === "order" && orderResult && (
          <div className="mx-auto max-w-md mt-8">
          <div className="rounded-2xl bg-white p-8 text-center shadow-lg">

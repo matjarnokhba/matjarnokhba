@@ -18,6 +18,8 @@
     "@prisma/client": "^7.10.0",
     "@uploadthing/react": "^7.3.3",
     "@upstash/redis": "^1.39.0",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "framer-motion": "^13.4.0",
