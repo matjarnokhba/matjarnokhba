@@ -100,6 +100,17 @@ function ScannerContent() {
   // ═══════════════════════════════════════════
   // SCANNER CONTROLS (Updated for explicit Barcode support)
   // ═══════════════════════════════════════════
+  // ═══ دالة للتحقق من صحة الباركود (لمنع القراءات الخاطئة) ═══
+  function isValidEAN13(code: string) {
+    if (!/^\d{13}$/.test(code)) return false;
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return checkDigit === parseInt(code[12]);
+  }
+
   async function startScanner() {
     setScanError("");
     setScanning(true);
@@ -111,9 +122,9 @@ function ScannerContent() {
             Html5QrcodeSupportedFormats.QR_CODE,
             Html5QrcodeSupportedFormats.EAN_13,
             Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.UPC_A,
             Html5QrcodeSupportedFormats.UPC_E,
+            // تمت إزالة CODE_128 لتجنب التقاط الأرقام التسلسلية داخل المنتجات
           ],
           useBarCodeDetectorIfSupported: true,
           verbose: false,
@@ -122,21 +133,28 @@ function ScannerContent() {
         await scannerRef.current.start(
           { facingMode: "environment" },
           { 
-            fps: 25, // زيادة السرعة
-            // إطار مسح واسع جداً يناسب الباركود العادي الطويل
+            fps: 30, // 30 إطار في الثانية (سرعة فائقة)
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               return {
-                width: Math.floor(viewfinderWidth * 0.9), 
-                height: Math.floor(viewfinderHeight * 0.4) 
+                width: Math.floor(viewfinderWidth * 0.95), // إطار يغطي الشاشة
+                height: Math.floor(viewfinderHeight * 0.5) // مستطيل ممتاز للباركود
               };
             }
           },
           (decodedText) => {
             const now = Date.now();
             if (now - lastScanTimeRef.current < 1500) return;
+
+            // التحقق من صحة الباركود (إذا كان 13 رقماً، يجب أن يكون باركود حقيقي)
+            if (decodedText.length < 6) return;
+            if (decodedText.length === 13 && !isValidEAN13(decodedText)) return;
+
             lastScanTimeRef.current = now;
 
+            // تشغيل صوت واهتزاز
             try {
+              if (navigator.vibrate) navigator.vibrate(100);
+              
               const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
               const osc = ctx.createOscillator();
               const gain = ctx.createGain();
@@ -153,6 +171,23 @@ function ScannerContent() {
           },
           () => {}
         );
+
+        // ═══ الحل العبقري: تفعيل التركيز التلقائي المستمر للكاميرا ═══
+        setTimeout(() => {
+          const video = document.querySelector(`#${scannerDivId} video`) as HTMLVideoElement;
+          if (video && video.srcObject) {
+            const track = (video.srcObject as MediaStream).getVideoTracks()[0];
+            if (track) {
+              const capabilities = track.getCapabilities() as any;
+              if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
+                track.applyConstraints({
+                  advanced: [{ focusMode: "continuous" } as any]
+                }).catch(e => console.log("Focus error", e));
+              }
+            }
+          }
+        }, 1000);
+
       } catch (err) {
         console.error(err);
         setScanError("تعذر فتح الكاميرا. تأكد من إعطاء المتصفح صلاحية الكاميرا.");
