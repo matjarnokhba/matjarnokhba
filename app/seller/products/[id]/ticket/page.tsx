@@ -17,6 +17,7 @@ import JsBarcode from "jsbarcode";
 type ProductData = {
   id: number;
   productCode: string;
+  barcode?: string | null;
   name: string;
   brand: string;
   imageUrls: string[];
@@ -44,7 +45,6 @@ export default function ProductTicketPage() {
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
-  // ═══ 1. تحميل البيانات ═══
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -91,43 +91,38 @@ export default function ProductTicketPage() {
     if (productId) load();
   }, [productId, refreshKey]);
 
-  // ═══ 2. توليد QR + Barcode (بعد وجود canvas في DOM) ═══
   useEffect(() => {
     if (loading || !product || !seller || !productUrl) return;
     if (qrDataUrl || barcodeDataUrl) return;
 
-    // ═══ التقاط المراجع محلياً (لحل مشكلة TS narrowing) ═══
     const currentProduct = product;
     const currentProductUrl = productUrl;
 
     async function generate() {
       setQrGenerating(true);
       try {
-        // ═══ QR ═══
         if (qrCanvasRef.current) {
           await QRCode.toCanvas(qrCanvasRef.current, currentProductUrl, {
             width: 800,
-            margin: 1,
+            margin: 0, // تقليل الهوامش
             color: { dark: "#0a1f44", light: "#ffffff" },
             errorCorrectionLevel: "H",
           });
           setQrDataUrl(qrCanvasRef.current.toDataURL("image/png"));
         }
 
-        // ═══ Barcode ═══
-        const shortCode = currentProduct.productCode
-          .slice(0, 8)
-          .toUpperCase();
+        const codeToPrint = currentProduct.barcode || `NOKHBA-${currentProduct.id}`;
+        
         if (barcodeRef.current) {
-          JsBarcode(barcodeRef.current, shortCode, {
+          JsBarcode(barcodeRef.current, codeToPrint, {
             format: "CODE128",
-            width: 1.2,
-            height: 22,
+            width: 1.5,
+            height: 35,
             displayValue: true,
-            fontSize: 10,
+            fontSize: 12,
             font: "monospace",
             textMargin: 2,
-            margin: 3,
+            margin: 0,
             background: "#ffffff",
             lineColor: "#0a1f44",
           });
@@ -184,7 +179,6 @@ export default function ProductTicketPage() {
     if (!win) return;
 
     const mainImage = product.imageUrls[0] || "";
-    const shortCode = product.productCode.slice(0, 8).toUpperCase();
 
     win.document.write(`
       <!DOCTYPE html>
@@ -193,253 +187,100 @@ export default function ProductTicketPage() {
         <meta charset="UTF-8" />
         <title>Ticket — ${product.name}</title>
         <style>
+          @page { margin: 0; } /* إزالة هوامش المتصفح */
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
             font-family: 'Segoe UI', Tahoma, sans-serif;
             background: #f3f4f6;
             padding: 20px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+            justify-content: center; /* توسيط أفقي فقط */
+            align-items: flex-start; /* منع التوسيط العمودي الذي يسبب الفراغات */
+            min-height: auto;
           }
           .ticket {
-            width: 320px;
+            width: 340px;
             background: #fff;
-            border-radius: 14px;
+            border-radius: 12px;
             overflow: hidden;
             border: 2px solid #0a1f44;
           }
-          .qr-section {
-            padding: 8px 8px 6px;
-            text-align: center;
-            background: #f9fafb;
-            border-bottom: 2px solid #0a1f44;
-          }
-          .qr-frame {
-            position: relative;
-            width: 190px;
-            height: 190px;
-            margin: 0 auto 6px;
-            padding: 7px;
-            background: #fff;
-            border-radius: 12px;
-          }
-          .qr-frame::before,
-          .qr-frame::after,
-          .qr-frame > .corner-bl,
-          .qr-frame > .corner-br {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #0a1f44;
-          }
-          .qr-frame::before {
-            top: 0; right: 0;
-            border-left: 0; border-bottom: 0;
-            border-top-right-radius: 12px;
-          }
-          .qr-frame::after {
-            top: 0; left: 0;
-            border-right: 0; border-bottom: 0;
-            border-top-left-radius: 12px;
-          }
-          .qr-frame > .corner-bl {
-            bottom: 0; left: 0;
-            border-right: 0; border-top: 0;
-            border-bottom-left-radius: 12px;
-          }
-          .qr-frame > .corner-br {
-            bottom: 0; right: 0;
-            border-left: 0; border-top: 0;
-            border-bottom-right-radius: 12px;
-          }
-          .qr-frame img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            display: block;
-          }
-          .qr-hint {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            font-size: 9px;
-            font-weight: 700;
-            color: #0a1f44;
-            line-height: 1.25;
-          }
-          .phone-icon { font-size: 14px; }
-
-          .product-hero {
-            display: flex;
-            align-items: stretch;
-            gap: 4px;
-            padding: 8px 6px;
-          }
-          .hero-info {
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-          }
-          .hero-store {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #e5e7eb;
-            overflow: hidden;
-          }
-          .hero-logo {
-            width: 36px;
-            height: 36px;
-            border-radius: 9px;
-            background: linear-gradient(135deg, #0a1f44, #6d28d9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+          .ticket-header {
+            background: #0a1f44;
             color: #fff;
+            text-align: center;
+            padding: 8px;
+            font-size: 18px;
             font-weight: 900;
-            font-size: 16px;
-            flex-shrink: 0;
           }
-          .hero-store-name {
-            font-size: 40px;
-            font-weight: 900;
-            color: #0a1f44;
-            line-height: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+          .ticket-body {
+            display: flex;
+            padding: 8px;
+            gap: 8px;
+            background: #f9fafb;
+            border-bottom: 2px dashed #cbd5e1;
           }
-          .hero-store-tagline {
-            font-size: 9px;
-            color: #6b7280;
-            margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-          .hero-product-row {
+          .qr-container, .image-container {
+            width: 50%;
+            aspect-ratio: 1 / 1;
+            background: #fff;
+            border: 2px solid #0a1f44;
+            border-radius: 8px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-          }
-          .hero-product-name {
-            font-size: 26px;
-            font-weight: 900;
-            color: #111827;
-            line-height: 1.1;
-            flex: 1;
-            min-width: 0;
-          }
-          .hero-brand {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 12px;
-            background: #f3f4f6;
-            border-radius: 999px;
-            font-size: 20px;
-            font-weight: 900;
-            color: #0a1f44;
-            flex-shrink: 0;
-          }
-          .hero-brand-icon { font-size: 16px; }
-          .barcode-box {
-            margin-top: 2px;
-            padding: 4px 2px 2px;
-            background: #fff;
-            border-top: 1px dashed #d1d5db;
-            text-align: center;
-          }
-          .barcode-box img {
-            width: 100%;
-            max-width: 100%;
-            height: auto;
-            display: block;
-          }
-          .hero-image {
-            width: 30%;
-            aspect-ratio: 1 / 1;
-            align-self: center;
+            justify-content: center;
             overflow: hidden;
-            background: #f9fafb;
-            border-radius: 8px;
-            flex-shrink: 0;
           }
-          .hero-image img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
+          .qr-container img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+          .image-container img { width: 100%; height: 100%; object-fit: cover; }
+          .image-placeholder { font-size: 40px; color: #cbd5e1; }
+          
+          .product-info { text-align: center; padding: 10px 8px; background: #fff; }
+          .product-name { font-size: 20px; font-weight: 900; color: #111827; line-height: 1.2; }
+          .brand-badge { display: inline-block; background: #ff5c00; color: #fff; font-size: 12px; font-weight: 800; padding: 2px 10px; border-radius: 20px; margin-top: 4px; }
+          
+          .barcode-section {
+            background: #fff;
+            padding: 6px 8px;
+            text-align: center;
+            border-top: 1px dashed #cbd5e1;
           }
+          .barcode-section img { width: 100%; max-height: 50px; display: block; margin: 0 auto; }
+          
+          .ticket-footer {
+            background: #0a1f44;
+            color: #fff;
+            text-align: center;
+            padding: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+          }
+          
           @media print {
-            body { background: #fff; padding: 0; }
+            body { background: #fff; padding: 0; display: block; } /* إزالة التوسيط عند الطباعة */
+            .ticket { box-shadow: none; margin: 0 auto; page-break-inside: avoid; } /* في أعلى الصفحة بدون فراغات */
           }
         </style>
       </head>
       <body>
         <div class="ticket">
-          <div class="qr-section">
-            <div class="qr-frame">
-              <span class="corner-bl"></span>
-              <span class="corner-br"></span>
-              <img src="${qrDataUrl}" alt="QR" />
-            </div>
-            <div class="qr-hint">
-              <span class="phone-icon">📱</span>
-              <span>امسح الرمز لعرض تفاصيل المنتج<br/>والمزيد من الصور</span>
-            </div>
+          <div class="ticket-header">${seller.storeName}</div>
+          <div class="ticket-body">
+            <div class="qr-container"><img src="${qrDataUrl}" alt="QR" /></div>
+            <div class="image-container">${mainImage ? `<img src="${mainImage}" alt="" />` : `<span class="image-placeholder">📦</span>`}</div>
           </div>
-
-          <div class="product-hero">
-            <div class="hero-info">
-              <div class="hero-store">
-                <div class="hero-logo">ن</div>
-                <div style="min-width: 0; flex: 1;">
-                  <div class="hero-store-name">${seller.storeName}</div>
-                  <div class="hero-store-tagline">جودة تستحق ثقتك</div>
-                </div>
-              </div>
-
-              <div class="hero-product-row">
-                <div class="hero-product-name">${product.name}</div>
-                ${
-                  product.brand
-                    ? `<div class="hero-brand">
-                         <span class="hero-brand-icon">🏷️</span>
-                         ${product.brand}
-                       </div>`
-                    : ""
-                }
-              </div>
-
-              ${
-                barcodeDataUrl
-                  ? `<div class="barcode-box">
-                       <img src="${barcodeDataUrl}" alt="barcode" />
-                     </div>`
-                  : ""
-              }
-            </div>
-
-            <div class="hero-image">
-              ${mainImage ? `<img src="${mainImage}" alt="" />` : ""}
-            </div>
+          <div class="product-info">
+            <div class="product-name">${product.name}</div>
+            ${product.brand ? `<div class="brand-badge">🏷️ ${product.brand}</div>` : ''}
           </div>
+          ${barcodeDataUrl ? `<div class="barcode-section"><img src="${barcodeDataUrl}" alt="barcode" /></div>` : ''}
+          <div class="ticket-footer"><span>📱</span><span>امسح رمز QR للمزيد من التفاصيل</span></div>
         </div>
-
-        <script>
-          window.onload = () => {
-            setTimeout(() => { window.print(); }, 600);
-          };
-        </script>
+        <script>window.onload = () => { setTimeout(() => { window.print(); }, 500); };</script>
       </body>
       </html>
     `);
@@ -487,121 +328,67 @@ export default function ProductTicketPage() {
         </p>
       </div>
 
-      {(!product.imageUrls || product.imageUrls.length === 0) && (
-        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <span className="text-lg">⚠️</span>
-          <div className="text-xs text-amber-800">
-            هذا المنتج ليس له صور. بطاقة QR قد لا تعمل بشكل صحيح.
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="flex justify-center">
-          <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border-2 border-[#0a1f44] bg-white shadow-lg">
-            <div className="border-b-2 border-[#0a1f44] bg-gray-50 px-2 pb-1.5 pt-2 text-center">
-              <div className="relative mx-auto mb-1.5 h-48 w-48 rounded-xl bg-white p-1.5">
-                <span className="absolute right-0 top-0 h-5 w-5 rounded-tr-xl border-r-[3px] border-t-[3px] border-[#0a1f44]" />
-                <span className="absolute left-0 top-0 h-5 w-5 rounded-tl-xl border-l-[3px] border-t-[3px] border-[#0a1f44]" />
-                <span className="absolute bottom-0 left-0 h-5 w-5 rounded-bl-xl border-b-[3px] border-l-[3px] border-[#0a1f44]" />
-                <span className="absolute bottom-0 right-0 h-5 w-5 rounded-br-xl border-b-[3px] border-r-[3px] border-[#0a1f44]" />
-
+          
+          {/* ═══ المعاينة على الشاشة ═══ */}
+          <div className="w-full max-w-[340px] overflow-hidden rounded-xl border-2 border-[#0a1f44] bg-white shadow-lg flex flex-col">
+            <div className="bg-[#0a1f44] text-white text-center py-2 px-3 text-lg font-black">
+              {seller.storeName}
+            </div>
+            
+            <div className="flex p-2 gap-2 bg-gray-50 border-b-2 border-dashed border-gray-300">
+              <div className="w-1/2 aspect-square bg-white border-2 border-[#0a1f44] rounded-lg p-1 flex items-center justify-center overflow-hidden">
                 {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt="QR"
-                    className="h-full w-full object-contain"
-                  />
+                  <img src={qrDataUrl} alt="QR" className="w-full h-full object-contain" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
-                  </div>
+                  <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
                 )}
               </div>
-
-              <div className="flex items-center justify-center gap-1 text-[9px] font-bold leading-tight text-[#0a1f44]">
-                <span className="text-sm">📱</span>
-                <span>
-                  امسح الرمز لعرض تفاصيل المنتج
-                  <br />
-                  والمزيد من الصور
-                </span>
+              <div className="w-1/2 aspect-square bg-white border-2 border-[#0a1f44] rounded-lg overflow-hidden flex items-center justify-center">
+                {product.imageUrls[0] ? (
+                  <img src={product.imageUrls[0]} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-4xl text-gray-300">📦</span>
+                )}
               </div>
             </div>
 
-            <div className="flex items-stretch gap-1 p-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <div className="flex items-center gap-1.5 overflow-hidden border-b border-gray-200 pb-1.5">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0a1f44] to-purple-600 text-sm font-black text-white">
-                    ن
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[40px] font-black leading-none text-[#0a1f44]">
-                      {seller.storeName}
-                    </div>
-                    <div className="mt-0.5 truncate text-[9px] text-gray-500">
-                      جودة تستحق ثقتك
-                    </div>
-                  </div>
+            <div className="text-center py-2.5 px-2 bg-white">
+              <div className="text-xl font-black text-gray-900 leading-tight">{product.name}</div>
+              {product.brand && (
+                <div className="inline-block bg-[#ff5c00] text-white text-xs font-bold px-2.5 py-0.5 rounded-full mt-1">
+                  🏷️ {product.brand}
                 </div>
+              )}
+            </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-0 flex-1 text-[26px] font-black leading-none text-gray-900">
-                    {product.name}
-                  </div>
-                  {product.brand && (
-                    <div className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-3 py-0.5 text-[20px] font-black leading-none text-[#0a1f44]">
-                      <span className="text-base">🏷️</span>
-                      <span className="truncate">{product.brand}</span>
-                    </div>
-                  )}
-                </div>
-
-                {barcodeDataUrl && (
-                  <div className="mt-0.5 border-t border-dashed border-gray-300 pt-1 text-center">
-                    <img
-                      src={barcodeDataUrl}
-                      alt="barcode"
-                      className="mx-auto block h-auto w-full"
-                    />
-                  </div>
-                )}
+            {barcodeDataUrl && (
+              <div className="bg-white py-1.5 px-2 text-center border-t border-dashed border-gray-300">
+                <img src={barcodeDataUrl} alt="barcode" className="w-full max-h-[50px] mx-auto block" />
               </div>
+            )}
 
-              <div className="aspect-square w-[30%] shrink-0 self-center overflow-hidden rounded-lg bg-gray-50">
-                {product.imageUrls[0] ? (
-                  <img
-                    src={product.imageUrls[0]}
-                    alt={product.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-2xl text-gray-300">
-                    📦
-                  </div>
-                )}
-              </div>
+            <div className="bg-[#0a1f44] text-white text-center py-1.5 px-2 text-[11px] font-bold flex items-center justify-center gap-1">
+              <span>📱</span>
+              <span>امسح رمز QR للمزيد من التفاصيل</span>
             </div>
           </div>
+          {/* ═══ نهاية المعاينة ═══ */}
+
         </div>
 
         <div className="space-y-4">
           <div className="rounded-xl bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-sm font-black text-gray-700">
-              الإجراءات
-            </h3>
+            <h3 className="mb-3 text-sm font-black text-gray-700">الإجراءات</h3>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handlePrint}
                 disabled={!qrDataUrl || qrGenerating}
                 className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
-                {qrGenerating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Printer className="h-4 w-4" />
-                )}
-                طباعة البطاقة
+                {qrGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                طباعة
               </button>
               <button
                 onClick={handleDownloadQR}
@@ -616,43 +403,21 @@ export default function ProductTicketPage() {
 
           <div className="rounded-xl bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-black text-gray-700">
-                رابط المنتج
-              </h3>
+              <h3 className="text-sm font-black text-gray-700">رابط المنتج</h3>
               <button
                 onClick={() => setRefreshKey((k) => k + 1)}
                 disabled={loading}
                 className="flex items-center gap-1 rounded-lg bg-[#fff4ed] px-2.5 py-1 text-[11px] font-bold text-[#ff5c00] transition hover:bg-[#ffe4d3] disabled:opacity-50"
               >
-                <RefreshCw
-                  className={`h-3 w-3 ${loading ? "animate-spin" : ""}`}
-                />
+                <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
                 تحديث
               </button>
             </div>
             <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-              <span
-                className="block truncate font-mono text-[11px] text-gray-700"
-                dir="ltr"
-              >
+              <span className="block truncate font-mono text-[11px] text-gray-700" dir="ltr">
                 {productUrl}
               </span>
             </div>
-            <p className="mt-2 text-[10px] text-gray-400">
-              كود المنتج: <strong>{product.productCode}</strong>
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-            <h3 className="mb-2 text-sm font-black text-blue-900">
-              💡 كيف تستخدم البطاقة؟
-            </h3>
-            <ol className="space-y-1.5 text-xs text-blue-800">
-              <li>1. اطبع البطاقة والصقها على المنتج في محلك</li>
-              <li>2. عندما يمسح العميل الرمز → تظهر له تفاصيل المنتج</li>
-              <li>3. يرى السعر واللون والمقاس والخيارات المتوفرة</li>
-              <li>4. يمكنه طلبه مباشرة</li>
-            </ol>
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   Package,
   Save,
   AlertCircle,
+  Barcode,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
@@ -17,6 +18,7 @@ type Category = { id: number; name: string };
 
 export default function NewSellerProductPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
@@ -32,6 +34,9 @@ export default function NewSellerProductPage() {
   const [stock, setStock] = useState("0");
   const [freeShipping, setFreeShipping] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  
+  // حالة الباركود
+  const [barcode, setBarcode] = useState("");
 
   const [selectedValues, setSelectedValues] = useState<Record<number, number[]>>({});
   const [variantData, setVariantData] = useState<
@@ -40,6 +45,14 @@ export default function NewSellerProductPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // قراءة الباركود من الرابط (إذا تم التحويل من الماسح)
+  useEffect(() => {
+    const scannedBarcode = searchParams.get("barcode");
+    if (scannedBarcode) {
+      setBarcode(scannedBarcode);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function loadCategories() {
@@ -146,6 +159,7 @@ export default function NewSellerProductPage() {
           imageUrls,
           selectedValues,
           variantData,
+          barcode: barcode.trim() || null, // <--- إرسال الباركود للخادم
         }),
       });
 
@@ -280,9 +294,25 @@ export default function NewSellerProductPage() {
 
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-black">السعر والمخزون</h2>
-              <p className="mb-3 text-[11px] text-gray-500">
-                قيم افتراضية للتركيبات التي لم تحدد لها سعراً/مخزوناً.
-              </p>
+              
+              {/* الباركود */}
+              <div className="mb-4">
+                <label className="mb-1 flex items-center gap-1 text-xs font-bold text-gray-700">
+                  <Barcode className="h-4 w-4" />
+                  الباركود (EAN/UPC) أو رمز المنتج
+                </label>
+                <input
+                  type="text"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  placeholder="امسح الباركود أو اكتبه هنا..."
+                  dir="ltr"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
+                />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  إذا كان لديك باركود مطبوع على المنتج، امسحه هنا لربطه بالمنتج.
+                </p>
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>

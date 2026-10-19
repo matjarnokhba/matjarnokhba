@@ -1,45 +1,35 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import {
-  ArrowRight,
-  Loader2,
   Scan,
+  ShoppingBag,
+  Truck,
+  X,
+  Loader2,
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Package,
+  ArrowRight,
+  Printer,
   Trash2,
   Plus,
   Minus,
-  Check,
-  X,
-  ShoppingBag,
-  AlertCircle,
-  Printer,
-  Package,
-  CheckCircle2,
-  Truck,
+  Edit3,
 } from "lucide-react";
-
-// ═══════ الأنواع ═══════
-type OptionValue = {
-  id: number;
-  value: string;
-  colorHex: string | null;
-  order: number;
-};
-
-type Option = {
-  id: number;
-  name: string;
-  type: string;
-  order: number;
-  values: OptionValue[];
-};
 
 type Variant = {
   id: number;
   sku: string;
+  barcode: string | null;
   price: number;
+  storePrice: number;
+  oldPrice: number | null;
+  stock: number;
   available: number;
   isDefault: boolean;
   optionValueIds: number[];
@@ -52,7 +42,7 @@ type ScannedProduct = {
   name: string;
   image: string | null;
   price: number;
-  options: Option[];
+  storePrice: number;
   variants: Variant[];
 };
 
@@ -65,130 +55,110 @@ type CartLine = {
   price: number;
   quantity: number;
   available: number;
+  barcode: string | null;
 };
 
-type Mode = "product" | "order";
-
-type OrderScanResult =
-  | { status: "success"; orderNumber: string; orderId: number }
-  | { status: "already_ready"; orderNumber: string; orderId: number }
-  | { status: "error"; message: string };
-
-// ═══════ Component ═══════
 function ScannerContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialOrderToken = searchParams.get("orderToken") || "";
-  const initialOrderId = searchParams.get("orderId") || "";
+  const orderId = searchParams.get("orderId");
+  const orderNumber = searchParams.get("orderNumber");
+  const itemsCount = searchParams.get("itemsCount");
+  const total = searchParams.get("total");
 
-  const [mode, setMode] = useState<Mode>(
-    initialOrderToken ? "order" : "product"
-  );
+  const orderSummary = orderId && orderNumber ? {
+    id: orderId,
+    orderNumber,
+    itemsCount: Number(itemsCount || 0),
+    total: Number(total || 0),
+  } : null;
 
-  // Product-mode state
-  const [products, setProducts] = useState<ScannedProduct[]>([]);
-  const [lines, setLines] = useState<CartLine[]>([]);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [note, setNote] = useState("");
-  const [successOrder, setSuccessOrder] = useState<{
-    id: number;
-    orderNumber: string;
-    total: number;
-  } | null>(null);
-
-  // Order-mode state
-  const [orderResult, setOrderResult] = useState<OrderScanResult | null>(null);
-
-  // Shared state
+  const [mode, setMode] = useState<"product" | "order">("product");
+  const [posStep, setPosStep] = useState<"scan" | "review" | "success">("scan");
+  
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [loading, setLoading] = useState(false);
+  
+  // POS State
+  const [products, setProducts] = useState<ScannedProduct[]>([]);
+  const [lines, setLines] = useState<CartLine[]>([]);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [successSale, setSuccessSale] = useState<{ id: number; receiptNumber: string; total: number } | null>(null);
 
-  const scannerRef = useRef<any>(null);
+  // Order Mode State
+  const [orderResult, setOrderResult] = useState<any>(null);
+
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const lastScanTimeRef = useRef<number>(0); // لحفظ وقت آخر عملية مسح
   const scannerDivId = "qr-reader";
 
-  // ═══ لا تنفيذ تلقائي — فقط عرض ملخص الطلب (بدون إجراء) ═══
-  const [orderSummary, setOrderSummary] = useState<{
-    id: number;
-    orderNumber: string;
-    itemsCount: number;
-    total: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!initialOrderId) return;
-
-    let cancelled = false;
-    async function loadSummary() {
-      try {
-        const res = await fetch(`/api/seller/orders/${initialOrderId}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (res.ok && data.success && data.order) {
-          setOrderSummary({
-            id: data.order.id,
-            orderNumber: data.order.orderNumber,
-            itemsCount: data.order.items?.length ?? 0,
-            total: data.order.total,
-          });
-        }
-      } catch {
-        // silent — summary is optional
-      }
-    }
-    loadSummary();
-    return () => {
-      cancelled = true;
-    };
-  }, [initialOrderId]);
-
-  // ═══ Cleanup on unmount ═══
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current) {
-        try {
-          scannerRef.current.stop().catch(() => {});
-        } catch {}
-      }
-    };
-  }, []);
-
-  // ═══ Start Scanner ═══
+  // ═══════════════════════════════════════════
+  // SCANNER CONTROLS (Updated for explicit Barcode support)
+  // ═══════════════════════════════════════════
   async function startScanner() {
     setScanError("");
     setScanning(true);
 
-    try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-      await new Promise((r) => setTimeout(r, 100));
+    setTimeout(async () => {
+      try {
+        scannerRef.current = new Html5Qrcode(scannerDivId, {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+          ],
+          useBarCodeDetectorIfSupported: true,
+          verbose: false,
+        });
 
-      const scanner = new Html5Qrcode(scannerDivId);
-      scannerRef.current = scanner;
+        await scannerRef.current.start(
+          { facingMode: "environment" },
+          { 
+            fps: 25, // زيادة السرعة
+            // إطار مسح واسع جداً يناسب الباركود العادي الطويل
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              return {
+                width: Math.floor(viewfinderWidth * 0.9), 
+                height: Math.floor(viewfinderHeight * 0.4) 
+              };
+            }
+          },
+          (decodedText) => {
+            const now = Date.now();
+            if (now - lastScanTimeRef.current < 1500) return;
+            lastScanTimeRef.current = now;
 
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText: string) => {
-          if (mode === "product") {
-            handleProductScan(decodedText);
-          } else {
-            handleOrderScan(decodedText);
-          }
-        },
-        () => {}
-      );
-    } catch (err: any) {
-      console.error(err);
-      setScanError(
-        err?.message?.includes("NotAllowedError")
-          ? "تم رفض الإذن للكاميرا. افتح الإعدادات واسمح بالوصول."
-          : "فشل تشغيل الماسح. تأكد من وجود كاميرا."
-      );
-      setScanning(false);
-    }
+            try {
+              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(800, ctx.currentTime);
+              gain.gain.setValueAtTime(0.1, ctx.currentTime);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.1);
+            } catch(e) {}
+
+            handleScan(decodedText);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error(err);
+        setScanError("تعذر فتح الكاميرا. تأكد من إعطاء المتصفح صلاحية الكاميرا.");
+        setScanning(false);
+      }
+    }, 300);
   }
 
   async function stopScanner() {
@@ -202,26 +172,34 @@ function ScannerContent() {
     setScanning(false);
   }
 
-  // ═══════════════════════════════════════════
-  // PRODUCT MODE (existing)
-  // ═══════════════════════════════════════════
-  async function handleProductScan(text: string) {
-    await stopScanner();
-    let code = text.trim();
+  useEffect(() => {
+    return () => {
+      stopScanner();
+    };
+  }, []);
 
+  // ═══════════════════════════════════════════
+  // SCAN HANDLER
+  // ═══════════════════════════════════════════
+  async function handleScan(text: string) {
+    if (loading) return; // منع المسح المتكرر
+    
+    let code = text.trim();
     if (code.includes("/p/")) {
       const match = code.match(/\/p\/([A-Za-z0-9_-]+)/);
       if (match) code = match[1];
     }
 
-    if (code.includes("/product/")) {
-      setScanError("استخدم QR جديد من زر (بطاقة المنتج)");
-      return;
+    if (mode === "product") {
+      await loadByCode(code);
+    } else {
+      await handleOrderToken(code);
     }
-
-    await loadByCode(code);
   }
 
+  // ═══════════════════════════════════════════
+  // LOAD PRODUCT
+  // ═══════════════════════════════════════════
   async function loadByCode(code: string) {
     setLoading(true);
     setScanError("");
@@ -231,16 +209,21 @@ function ScannerContent() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setScanError(data.message || "المنتج غير موجود");
+        // إذا كان المنتج غير موجود، نوجهه لصفحة إضافة منتج جديد
+        if (res.status === 404) {
+          await stopScanner();
+          router.push(`/seller/products/new?barcode=${encodeURIComponent(code)}`);
+          return;
+        }
+        
+        setScanError(data.message || "حدث خطأ أثناء جلب المنتج");
         return;
       }
 
       const product: ScannedProduct = data.product;
 
       if (!product.variants || product.variants.length === 0) {
-        setScanError(
-          `⚠️ المنتج "${product.name}" لا يحتوي على أي variant نشط.`
-        );
+        setScanError(`⚠️ المنتج "${product.name}" لا يحتوي على أي variant نشط.`);
         return;
       }
 
@@ -249,9 +232,9 @@ function ScannerContent() {
         return exists ? prev : [...prev, product];
       });
 
-      const dv =
-        product.variants.find((v) => v.isDefault) || product.variants[0];
-      addLine(product, dv);
+      const matchedVariant = product.variants.find(v => v.barcode === code) || product.variants.find((v) => v.isDefault) || product.variants[0];
+      addLine(product, matchedVariant);
+
     } catch (err) {
       console.error(err);
       setScanError("فشل الاتصال بالخادم");
@@ -281,31 +264,10 @@ function ScannerContent() {
           productName: product.name,
           variantLabel: label,
           image: product.image,
-          price: variant.price,
+          price: variant.storePrice,
           quantity: 1,
           available: variant.available,
-        },
-      ];
-    });
-  }
-
-  function changeVariant(productId: number, newVariant: Variant) {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-
-    setLines((prev) => {
-      const others = prev.filter((l) => l.productId !== productId);
-      return [
-        ...others,
-        {
-          variantId: newVariant.id,
-          productId: product.id,
-          productName: product.name,
-          variantLabel: newVariant.optionValueLabels.join(" / "),
-          image: product.image,
-          price: newVariant.price,
-          quantity: 1,
-          available: newVariant.available,
+          barcode: variant.barcode,
         },
       ];
     });
@@ -322,25 +284,37 @@ function ScannerContent() {
     );
   }
 
+  function updatePrice(variantId: number, newPrice: number) {
+    setLines((prev) =>
+      prev.map((l) =>
+        l.variantId === variantId ? { ...l, price: Math.max(0, newPrice) } : l
+      )
+    );
+  }
+
   function removeLine(variantId: number) {
     setLines((prev) => prev.filter((l) => l.variantId !== variantId));
   }
 
-  const total = lines.reduce((s, l) => s + l.price * l.quantity, 0);
+  const cartTotal = lines.reduce((s, l) => s + l.price * l.quantity, 0);
 
-  async function submitOrder() {
+  // ═══════════════════════════════════════════
+  // SUBMIT POS SALE
+  // ═══════════════════════════════════════════
+  async function submitPosSale() {
     if (lines.length === 0) return;
     setSubmitting(true);
     setScanError("");
 
     try {
-      const res = await fetch("/api/seller/in-store", {
+      const res = await fetch("/api/seller/store-sale", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
+            unitPrice: l.price,
           })),
           customerName: customerName.trim() || null,
           customerPhone: customerPhone.trim() || null,
@@ -351,21 +325,17 @@ function ScannerContent() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setScanError(data.message || "فشل إنشاء الطلب");
+        setScanError(data.message || "فشل إنشاء الفاتورة");
         return;
       }
 
-      setSuccessOrder({
-        id: data.order.id,
-        orderNumber: data.order.orderNumber,
-        total: data.order.total,
-      });
+      setSuccessSale(data.sale);
+      setPosStep("success");
       setLines([]);
       setProducts([]);
       setCustomerName("");
       setCustomerPhone("");
       setNote("");
-      setShowCheckout(false);
     } catch {
       setScanError("فشل الاتصال بالخادم");
     } finally {
@@ -374,162 +344,83 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // ORDER MODE (new)
+  // ORDER MODE (Legacy Ready logic)
   // ═══════════════════════════════════════════
-  async function handleOrderScan(text: string) {
-    await stopScanner();
-    let token = text.trim();
-
-    // Extract from /d/[token]
+  async function handleOrderToken(rawToken: string) {
+    if (loading) return;
+    let token = rawToken.trim();
     if (token.includes("/d/")) {
       const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
       if (match) token = match[1];
-    }
-
-    await handleOrderToken(token);
-  }
-
-  async function handleOrderToken(rawToken: string) {
-  if (loading) return;
-
-  // ═══ استخراج UUID من أي رابط ملصق ═══
-  let token = rawToken.trim();
-
-  // إذا كان رابط كامل → استخرج UUID
-  if (token.includes("/d/")) {
-    const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
-    if (match) token = match[1];
-  } else if (token.includes("/r/")) {
-    setOrderResult({
-      status: "error",
-      message: "هذا رمز إرجاع — ليس طلبية. استخدم الماسح العام.",
-    });
-    return;
-  } else if (token.includes("/p/")) {
-    setOrderResult({
-      status: "error",
-      message: "هذا رمز منتج — ليس طلبية.",
-    });
-    return;
-  } else if (token.includes("/sd/") || token.includes("/cb/")) {
-    setOrderResult({
-      status: "error",
-      message: "هذا رمز شحنة/دفعة — ليس طلبية.",
-    });
-    return;
-  }
-
-  // ═══ تحقق الطول ═══
-  if (!token || token.length < 20) {
-    setOrderResult({
-      status: "error",
-      message: "رمز غير صحيح — امسح QR الطلبية (UUID طويل)",
-    });
-    return;
-  }
-
-  setLoading(true);
-  setScanError("");
-
-  try {
-    const res = await fetch(
-      `/api/seller/orders/by-token/${encodeURIComponent(token)}/ready`,
-      { method: "POST" }
-    );
-
-    // ═══ قراءة آمنة (حتى لو استجابة فارغة) ═══
-    const rawText = await res.text();
-    let data: any = null;
-
-    if (rawText.trim().length > 0) {
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        data = null;
-      }
-    }
-
-    if (!res.ok || !data || !data.success) {
-      setOrderResult({
-        status: "error",
-        message:
-          data?.message ||
-          `فشل الاتصال بالخادم (${res.status}) — جرّب مرة أخرى`,
-      });
+    } else if (token.includes("/r/") || token.includes("/p/") || token.includes("/sd/") || token.includes("/cb/")) {
+      setOrderResult({ status: "error", message: "هذا الرمز ليس طلبية." });
       return;
     }
 
-    // ═══ نجاح ═══
-    if (data.alreadyReady) {
-      setOrderResult({
-        status: "already_ready",
-        orderNumber: data.orderNumber,
-        orderId: data.orderId,
-      });
-    } else {
-      setOrderResult({
-        status: "success",
-        orderNumber: data.orderNumber,
-        orderId: data.orderId,
-      });
+    if (!token || token.length < 20) {
+      setOrderResult({ status: "error", message: "رمز غير صحيح" });
+      return;
     }
-  } catch (err) {
-    setOrderResult({
-      status: "error",
-      message: "فشل الاتصال بالخادم",
-    });
-  } finally {
-    setLoading(false);
+
+    setLoading(true);
+    setScanError("");
+
+    try {
+      const res = await fetch(`/api/seller/orders/by-token/${encodeURIComponent(token)}/ready`, { method: "POST" });
+      const rawText = await res.text();
+      let data: any = null;
+      if (rawText.trim().length > 0) {
+        try { data = JSON.parse(rawText); } catch { data = null; }
+      }
+
+      if (!res.ok || !data || !data.success) {
+        setOrderResult({ status: "error", message: data?.message || `فشل (${res.status})` });
+        return;
+      }
+
+      if (data.alreadyReady) {
+        setOrderResult({ status: "already_ready", orderNumber: data.orderNumber, orderId: data.orderId });
+      } else {
+        setOrderResult({ status: "success", orderNumber: data.orderNumber, orderId: data.orderId });
+      }
+    } catch {
+      setOrderResult({ status: "error", message: "فشل الاتصال بالخادم" });
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   // ═══════════════════════════════════════════
-  // SUCCESS SCREEN (Product Mode)
+  // RENDER: SUCCESS POS
   // ═══════════════════════════════════════════
-  if (successOrder && mode === "product") {
+  if (posStep === "success" && successSale) {
     return (
       <div className="p-4 pt-16 lg:p-8 lg:pt-8">
         <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow-lg">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
             <Check className="h-10 w-10 text-green-600" />
           </div>
-          <h1 className="mt-5 text-2xl font-black">تم إنشاء الطلب!</h1>
+          <h1 className="mt-5 text-2xl font-black">تمت عملية البيع!</h1>
           <p className="mt-2 text-sm text-gray-500">
-            رقم الطلب:{" "}
-            <strong className="font-mono text-[#ff5c00]">
-              {successOrder.orderNumber}
-            </strong>
+            رقم الفاتورة: <strong className="font-mono text-[#ff5c00]">{successSale.receiptNumber}</strong>
           </p>
-          <p className="mt-1 text-lg font-black text-[#ff5c00]">
-            {successOrder.total.toFixed(2)} د.م
-          </p>
+          <p className="mt-1 text-lg font-black text-[#ff5c00]">{successSale.total.toFixed(2)} د.م</p>
 
           <div className="mt-6 flex flex-col gap-2">
             <button
-              onClick={() => {
-                window.open(
-                  `/seller/orders/${successOrder.id}/invoice?print=1`,
-                  "_blank"
-                );
-              }}
+              onClick={() => window.open(`/seller/pos-invoice/${successSale.id}?print=1`, "_blank")}
               className="flex items-center justify-center gap-2 rounded-lg bg-[#0a1f44] py-3 text-sm font-bold text-white transition hover:bg-[#1a2f54]"
             >
               <Printer className="h-4 w-4" />
               طباعة الفاتورة
             </button>
             <button
-              onClick={() => setSuccessOrder(null)}
+              onClick={() => { setSuccessSale(null); setPosStep("scan"); }}
               className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"
             >
               <Scan className="h-4 w-4" />
-              طلب جديد
+              عملية بيع جديدة
             </button>
-            <Link
-              href="/seller/orders"
-              className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
-            >
-              عرض الطلبات
-            </Link>
           </div>
         </div>
       </div>
@@ -537,92 +428,68 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // ORDER MODE RESULT SCREEN
+  // RENDER: REVIEW POS
   // ═══════════════════════════════════════════
-  if (mode === "order" && orderResult) {
-    const isSuccess = orderResult.status === "success";
-    const isAlreadyReady = orderResult.status === "already_ready";
-    const isError = orderResult.status === "error";
-
+  if (posStep === "review") {
     return (
-      <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-        <div className="mx-auto max-w-md">
-          <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
-            {isSuccess && (
-              <>
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                  <CheckCircle2 className="h-10 w-10 text-green-600" />
-                </div>
-                <h1 className="mt-5 text-2xl font-black text-green-700">
-                  الطرد جاهز!
-                </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  تم إبلاغ المستودع بأن الطلب جاهز للجمع.
-                </p>
-                <div className="mt-4 rounded-xl bg-[#fff4ed] p-3">
-                  <div className="text-xs text-gray-500">رقم الطلب</div>
-                  <div className="mt-1 font-mono text-base font-black text-[#ff5c00]">
-                    {orderResult.orderNumber}
+      <div className="p-4 pt-16 pb-24 lg:p-8 lg:pt-8">
+        <div className="mx-auto max-w-2xl">
+          <button onClick={() => setPosStep("scan")} className="mb-4 flex items-center gap-1 text-sm font-bold text-gray-500 hover:text-gray-900">
+            <ArrowRight className="h-4 w-4" /> العودة للماسح
+          </button>
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <h1 className="mb-6 text-xl font-black">مراجعة الفاتورة</h1>
+
+            <div className="space-y-4 mb-6">
+              {lines.map((l) => (
+                <div key={l.variantId} className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-100 p-3">
+                  {l.image && <img src={l.image} alt={l.productName} className="h-12 w-12 rounded object-cover" />}
+                  <div className="flex-1 min-w-[150px]">
+                    <div className="text-sm font-bold">{l.productName}</div>
+                    <div className="text-xs text-gray-500">{l.variantLabel}</div>
                   </div>
-                </div>
-              </>
-            )}
-
-            {isAlreadyReady && (
-              <>
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100">
-                  <Package className="h-10 w-10 text-blue-600" />
-                </div>
-                <h1 className="mt-5 text-2xl font-black text-blue-700">
-                  جاهز للشحن
-                </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  هذا الطرد جاهز مسبقًا. بانتظار مسؤول الجمع.
-                </p>
-                <div className="mt-4 rounded-xl bg-blue-50 p-3">
-                  <div className="text-xs text-gray-500">رقم الطلب</div>
-                  <div className="mt-1 font-mono text-base font-black text-blue-700">
-                    {orderResult.orderNumber}
+                  
+                  <div className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1">
+                    <Edit3 className="h-3 w-3 text-gray-400" />
+                    <input 
+                      type="number" 
+                      value={l.price} 
+                      onChange={(e) => updatePrice(l.variantId, Number(e.target.value))}
+                      className="w-16 text-center text-sm font-bold outline-none"
+                    />
+                    <span className="text-[10px] text-gray-500">د.م</span>
                   </div>
-                </div>
-              </>
-            )}
 
-            {isError && (
-              <>
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-100">
-                  <AlertCircle className="h-10 w-10 text-red-600" />
-                </div>
-                <h1 className="mt-5 text-2xl font-black text-red-700">
-                  تعذّر التحديث
-                </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  {orderResult.message}
-                </p>
-              </>
-            )}
+                  <div className="flex items-center overflow-hidden rounded-lg border border-gray-200">
+                    <button onClick={() => updateQty(l.variantId, -1)} className="h-8 w-8 bg-gray-50 hover:bg-gray-100"><Minus className="h-3 w-3 mx-auto" /></button>
+                    <span className="min-w-[2rem] text-center text-sm font-bold">{l.quantity}</span>
+                    <button onClick={() => updateQty(l.variantId, 1)} disabled={l.quantity >= l.available} className="h-8 w-8 bg-gray-50 hover:bg-gray-100 disabled:opacity-30"><Plus className="h-3 w-3 mx-auto" /></button>
+                  </div>
 
-            <div className="mt-6 flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  setOrderResult(null);
-                  setScanError("");
-                }}
-                className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"
-              >
-                <Scan className="h-4 w-4" />
-                مسح طرد آخر
-              </button>
-              {!isError && (
-                <Link
-                  href={`/seller/orders/${orderResult.orderId}`}
-                  className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
-                >
-                  <ArrowRight className="h-4 w-4" />
-                  عرض الطلب
-                </Link>
-              )}
+                  <button onClick={() => removeLine(l.variantId)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
             </div>
+
+            <div className="border-t border-dashed border-gray-200 pt-4 mb-6">
+              <div className="flex justify-between text-lg font-black">
+                <span>الإجمالي</span>
+                <span className="text-[#ff5c00]">{cartTotal.toFixed(2)} د.م</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-6 bg-gray-50 p-4 rounded-xl">
+              <input type="text" placeholder="اسم العميل (اختياري)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+              <input type="tel" placeholder="رقم الهاتف (اختياري)" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+            </div>
+
+            {scanError && <div className="mb-4 text-sm text-red-600 bg-red-50 p-2 rounded">{scanError}</div>}
+
+            <button onClick={submitPosSale} disabled={submitting} className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#ff5c00] py-4 text-base font-bold text-white shadow-lg transition hover:bg-[#e64a00] disabled:opacity-50">
+              {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
+              تأكيد البيع ({cartTotal.toFixed(2)} د.م)
+            </button>
           </div>
         </div>
       </div>
@@ -630,10 +497,10 @@ function ScannerContent() {
   }
 
   // ═══════════════════════════════════════════
-  // MAIN UI
+  // RENDER: MAIN SCANNER (POS + ORDER)
   // ═══════════════════════════════════════════
   return (
-    <div className="p-4 pt-16 lg:p-8 lg:pt-8">
+    <div className="p-4 pt-16 pb-24 lg:p-8 lg:pt-8 relative min-h-screen">
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
           <Scan className="h-6 w-6 text-[#ff5c00]" />
@@ -641,261 +508,115 @@ function ScannerContent() {
         </h1>
       </div>
 
-      {/* ═══ Mode Toggle ═══ */}
       <div className="mb-5 flex gap-2 rounded-xl bg-gray-100 p-1">
-        <button
-          onClick={() => {
-            setMode("product");
-            setScanError("");
-            setOrderResult(null);
-          }}
-          className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition ${
-            mode === "product"
-              ? "bg-white text-[#ff5c00] shadow-sm"
-              : "text-gray-500"
-          }`}
-        >
-          <ShoppingBag className="h-4 w-4" />
-          بيع في المتجر
+        <button onClick={() => { setMode("product"); setScanError(""); setOrderResult(null); }} className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition ${mode === "product" ? "bg-white text-[#ff5c00] shadow-sm" : "text-gray-500"}`}>
+          <ShoppingBag className="h-4 w-4" /> بيع في المتجر
         </button>
-        <button
-          onClick={() => {
-            setMode("order");
-            setScanError("");
-          }}
-          className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition ${
-            mode === "order"
-              ? "bg-white text-[#ff5c00] shadow-sm"
-              : "text-gray-500"
-          }`}
-        >
-          <Truck className="h-4 w-4" />
-          تجهيز طلب
+        <button onClick={() => { setMode("order"); setScanError(""); }} className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition ${mode === "order" ? "bg-white text-[#ff5c00] shadow-sm" : "text-gray-500"}`}>
+          <Truck className="h-4 w-4" /> تجهيز طلب
         </button>
       </div>
 
-      {/* ═══ ORDER MODE UI ═══ */}
+      {/* ORDER MODE UI */}
       {mode === "order" && !orderResult && (
-        <div className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-sm">
-          {/* ═══ Order Summary (if navigated from order page) ═══ */}
-          {orderSummary && (
-            <div className="mb-4 rounded-xl border-2 border-[#ff5c00] bg-[#fff4ed] p-4">
-              <div className="text-xs font-bold text-gray-700">
-                الطلب الذي ستُجهّزه
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-mono text-lg font-black text-[#ff5c00]">
-                    {orderSummary.orderNumber}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-gray-600">
-                    {orderSummary.itemsCount} منتج —{" "}
-                    {Number(orderSummary.total).toFixed(2)} د.م
-                  </div>
-                </div>
-                <Link
-                  href={`/seller/orders/${orderSummary.id}`}
-                  className="text-[11px] font-bold text-[#ff5c00] underline"
-                >
-                  عرض
-                </Link>
-              </div>
-            </div>
-          )}
+         <div className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-sm">
+         {orderSummary && (
+           <div className="mb-4 rounded-xl border-2 border-[#ff5c00] bg-[#fff4ed] p-4">
+             <div className="text-xs font-bold text-gray-700">الطلب الذي ستُجهّزه</div>
+             <div className="mt-1 flex items-center justify-between gap-3">
+               <div>
+                 <div className="font-mono text-lg font-black text-[#ff5c00]">{orderSummary.orderNumber}</div>
+                 <div className="mt-0.5 text-[11px] text-gray-600">{orderSummary.itemsCount} منتج — {Number(orderSummary.total).toFixed(2)} د.م</div>
+               </div>
+               <Link href={`/seller/orders/${orderSummary.id}`} className="text-[11px] font-bold text-[#ff5c00] underline">عرض</Link>
+             </div>
+           </div>
+         )}
 
-          <div className="mb-5 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
-                <Truck className="h-5 w-5 text-purple-700" />
-              </div>
-              <div>
-                <div className="text-sm font-black text-purple-900">
-                  امسح ملصق الطلبية
-                </div>
-                <p className="mt-1 text-xs text-purple-700">
-                  امسح QR الموجود على ملصق الطرد المطبوع لإبلاغ النظام بأنه
-                  جاهز للشحن.
-                </p>
-              </div>
-            </div>
-          </div>
+         <div className="mb-5 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50 p-4">
+           <div className="flex items-start gap-3">
+             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100"><Truck className="h-5 w-5 text-purple-700" /></div>
+             <div>
+               <div className="text-sm font-black text-purple-900">امسح ملصق الطلبية</div>
+               <p className="mt-1 text-xs text-purple-700">امسح QR الموجود على ملصق الطرد المطبوع لإبلاغ النظام بأنه جاهز للشحن.</p>
+             </div>
+           </div>
+         </div>
 
-          {!scanning ? (
-            <button
-              onClick={startScanner}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-3.5 text-sm font-bold text-white transition hover:bg-purple-700 disabled:opacity-50"
-            >
-              <Scan className="h-5 w-5" />
-              فتح الكاميرا للمسح
-            </button>
-          ) : (
-            <button
-              onClick={stopScanner}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-600 transition hover:bg-red-100"
-            >
-              <X className="h-5 w-5" />
-              إيقاف الماسح
-            </button>
-          )}
+         {!scanning ? (
+           <button onClick={startScanner} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-3.5 text-sm font-bold text-white transition hover:bg-purple-700 disabled:opacity-50">
+             <Scan className="h-5 w-5" /> فتح الكاميرا للمسح
+           </button>
+         ) : (
+           <button onClick={stopScanner} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-600 transition hover:bg-red-100">
+             <X className="h-5 w-5" /> إيقاف الماسح
+           </button>
+         )}
 
-          {scanning && (
-            <div className="mt-4 overflow-hidden rounded-xl">
-              <div id={scannerDivId} className="w-full" />
-              <p className="mt-3 text-center text-xs text-gray-500">
-                وجّه الكاميرا نحو QR الملصق
-              </p>
-            </div>
-          )}
+         {scanning && (
+           <div className="mt-4 overflow-hidden rounded-xl">
+             <div id={scannerDivId} className="w-full" />
+             <p className="mt-3 text-center text-xs text-gray-500">وجّه الكاميرا نحو QR الملصق</p>
+           </div>
+         )}
 
-          {/* Manual input */}
-          {!scanning && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <div className="mb-2 text-xs font-bold text-gray-700">
-                أو إدخال يدوي للرمز
-              </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!manualCode.trim()) return;
-                  handleOrderToken(manualCode.trim());
-                  setManualCode("");
-                }}
-                className="flex gap-2"
-              >
-                <input
-                  type="text"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="الصق رمز الطلبية..."
-                  dir="ltr"
-                  className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-purple-500 focus:bg-white"
-                />
-                <button
-                  type="submit"
-                  disabled={!manualCode.trim() || loading}
-                  className="rounded-lg bg-purple-600 px-4 text-xs font-bold text-white transition hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "تأكيد"
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
+         {!scanning && (
+           <div className="mt-4 border-t border-gray-100 pt-4">
+             <div className="mb-2 text-xs font-bold text-gray-700">أو إدخال يدوي للرمز</div>
+             <form onSubmit={(e) => { e.preventDefault(); if (!manualCode.trim()) return; handleOrderToken(manualCode.trim()); setManualCode(""); }} className="flex gap-2">
+               <input type="text" value={manualCode} onChange={(e) => setManualCode(e.target.value)} placeholder="الصق رمز الطلبية..." dir="ltr" className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-purple-500 focus:bg-white" />
+               <button type="submit" disabled={!manualCode.trim() || loading} className="rounded-lg bg-purple-600 px-4 text-xs font-bold text-white transition hover:bg-purple-700 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "تأكيد"}</button>
+             </form>
+           </div>
+         )}
 
-          {scanError && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{scanError}</span>
-            </div>
-          )}
-        </div>
+         {scanError && <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{scanError}</span></div>}
+       </div>
       )}
 
-      {/* ═══ PRODUCT MODE UI ═══ */}
+      {/* PRODUCT MODE UI (POS) */}
       {mode === "product" && (
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-4">
-            <div className="rounded-xl bg-white p-5 shadow-sm">
+            <div className="rounded-xl bg-white p-5 shadow-sm sticky top-20">
               {!scanning ? (
-                <button
-                  onClick={startScanner}
-                  disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3.5 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
-                >
-                  <Scan className="h-5 w-5" />
-                  فتح الكاميرا للمسح
+                <button onClick={startScanner} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3.5 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50">
+                  <Scan className="h-5 w-5" /> فتح الكاميرا للمسح
                 </button>
               ) : (
-                <button
-                  onClick={stopScanner}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-600 transition hover:bg-red-100"
-                >
-                  <X className="h-5 w-5" />
-                  إيقاف الماسح
+                <button onClick={stopScanner} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-600 transition hover:bg-red-100">
+                  <X className="h-5 w-5" /> إيقاف الماسح
                 </button>
               )}
 
               {scanning && (
                 <div className="mt-4 overflow-hidden rounded-xl">
                   <div id={scannerDivId} className="w-full" />
-                  <p className="mt-3 text-center text-xs text-gray-500">
-                    وجّه الكاميرا نحو QR المنتج
-                  </p>
+                  <p className="mt-3 text-center text-xs text-gray-500">امسح الباركود أو QR للمنتج</p>
                 </div>
               )}
 
               {!scanning && (
                 <div className="mt-4 border-t border-gray-100 pt-4">
-                  <div className="mb-2 text-xs font-bold text-gray-700">
-                    إدخال يدوي للكود
-                  </div>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (!manualCode.trim()) return;
-                      loadByCode(manualCode.trim());
-                      setManualCode("");
-                    }}
-                    className="flex gap-2"
-                  >
-                    <input
-                      type="text"
-                      value={manualCode}
-                      onChange={(e) => setManualCode(e.target.value)}
-                      placeholder="الصق كود المنتج..."
-                      dir="ltr"
-                      className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-[#ff5c00] focus:bg-white"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!manualCode.trim() || loading}
-                      className="rounded-lg bg-[#ff5c00] px-4 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
-                    >
-                      {loading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "جلب"
-                      )}
-                    </button>
+                  <div className="mb-2 text-xs font-bold text-gray-700">إدخال يدوي للكود</div>
+                  <form onSubmit={(e) => { e.preventDefault(); if (!manualCode.trim()) return; loadByCode(manualCode.trim()); setManualCode(""); }} className="flex gap-2">
+                    <input type="text" value={manualCode} onChange={(e) => setManualCode(e.target.value)} placeholder="الصق الباركود..." dir="ltr" className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs outline-none focus:border-[#ff5c00] focus:bg-white" />
+                    <button type="submit" disabled={!manualCode.trim() || loading} className="rounded-lg bg-[#ff5c00] px-4 text-xs font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "جلب"}</button>
                   </form>
                 </div>
               )}
 
-              {scanError && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{scanError}</span>
-                </div>
-              )}
+              {scanError && <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{scanError}</span></div>}
             </div>
-
+            
             {products.length > 0 && (
               <div className="rounded-xl bg-white p-5 shadow-sm">
-                <h3 className="mb-3 text-sm font-black text-gray-700">
-                  المنتجات الممسوحة ({products.length})
-                </h3>
+                <h3 className="mb-3 text-sm font-black text-gray-700">المنتجات الممسوحة ({products.length})</h3>
                 <div className="space-y-2">
                   {products.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-2 rounded-lg border border-gray-100 p-2"
-                    >
-                      {p.image && (
-                        <img
-                          src={p.image}
-                          alt={p.name}
-                          className="h-10 w-10 shrink-0 rounded object-cover"
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-bold">
-                          {p.name}
-                        </div>
-                      </div>
+                    <div key={p.id} className="flex items-center gap-2 rounded-lg border border-gray-100 p-2">
+                      {p.image && <img src={p.image} alt={p.name} className="h-10 w-10 shrink-0 rounded object-cover" />}
+                      <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">{p.name}</div></div>
                     </div>
                   ))}
                 </div>
@@ -903,238 +624,101 @@ function ScannerContent() {
             )}
           </div>
 
-          <div className="rounded-xl bg-white p-5 shadow-sm">
+          <div className="rounded-xl bg-white p-5 shadow-sm pb-32">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-base font-black">
-                <ShoppingBag className="h-5 w-5 text-[#ff5c00]" />
-                الطلب الحالي
-              </h2>
-              {lines.length > 0 && (
-                <span className="rounded-full bg-[#fff4ed] px-2 py-0.5 text-xs font-bold text-[#ff5c00]">
-                  {lines.length} منتج
-                </span>
-              )}
+              <h2 className="flex items-center gap-2 text-base font-black"><ShoppingBag className="h-5 w-5 text-[#ff5c00]" /> السلة</h2>
+              {lines.length > 0 && <span className="rounded-full bg-[#fff4ed] px-2 py-0.5 text-xs font-bold text-[#ff5c00]">{lines.length} منتج</span>}
             </div>
 
             {lines.length === 0 ? (
               <div className="py-12 text-center">
                 <div className="text-5xl">📷</div>
-                <p className="mt-3 text-sm font-bold text-gray-500">
-                  ابدأ بمسح المنتجات
-                </p>
+                <p className="mt-3 text-sm font-bold text-gray-500">ابدأ بمسح المنتجات</p>
               </div>
             ) : (
               <>
                 <div className="mb-4 max-h-[400px] space-y-3 overflow-y-auto">
-                  {lines.map((l) => {
-                    const product = products.find(
-                      (p) => p.id === l.productId
-                    );
-
-                    return (
-                      <div
-                        key={l.variantId}
-                        className="rounded-lg border border-gray-200 p-3"
-                      >
-                        <div className="flex items-start gap-2">
-                          {l.image && (
-                            <img
-                              src={l.image}
-                              alt={l.productName}
-                              className="h-14 w-14 shrink-0 rounded object-cover"
-                            />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold">
-                              {l.productName}
-                            </div>
-                            {l.variantLabel && (
-                              <div className="mt-0.5 text-[10px] text-gray-500">
-                                {l.variantLabel}
-                              </div>
-                            )}
-                            <div className="mt-1 text-xs font-black text-[#ff5c00]">
-                              {l.price.toFixed(2)} د.م
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => removeLine(l.variantId)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition hover:bg-red-50 hover:text-red-500"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                  {lines.map((l) => (
+                    <div key={l.variantId} className="rounded-lg border border-gray-200 p-3">
+                      <div className="flex items-start gap-2">
+                        {l.image && <img src={l.image} alt={l.productName} className="h-14 w-14 shrink-0 rounded object-cover" />}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold">{l.productName}</div>
+                          {l.variantLabel && <div className="mt-0.5 text-[10px] text-gray-500">{l.variantLabel}</div>}
+                          <div className="mt-1 text-xs font-black text-[#ff5c00]">{l.price.toFixed(2)} د.م</div>
                         </div>
-
-                        {product && product.variants.length > 1 && (
-                          <div className="mt-2">
-                            <select
-                              value={l.variantId}
-                              onChange={(e) => {
-                                const v = product.variants.find(
-                                  (x) => x.id === Number(e.target.value)
-                                );
-                                if (v) changeVariant(l.productId, v);
-                              }}
-                              className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] outline-none focus:border-[#ff5c00]"
-                            >
-                              {product.variants.map((v) => (
-                                <option
-                                  key={v.id}
-                                  value={v.id}
-                                  disabled={v.available === 0}
-                                >
-                                  {v.optionValueLabels.join(" / ") ||
-                                    "افتراضي"}{" "}
-                                  — {v.price.toFixed(2)} د.م
-                                  {v.available === 0 ? " (نفد)" : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <div className="mt-2 flex items-center justify-between">
-                          <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
-                            <button
-                              onClick={() => updateQty(l.variantId, -1)}
-                              disabled={l.quantity <= 1}
-                              className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30"
-                            >
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="min-w-[2rem] border-x border-gray-200 py-0.5 text-center text-xs font-bold">
-                              {l.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQty(l.variantId, 1)}
-                              disabled={l.quantity >= l.available}
-                              className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
-                          <span className="text-[10px] text-gray-400">
-                            متاح: {l.available}
-                          </span>
-                        </div>
+                        <button onClick={() => removeLine(l.variantId)} className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
-                    );
-                  })}
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
+                          <button onClick={() => updateQty(l.variantId, -1)} className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50"><Minus className="h-3 w-3" /></button>
+                          <span className="min-w-[2rem] border-x border-gray-200 py-0.5 text-center text-xs font-bold">{l.quantity}</span>
+                          <button onClick={() => updateQty(l.variantId, 1)} disabled={l.quantity >= l.available} className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30"><Plus className="h-3 w-3" /></button>
+                        </div>
+                        <span className="text-[10px] text-gray-400">متاح: {l.available}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="border-t border-gray-100 pt-4">
                   <div className="mb-3 flex justify-between text-sm">
                     <span className="font-bold">الإجمالي</span>
-                    <span className="text-lg font-black text-[#ff5c00]">
-                      {total.toFixed(2)} د.م
-                    </span>
+                    <span className="text-lg font-black text-[#ff5c00]">{cartTotal.toFixed(2)} د.م</span>
                   </div>
-
-                  <button
-                    onClick={() => setShowCheckout(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"
-                  >
-                    <Check className="h-4 w-4" />
-                    إتمام الطلب
-                  </button>
                 </div>
               </>
             )}
           </div>
+
+          {lines.length > 0 && (
+            <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] lg:static lg:border-none lg:bg-transparent lg:p-0 lg:shadow-none lg:mt-4">
+              <button onClick={() => setPosStep("review")} className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3.5 text-sm font-bold text-white transition hover:bg-[#e64a00]">
+                <Check className="h-5 w-5" /> إتمام البيع · {cartTotal.toFixed(2)} د.م
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══ Checkout Modal (product mode) ═══ */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6">
-            <h3 className="text-lg font-black">إتمام طلب المحل</h3>
-            <p className="mt-1 text-xs text-gray-500">
-              {lines.length} منتج — {total.toFixed(2)} د.م
-            </p>
-
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">
-                  اسم العميل (اختياري)
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">
-                  رقم الهاتف (اختياري)
-                </label>
-                <input
-                  type="tel"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">
-                  ملاحظة (اختياري)
-                </label>
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                  className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
-                />
-              </div>
-            </div>
-
-            {scanError && (
-              <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                {scanError}
-              </div>
-            )}
-
-            <div className="mt-5 flex gap-2">
-              <button
-                onClick={submitOrder}
-                disabled={submitting}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
-              >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-                تأكيد الطلب
-              </button>
-              <button
-                onClick={() => setShowCheckout(false)}
-                disabled={submitting}
-                className="flex-1 rounded-lg border border-gray-200 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* ORDER MODE RESULT */}
+      {mode === "order" && orderResult && (
+         <div className="mx-auto max-w-md mt-8">
+         <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
+           {orderResult.status === "success" && (
+             <>
+               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100"><CheckCircle2 className="h-10 w-10 text-green-600" /></div>
+               <h1 className="mt-5 text-2xl font-black text-green-700">الطرد جاهز!</h1>
+               <p className="mt-2 text-sm text-gray-600">تم إبلاغ المستودع بأن الطلب جاهز للجمع.</p>
+             </>
+           )}
+           {orderResult.status === "already_ready" && (
+             <>
+               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100"><Package className="h-10 w-10 text-blue-600" /></div>
+               <h1 className="mt-5 text-2xl font-black text-blue-700">جاهز للشحن</h1>
+               <p className="mt-2 text-sm text-gray-600">هذا الطرد جاهز مسبقًا. بانتظار مسؤول الجمع.</p>
+             </>
+           )}
+           {orderResult.status === "error" && (
+             <>
+               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-100"><AlertCircle className="h-10 w-10 text-red-600" /></div>
+               <h1 className="mt-5 text-2xl font-black text-red-700">تعذّر التحديث</h1>
+               <p className="mt-2 text-sm text-gray-600">{orderResult.message}</p>
+             </>
+           )}
+           <div className="mt-6 flex flex-col gap-2">
+             <button onClick={() => { setOrderResult(null); setScanError(""); }} className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]"><Scan className="h-4 w-4" /> مسح طرد آخر</button>
+           </div>
+         </div>
+       </div>
       )}
     </div>
   );
 }
 
-// ═══ Wrapper with Suspense (required for useSearchParams) ═══
 export default function SellerScannerPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" /></div>}>
       <ScannerContent />
     </Suspense>
   );

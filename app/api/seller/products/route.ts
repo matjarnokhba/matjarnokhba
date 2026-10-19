@@ -40,6 +40,7 @@ const createSchema = z.object({
   stock: z.number().int().min(0).default(0),
   freeShipping: z.boolean().default(false),
   imageUrls: z.array(z.string().url()).min(1, "صورة واحدة على الأقل مطلوبة").max(5),
+  barcode: z.string().trim().optional().nullable(), // <--- تمت إضافة الباركود هنا
   selectedValues: z.record(z.string(), z.array(z.number())).optional(),
   variantData: z
     .record(
@@ -146,6 +147,24 @@ export async function POST(request: Request) {
       );
     }
 
+    // ═══ التحقق من الباركود مسبقاً إن وُجد ═══
+    if (data.barcode) {
+      const existingBarcode = await prisma.productVariant.findUnique({
+        where: {
+          sellerId_barcode: {
+            sellerId: auth.seller.id,
+            barcode: data.barcode
+          }
+        }
+      });
+      if (existingBarcode) {
+        return NextResponse.json(
+          { success: false, message: "هذا الباركود مستخدم بالفعل لمنتج آخر في متجرك" },
+          { status: 400 }
+        );
+      }
+    }
+
     // ═══ الفئة ═══
     const category = await prisma.category.findUnique({
       where: { id: data.categoryId },
@@ -163,8 +182,7 @@ export async function POST(request: Request) {
       include: { values: { where: { isActive: true } } },
     });
 
-    const selectedValues: Record<string, number[]> =
-      data.selectedValues || {};
+    const selectedValues: Record<string, number[]> = data.selectedValues || {};
 
     type ActiveAttr = {
       attributeId: number;
@@ -254,6 +272,7 @@ export async function POST(request: Request) {
               isDefault: true,
               isActive: true,
               optionsHash: "DEFAULT",
+              barcode: data.barcode || null, // <--- حفظ الباركود
               inventory: {
                 create: {
                   quantity: vStock,
@@ -318,6 +337,7 @@ export async function POST(request: Request) {
             isDefault: c.isDefault,
             isActive: true,
             optionsHash: c.hash,
+            barcode: i === 0 ? (data.barcode || null) : null, // <--- حفظ الباركود للـ variant الأول فقط
           })),
           select: { id: true },
         });
@@ -355,6 +375,15 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Seller product POST error:", error);
+    
+    // معالجة خطأ التكرار في الباركود إن حدث من قاعدة البيانات
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return NextResponse.json(
+        { success: false, message: "هذا الباركود مسجل بالفعل لمنتج آخر" },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },
       { status: 500 }

@@ -24,13 +24,24 @@ export async function GET(
     const sellerId = current.user.seller.id;
     const { code } = await params;
 
-    // ═══ البحث بالـ productCode ضمن منتجات هذا التاجر فقط ═══
+    // ═══ استخراج رقم المنتج إذا كان الكود قصيراً (يبدأ بـ NOKHBA-) ═══
+    let extractedId: number | null = null;
+    if (code.startsWith("NOKHBA-")) {
+      const parsed = parseInt(code.replace("NOKHBA-", ""), 10);
+      if (!isNaN(parsed)) extractedId = parsed;
+    }
+
+    // ═══ البحث بالـ productCode أو الباركود أو الرقم المستخرج ═══
     const product = await prisma.product.findFirst({
       where: {
-        productCode: code,
         sellerId,
         deletedAt: null,
         status: "ACTIVE",
+        OR: [
+          { productCode: code },
+          ...(extractedId ? [{ id: extractedId }] : []), // <--- إضافة البحث بالرقم
+          { variants: { some: { barcode: code, isActive: true } } },
+        ],
       },
       include: {
         images: { orderBy: { order: "asc" }, take: 1 },
@@ -133,7 +144,9 @@ export async function GET(
       return {
         id: v.id,
         sku: v.sku,
+        barcode: v.barcode || null,
         price: Number(v.price),
+        storePrice: v.storePrice ? Number(v.storePrice) : Number(v.price),
         oldPrice: v.discountPrice ? Number(v.discountPrice) : null,
         stock: qty,
         available: Math.max(0, qty - reserved),
@@ -159,6 +172,7 @@ export async function GET(
         image: product.images[0]?.url || null,
         categoryName: product.category?.name || "",
         price: defaultVariant?.price ?? 0,
+        storePrice: defaultVariant?.storePrice ?? 0,
         oldPrice: defaultVariant?.oldPrice ?? null,
         options,
         variants,
