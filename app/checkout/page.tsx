@@ -718,9 +718,13 @@ export default function CheckoutPage() {
                 )}
               </button>
 
-              <div className="mt-3 text-center text-[10px] text-[#6b7280]">
-                بالمتابعة، أنت توافق على الشروط والأحكام
-              </div>
+              <div className="mt-4 rounded-lg bg-blue-50 p-3 text-center text-[11px] font-bold text-blue-800">
+            🚚 التوصيل خلال 3 أيام عمل أو أقل. (قد يزيد قليلاً إذا كانت المنتجات من مدن أخرى)
+          </div>
+
+          <div className="mt-3 text-center text-[10px] text-[#6b7280]">
+            بالمتابعة، أنت توافق على الشروط والأحكام
+          </div>
             </div>
           </div>
         </form>

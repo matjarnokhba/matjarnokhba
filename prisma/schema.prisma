@@ -474,6 +474,7 @@ model Seller {
   latitude               Float?
   longitude              Float?
   walletBalance          Decimal   @default(0) @db.Decimal(12, 2)
+  heldBalance            Decimal   @default(0) @db.Decimal(12, 2)
   subscriptionStatus     String    @default("TRIAL") // TRIAL, ACTIVE, EXPIRED
   subscriptionEndsAt     DateTime?
 
@@ -519,6 +520,7 @@ model Seller {
   collectionZone       Zone?                       @relation("SellerCollectionZone", fields: [collectionZoneId], references: [id], onDelete: SetNull)
   storeSales           StoreSale[]
   walletTransactions   WalletTransaction[]
+  withdrawalRequests   WithdrawalRequest[]
 
   @@index([status])
   @@index([deletedAt])
@@ -2287,6 +2289,8 @@ model StoreSaleItem {
 
 enum WalletTransactionType {
   ONLINE_SALE_EARNING
+  HELD_EARNING
+  RELEASE_HOLD
   COMMISSION_DEDUCTION
   SUBSCRIPTION_PAYMENT
   WITHDRAWAL
@@ -2308,4 +2312,24 @@ model WalletTransaction {
 
   @@index([sellerId])
   @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// Withdrawal Request (طلبات سحب الأرباح)
+// ═══════════════════════════════════════════
+
+model WithdrawalRequest {
+  id          Int       @id @default(autoincrement())
+  sellerId    Int
+  amount      Decimal   @db.Decimal(12, 2)
+  status      String    @default("PENDING") // PENDING, APPROVED, PAID, REJECTED
+  bankDetails Json?
+  adminNote   String?
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([status])
 }

@@ -339,6 +339,14 @@ export default function NewSellerProductPage() {
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
                     required
                   />
+                  {Number(price) > 0 && (
+                    <div className="mt-1.5 flex items-center justify-between rounded-lg bg-green-50 px-2 py-1.5 border border-green-100">
+                      <span className="text-[10px] font-bold text-green-800">صافي أرباحك:</span>
+                      <span className="font-mono text-xs font-black text-green-700">
+                        {(Number(price) * 0.90).toFixed(2)} د.م
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-bold text-gray-700">

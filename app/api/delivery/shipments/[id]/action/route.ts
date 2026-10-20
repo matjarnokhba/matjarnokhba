@@ -7,6 +7,7 @@ import { LoyaltyService } from "@/services/loyalty.service";
 import { ReferralService } from "@/services/referral.service";
 import { AuditService } from "@/services/audit.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
+import { WalletService } from "@/services/wallet.service";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 
 async function requireDelivery() {
@@ -206,14 +207,19 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
 
-          // 4. Loyalty + Referral + Notification — للطلبات التي أصبحت DELIVERED فقط
+          // 4. Loyalty + Referral + Notification + Wallet — للطلبات التي أصبحت DELIVERED فقط
           for (const orderId of orderIds) {
             const fresh = await tx.order.findUnique({
               where: { id: orderId },
-              select: { status: true, userId: true, total: true },
+              select: { status: true, userId: true, total: true, sellerId: true },
             });
             if (!fresh) continue;
             if (fresh.status !== "DELIVERED") continue;
+
+            // ═══ إضافة الأرباح للمحفظة (محجوزة لمدة 3 أيام) ═══
+            if (fresh.sellerId) {
+              await WalletService.addHeldEarning(tx, fresh.sellerId, orderId, Number(fresh.total));
+            }
 
             try {
               const award = await LoyaltyService.awardForOrder(tx, {

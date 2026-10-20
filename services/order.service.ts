@@ -186,100 +186,36 @@ export const OrderService = {
       itemsBySeller.get(item.sellerId)!.push(item);
     }
 
-    // ═══ 4.b الشحن حسب المنطقة ═══
-    let zoneCost = SHIPPING_FEE;
-    let zoneThreshold = FREE_SHIPPING_THRESHOLD;
-    const cityNormalized = (data.address.city || "").trim().toLowerCase();
-    if (cityNormalized) {
-      const zc = await prisma.shippingZoneCity.findUnique({
-        where: { cityNormalized },
-        include: {
-          shippingZone: {
-            select: { cost: true, freeThreshold: true, isActive: true },
-          },
-        },
-      });
-      if (zc?.shippingZone?.isActive) {
-        zoneCost = Number(zc.shippingZone.cost);
-        zoneThreshold = zc.shippingZone.freeThreshold
-          ? Number(zc.shippingZone.freeThreshold)
-          : zoneCost;
-      }
-    }
-
-    const sellerAllFree = new Map<number, boolean>();
-    let allItemsFreeShipping = true;
-    for (const [sid, sellerItems] of itemsBySeller) {
-      const isFree = sellerItems.every((i) => i.productFreeShipping);
-      sellerAllFree.set(sid, isFree);
-      if (!isFree) allItemsFreeShipping = false;
-    }
-
-    const serverShipping =
-      allItemsFreeShipping || serverSubtotal >= zoneThreshold ? 0 : zoneCost;
-
-    // ═══ 5. جلب بيانات التجار ═══
+   // ═══ 5. جلب بيانات التجار (مع المدينة) ═══
     const sellerIds = Array.from(itemsBySeller.keys());
     const sellersData = await prisma.seller.findMany({
       where: { id: { in: sellerIds } },
-      select: { id: true, userId: true, storeName: true },
+      select: { id: true, userId: true, storeName: true, city: true },
     });
     const sellerMap = new Map(sellersData.map((s) => [s.id, s]));
 
-    // ═══ 6. توزيع الشحن (Largest Remainder) ═══
+    // ═══ 6. حساب الشحن لكل تاجر (20 داخل المدينة / 35 خارجها / مجاني >= 300) ═══
     const shippingBySeller = new Map<number, number>();
-    for (const sellerId of itemsBySeller.keys()) {
-      shippingBySeller.set(sellerId, 0);
-    }
+    let serverShipping = 0;
+    const customerCityNormalized = (data.address.city || "").trim().toLowerCase();
+    const FREE_SHIPPING_THRESHOLD = 300;
 
-    if (serverShipping > 0 && serverSubtotal > 0) {
-      const paidSellers = Array.from(itemsBySeller.entries())
-        .filter(([sid]) => !sellerAllFree.get(sid))
-        .map(([sid, sItems]) => ({
-          sellerId: sid,
-          subtotal: sItems.reduce((s, i) => s + i.lineTotal, 0),
-        }));
-      const paidSubtotal = paidSellers.reduce((s, p) => s + p.subtotal, 0);
+    for (const [sellerId, sellerItems] of itemsBySeller) {
+      const sellerSubtotal = sellerItems.reduce((s, i) => s + i.lineTotal, 0);
+      const sellerCityNormalized = (sellerMap.get(sellerId)?.city || "").trim().toLowerCase();
+      
+      const isSameCity = customerCityNormalized !== "" && sellerCityNormalized === customerCityNormalized;
+      const baseShipping = isSameCity ? 20 : 35;
+      const isAllFree = sellerItems.every((i) => i.productFreeShipping);
 
-      if (paidSubtotal > 0) {
-        type Share = {
-          sellerId: number;
-          amountCents: number;
-          remainder: number;
-        };
-        const shares: Share[] = [];
-        let sumFloors = 0;
-
-        for (const ps of paidSellers) {
-          const ratio = ps.subtotal / paidSubtotal;
-          const exactCents = serverShipping * ratio * 100;
-          const floorCents = Math.floor(exactCents);
-          const remainder = exactCents - floorCents;
-
-          shares.push({
-            sellerId: ps.sellerId,
-            amountCents: floorCents,
-            remainder,
-          });
-          sumFloors += floorCents;
-        }
-
-        const totalCents = Math.round(serverShipping * 100);
-        let leftoverCents = totalCents - sumFloors;
-
-        shares.sort((a, b) => b.remainder - a.remainder);
-
-        let i = 0;
-        while (leftoverCents > 0) {
-          shares[i % shares.length].amountCents += 1;
-          leftoverCents -= 1;
-          i++;
-        }
-
-        for (const s of shares) {
-          shippingBySeller.set(s.sellerId, s.amountCents / 100);
-        }
+      let currentSellerShipping = 0;
+      // إذا لم يكن هناك شحن مجاني للمنتج، والمبلغ أقل من 300، نضيف الشحن
+      if (!isAllFree && sellerSubtotal < FREE_SHIPPING_THRESHOLD) {
+        currentSellerShipping = baseShipping;
       }
+      
+      shippingBySeller.set(sellerId, currentSellerShipping);
+      serverShipping += currentSellerShipping;
     }
 
     // ═══ 7. تحديد طلب الكوبون (الأكبر) ═══
