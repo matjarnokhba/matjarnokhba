@@ -521,6 +521,7 @@ model Seller {
   storeSales           StoreSale[]
   walletTransactions   WalletTransaction[]
   withdrawalRequests   WithdrawalRequest[]
+  subscriptionLogs     SubscriptionLog[]
 
   @@index([status])
   @@index([deletedAt])
@@ -2332,4 +2333,22 @@ model WithdrawalRequest {
 
   @@index([sellerId])
   @@index([status])
+}
+
+// ═══════════════════════════════════════════
+// Subscription Logs (سجل الاشتراكات)
+// ═══════════════════════════════════════════
+
+model SubscriptionLog {
+  id        Int      @id @default(autoincrement())
+  sellerId  Int
+  plan      String // MONTHLY, YEARLY
+  amount    Decimal  @db.Decimal(10, 2)
+  startsAt  DateTime
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
 }

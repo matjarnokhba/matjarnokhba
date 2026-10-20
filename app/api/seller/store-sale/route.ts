@@ -25,6 +25,25 @@ export async function POST(request: Request) {
     }
 
     const sellerId = current.user.seller.id;
+    
+    // ═══ التحقق من صلاحية الاشتراك ═══
+    const seller = await prisma.seller.findUnique({
+      where: { id: sellerId },
+      select: { subscriptionStatus: true, subscriptionEndsAt: true }
+    });
+
+    if (!seller) {
+      return NextResponse.json({ success: false, message: "التاجر غير موجود" }, { status: 404 });
+    }
+
+    const isExpired = seller.subscriptionEndsAt && new Date(seller.subscriptionEndsAt) < new Date();
+    if (isExpired || seller.subscriptionStatus === "EXPIRED") {
+      return NextResponse.json(
+        { success: false, message: "اشتراك نظام البيع في المحل قد انتهى. يرجى التجديد من صفحة الاشتراك." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const parsed = schema.safeParse(body);
 

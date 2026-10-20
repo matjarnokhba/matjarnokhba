@@ -103,6 +103,10 @@ export async function POST(request: Request) {
         },
       });
 
+      // ═══ منح شهر تجريبي مجاني (30 يوم) ═══
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+
       const seller = await tx.seller.create({
         data: {
           userId: user.id,
@@ -111,6 +115,8 @@ export async function POST(request: Request) {
           city: city?.trim() || null,
           region: region?.trim() || null,
           status: "PENDING",
+          subscriptionStatus: "TRIAL",
+          subscriptionEndsAt: trialEndsAt,
         },
       });
 

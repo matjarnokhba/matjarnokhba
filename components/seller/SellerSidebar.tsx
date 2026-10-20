@@ -21,6 +21,7 @@ import {
   QrCode,
   ScanLine,
   RotateCcw,
+  BadgeCheck,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -39,7 +40,8 @@ const NAV_ITEMS = [
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
-  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false },
+  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact:false },
+  { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false },
   { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false },
   { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false },
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false },
