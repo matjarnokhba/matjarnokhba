@@ -6,6 +6,7 @@ import { LoyaltyService } from "@/services/loyalty.service";
 // الثوابت
 // ═══════════════════════════════════════════
 const RETURN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 أيام
+const RETURN_FEE = 15; // رسوم الإرجاع
 
 // ═══════════════════════════════════════════
 // الأنواع
@@ -13,6 +14,7 @@ const RETURN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 أيام
 type CreateReturnInput = {
   orderId: number;
   reason: string;
+  refundMethod: string;
   items: { orderItemId: number; quantity: number }[];
 };
 
@@ -124,6 +126,7 @@ export const ReturnService = {
           userId,
           status: "PENDING",
           reason: data.reason.trim(),
+          refundMethod: data.refundMethod || "WALLET",
         },
       });
 
@@ -389,8 +392,81 @@ export const ReturnService = {
         addShipping = Number(ret.order.shippingCost);
       }
 
+      const totalOrderRefund = thisReturnSum + addShipping;
+      
+      // ═══ خصم رسوم الإرجاع (15 درهم) ═══
+      const customerRefundAmount = Math.max(0, totalOrderRefund - RETURN_FEE);
+
+      // ═══ توزيع المبلغ حسب اختيار الزبون ═══
+      if (customerRefundAmount > 0) {
+        if (ret.refundMethod === "COUPON") {
+          const crypto = await import("crypto");
+          const code = `REF-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+          await tx.coupon.create({
+            data: {
+              code,
+              type: "FIXED",
+              value: customerRefundAmount,
+              maxUses: 1,
+              maxUsesPerUser: 1,
+              startDate: new Date(),
+              endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+              isActive: true,
+            }
+          });
+          await tx.notification.create({
+            data: {
+              userId: ret.userId,
+              type: "RETURN_COMPLETED",
+              title: "تم إصدار قسيمة شراء",
+              message: `تم إصدار قسيمة شراء بقيمة ${customerRefundAmount.toFixed(2)} د.م (بعد خصم رسوم الإرجاع). الكود: ${code}`,
+              link: "/profile/coupons",
+              category: "ORDER",
+              severity: "INFO",
+            }
+          });
+        } else if (ret.refundMethod === "BANK") {
+          await tx.notification.create({
+            data: {
+              userId: ret.userId,
+              type: "RETURN_COMPLETED",
+              title: "تحويل بنكي قيد المعالجة",
+              message: `تمت الموافقة على إرجاع طلبك. سيتم تحويل ${customerRefundAmount.toFixed(2)} د.م إلى حسابك البنكي قريباً (بعد خصم رسوم الإرجاع).`,
+              link: "/orders/" + ret.orderId,
+              category: "ORDER",
+              severity: "INFO",
+            }
+          });
+        } else {
+          // الافتراضي: محفظة
+          await tx.user.update({
+            where: { id: ret.userId },
+            data: { walletBalance: { increment: customerRefundAmount } }
+          });
+          await tx.customerWalletTransaction.create({
+            data: {
+              userId: ret.userId,
+              amount: customerRefundAmount,
+              type: "REFUND",
+              description: `استرداد مبلغ طلب #${ret.order.orderNumber} (بعد خصم 15 د.م رسوم إرجاع)`
+            }
+          });
+          await tx.notification.create({
+            data: {
+              userId: ret.userId,
+              type: "RETURN_COMPLETED",
+              title: "تم استرداد المبلغ لمحفظتك",
+              message: `تم إضافة ${customerRefundAmount.toFixed(2)} د.م إلى محفظتك (بعد خصم رسوم الإرجاع).`,
+              link: "/profile",
+              category: "ORDER",
+              severity: "INFO",
+            }
+          });
+        }
+      }
+
       const newRefundedAmount =
-        Number(ret.order.refundedAmount) + thisReturnSum + addShipping;
+        Number(ret.order.refundedAmount) + totalOrderRefund;
 
       // 9. حماية: لا يتجاوز الإجمالي
       if (newRefundedAmount > Number(ret.order.total)) {

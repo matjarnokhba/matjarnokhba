@@ -6,6 +6,7 @@ import { ReturnService } from "@/services/return.service";
 const createSchema = z.object({
   orderId: z.number().int().positive(),
   reason: z.string().trim().min(5, "سبب الإرجاع يجب أن يكون 5 أحرف على الأقل").max(500),
+  refundMethod: z.enum(["WALLET", "COUPON", "BANK"]).default("WALLET"),
   items: z
     .array(
       z.object({

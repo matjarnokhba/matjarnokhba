@@ -239,6 +239,7 @@ enum ReturnStatus {
 
 /// نوع الإشعار
 enum NotificationType {
+  RETURN_COMPLETED
   ORDER_CREATED
   ORDER_STATUS_CHANGED
   PAYMENT_RECEIVED
@@ -354,6 +355,8 @@ model User {
   notifications       Notification[]
   auditLogs           AuditLog[]
   loyaltyAccount      LoyaltyAccount?
+  walletBalance       Decimal                     @default(0) @db.Decimal(12, 2)
+  walletTransactions  CustomerWalletTransaction[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   assemblyFile        AssemblyFile?
@@ -1014,6 +1017,7 @@ model ReturnRequest {
   userId        Int
   status        ReturnStatus @default(PENDING)
   reason        String
+  refundMethod  String? // WALLET, COUPON, BANK
   adminNote     String?
   requestedAt   DateTime     @default(now())
   processedAt   DateTime?
@@ -2351,4 +2355,17 @@ model SubscriptionLog {
   seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@index([sellerId])
+}
+
+model CustomerWalletTransaction {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  amount      Decimal  @db.Decimal(12, 2)
+  type        String
+  description String
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
