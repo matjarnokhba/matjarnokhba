@@ -11,8 +11,19 @@ export const WalletService = {
 
     if (!seller) return;
 
-    // نسبة العمولة: 10% افتراضياً، أو النسبة المخصصة لكل تاجر
-    const rate = seller.commissionRateOverride ? Number(seller.commissionRateOverride) : 0.10;
+    // ═══ جلب نسبة العمولة الافتراضية من إعدادات الأدمن ═══
+    const policy = await tx.systemPolicy.findUnique({
+      where: { key: "DEFAULT_COMMISSION_RATE" }
+    });
+    
+    // إذا لم تكن محددة، نستخدم 10% كافتراضي
+    const defaultRate = typeof policy?.value === "number" ? policy.value : 0.10;
+    
+    // نسبة العمولة: النسبة المخصصة لكل تاجر، أو النسبة العامة
+    const rate = seller.commissionRateOverride 
+      ? Number(seller.commissionRateOverride) 
+      : defaultRate;
+
     const commissionAmount = Math.round(orderTotal * rate * 100) / 100;
     const netEarning = Math.round((orderTotal - commissionAmount) * 100) / 100;
 
