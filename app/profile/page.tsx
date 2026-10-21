@@ -32,7 +32,8 @@ type UserData = {
   email: string;
   phone: string | null;
   role: string;
-  emailVerified: boolean; // تمت الإضافة
+  emailVerified: boolean;
+  walletBalance: number;
 };
 
 type OrderStats = {
@@ -183,7 +184,18 @@ export default function ProfilePage() {
 
       {/* ═══════ Quick Stats (Floating) ═══════ */}
       <div className="-mt-14 px-4">
-        <div className="mx-auto grid max-w-3xl grid-cols-3 gap-3">
+        <div className="mx-auto grid max-w-3xl grid-cols-2 sm:grid-cols-4 gap-3">
+          <Link
+            href="/profile/wallet"
+            className="rounded-2xl bg-white p-4 text-center shadow-md transition hover:shadow-lg"
+          >
+            <div className="text-2xl font-black text-green-600">
+              {user.walletBalance?.toFixed(2) || "0.00"}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-gray-500">
+              رصيد المحفظة (د.م)
+            </div>
+          </Link>
           <Link
             href="/orders"
             className="rounded-2xl bg-white p-4 text-center shadow-md transition hover:shadow-lg"
