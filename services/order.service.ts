@@ -204,16 +204,12 @@ export const OrderService = {
 
     for (const [sellerId, sellerItems] of itemsBySeller) {
       const sellerSubtotal = sellerItems.reduce((s, i) => s + i.lineTotal, 0);
-      const sellerCityNormalized = (sellerMap.get(sellerId)?.city || "").trim().toLowerCase();
-      
-      const isSameCity = customerCityNormalized !== "" && sellerCityNormalized === customerCityNormalized;
-      const baseShipping = isSameCity ? 20 : 35;
       const isAllFree = sellerItems.every((i) => i.productFreeShipping);
 
       let currentSellerShipping = 0;
-      // إذا لم يكن هناك شحن مجاني للمنتج، والمبلغ أقل من 300، نضيف الشحن
+      // إذا لم يكن هناك شحن مجاني للمنتج، والمبلغ أقل من 300، نضيف الشحن (20 درهم)
       if (!isAllFree && (!isFreeShippingEnabled || sellerSubtotal < FREE_SHIPPING_THRESHOLD)) {
-        currentSellerShipping = baseShipping;
+        currentSellerShipping = 20;
       }
       
       shippingBySeller.set(sellerId, currentSellerShipping);

@@ -66,7 +66,6 @@ export async function POST(request: Request) {
       sellerTotals.set(sellerId, existing);
     }
 
-    const customerCity = city.trim().toLowerCase();
     let totalShipping = 0;
 
     for (const [, sellerData] of sellerTotals) {
@@ -75,10 +74,8 @@ export async function POST(request: Request) {
         continue;
       }
       
-      const sellerCity = sellerData.sellerCity.trim().toLowerCase();
-      const isSameCity = customerCity !== "" && sellerCity === customerCity;
-      
-      totalShipping += isSameCity ? 20 : 35;
+      // نجعلها 20 درهماً افتراضياً كما طلبت
+      totalShipping += 20;
     }
 
     return NextResponse.json({

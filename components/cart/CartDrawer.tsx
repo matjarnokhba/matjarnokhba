@@ -166,20 +166,14 @@ export default function CartDrawer({
                 </div>
                 <div className="flex justify-between text-[#6b7280]">
                   <span>الشحن</span>
-                  <span
-                    className={
-                      shipping === 0
-                        ? "font-bold text-green-600"
-                        : "font-bold text-[#111827]"
-                    }
-                  >
-                    {shipping === 0 ? "مجاني" : `${shipping} ${CURRENCY}`}
+                  <span className="font-bold text-[#111827]">
+                    يُحسب في صفحة الدفع
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 text-sm">
-                  <span className="font-bold">الإجمالي</span>
+                  <span className="font-bold">الإجمالي (بدون شحن)</span>
                   <span className="text-lg font-black text-[#ff5c00]">
-                    {total.toFixed(2)} {CURRENCY}
+                    {subtotal.toFixed(2)} {CURRENCY}
                   </span>
                 </div>
               </div>
