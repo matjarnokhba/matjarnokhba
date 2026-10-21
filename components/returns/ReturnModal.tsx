@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Loader2, Package, AlertCircle } from "lucide-react";
+import { X, Loader2, Package, AlertCircle, Wallet, Ticket, Building2 } from "lucide-react";
 
 type ReturnableItem = {
   orderItemId: number;
@@ -27,6 +27,7 @@ export default function ReturnModal({
   const [items, setItems] = useState<ReturnableItem[]>([]);
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [reason, setReason] = useState("");
+  const [refundMethod, setRefundMethod] = useState<"WALLET" | "COUPON" | "BANK">("WALLET");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -91,6 +92,7 @@ export default function ReturnModal({
         body: JSON.stringify({
           orderId,
           reason: reason.trim(),
+          refundMethod,
           items: selectedItems,
         }),
       });
@@ -141,6 +143,12 @@ export default function ReturnModal({
             </div>
           ) : (
             <>
+              {/* تنبيه رسوم الإرجاع */}
+              <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>يرجى العلم أنه سيتم خصم <strong>15 درهماً</strong> كرسوم إرجاع من المبلغ الإجمالي المسترد.</p>
+              </div>
+
               {/* قائمة المنتجات */}
               <div className="mb-4">
                 <div className="mb-2 text-xs font-bold text-gray-700">
@@ -209,6 +217,41 @@ export default function ReturnModal({
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* طريقة الاسترداد */}
+              <div className="mb-4">
+                <label className="mb-2 block text-xs font-bold text-gray-700">
+                  كيف تفضل استرداد المبلغ؟ (بعد خصم الرسوم)
+                </label>
+                <div className="space-y-2">
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${refundMethod === "WALLET" ? "border-[#ff5c00] bg-[#fff4ed]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name="refundMethod" value="WALLET" checked={refundMethod === "WALLET"} onChange={() => setRefundMethod("WALLET")} className="hidden" />
+                    <Wallet className={`h-5 w-5 ${refundMethod === "WALLET" ? "text-[#ff5c00]" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">رصيد في محفظتي</div>
+                      <div className="text-[10px] text-gray-500">إضافة فورية لرصيدك في المتجر</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${refundMethod === "COUPON" ? "border-[#ff5c00] bg-[#fff4ed]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name="refundMethod" value="COUPON" checked={refundMethod === "COUPON"} onChange={() => setRefundMethod("COUPON")} className="hidden" />
+                    <Ticket className={`h-5 w-5 ${refundMethod === "COUPON" ? "text-[#ff5c00]" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">قسيمة شراء (كوبون)</div>
+                      <div className="text-[10px] text-gray-500">بدون قيود، صالحة لمدة سنة</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${refundMethod === "BANK" ? "border-[#ff5c00] bg-[#fff4ed]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name="refundMethod" value="BANK" checked={refundMethod === "BANK"} onChange={() => setRefundMethod("BANK")} className="hidden" />
+                    <Building2 className={`h-5 w-5 ${refundMethod === "BANK" ? "text-[#ff5c00]" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">تحويل بنكي (وافاكاش / بنك)</div>
+                      <div className="text-[10px] text-gray-500">تتحمل رسوم التحويل البنكي</div>
+                    </div>
+                  </label>
                 </div>
               </div>
 

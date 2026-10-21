@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 
 export async function GET() {
   try {
     // 1. اقرأ الجلسة الحالية
     const current = await SessionService.getCurrent();
+    if (current) {
+      // نجلب الرصيد بشكل منفصل لضمان ظهوره
+      const userWithWallet = await prisma.user.findUnique({
+        where: { id: current.user.id },
+        select: { walletBalance: true }
+      });
+      if (userWithWallet) {
+        (current.user as any).walletBalance = userWithWallet.walletBalance;
+      }
+    }
 
     // 2. إذا لا جلسة → 401
     if (!current) {
@@ -27,6 +38,7 @@ export async function GET() {
         phone: current.user.phone,
         role: current.user.role,
         emailVerified: current.user.emailVerified,
+        walletBalance: Number((current.user as any).walletBalance || 0),
       },
     });
   } catch (error) {
