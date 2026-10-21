@@ -26,6 +26,7 @@ import {
   PackageCheck,
   MapPin,
   Settings,
+  Wallet,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -51,6 +52,7 @@ const NAV_ITEMS = [
   { href: "/admin/shipments", label: "الشحنات", icon: Truck, exact: false},
   { href: "/admin/delivery-persons", label: "أصحاب التوصيل", icon: Truck,exact: false },
   { href: "/admin/settings/shipping", label: "إعدادات الشحن", icon: Settings, exact: false },
+  { href: "/admin/withdrawals", label: "السحوبات والمحافظ", icon: Wallet, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
   { href: "/admin/returns", label: "الإرجاع", icon: RotateCcw, exact: false },
   { href: "/admin/coupons", label: "الكوبونات", icon: Ticket, exact: false },
