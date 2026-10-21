@@ -19,6 +19,8 @@ import {
   ShieldX,
   AlertTriangle,
   ExternalLink,
+  Percent,
+  Save,
 } from "lucide-react";
 
 type Seller = {
@@ -36,6 +38,7 @@ type Seller = {
   avgRating: string;
   totalOrders: number;
   totalRevenue: string;
+  commissionRateOverride: string | null;
   user: {
     id: number;
     name: string;
@@ -112,6 +115,42 @@ export default function AdminSellerDetailPage() {
     if (sellerId) loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sellerId]);
+
+  const [commissionRate, setCommissionRate] = useState("");
+  const [savingComm, setSavingComm] = useState(false);
+
+  useEffect(() => {
+    if (seller) {
+      setCommissionRate(
+        seller.commissionRateOverride 
+          ? (Number(seller.commissionRateOverride) * 100).toString() 
+          : ""
+      );
+    }
+  }, [seller]);
+
+  async function handleSaveCommission() {
+    setSavingComm(true);
+    try {
+      const rateValue = commissionRate.trim() === "" ? null : Number(commissionRate) / 100;
+      const res = await fetch(`/api/admin/sellers/${sellerId}/commission`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rate: rateValue }),
+      });
+      if (res.ok) {
+        alert("تم تحديث نسبة العمولة بنجاح");
+        loadData();
+      } else {
+        const d = await res.json();
+        alert(d.message || "حدث خطأ");
+      }
+    } catch {
+      alert("فشل الاتصال");
+    } finally {
+      setSavingComm(false);
+    }
+  }
 
   async function handleAction(
     action: "approve" | "suspend" | "activate" | "close" | "verify"
@@ -289,6 +328,40 @@ export default function AdminSellerDetailPage() {
           </p>
         </div>
       )}
+
+      {/* ═══ إعدادات العمولة ═══ */}
+      <div className="mt-4 rounded-xl bg-white p-5 shadow-sm border border-orange-100">
+        <h2 className="mb-3 text-sm font-black flex items-center gap-2">
+          <Percent className="h-4 w-4 text-[#ff5c00]" />
+          إعدادات العمولة الخاصة
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          اترك الحقل فارغاً لاستخدام النسبة الافتراضية للمتجر. أو أدخل نسبة مخصصة لهذا التاجر.
+        </p>
+        <div className="flex items-end gap-2 max-w-sm">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-bold text-gray-700">نسبة العمولة (%)</label>
+            <input
+              type="number"
+              value={commissionRate}
+              onChange={(e) => setCommissionRate(e.target.value)}
+              placeholder="النسبة الافتراضية (مثلاً 10)"
+              min="0"
+              max="100"
+              step="0.1"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+            />
+          </div>
+          <button
+            onClick={handleSaveCommission}
+            disabled={savingComm}
+            className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50 h-[38px]"
+          >
+            {savingComm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            حفظ
+          </button>
+        </div>
+      </div>
 
       {/* ═══ الإجراءات ═══ */}
       <div className="mt-4 rounded-xl bg-white p-5 shadow-sm">
