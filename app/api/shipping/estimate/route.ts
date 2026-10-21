@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// سيتم قراءتها من قاعدة البيانات لاحقاً، وسنضعها false كافتراضي
+const isFreeShippingEnabled = false;
 const FREE_SHIPPING_THRESHOLD = 300;
 
 type EstimateItem = { variantId: number; quantity: number };

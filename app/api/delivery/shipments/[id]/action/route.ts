@@ -37,18 +37,10 @@ class ShipmentAlreadyProcessedError extends Error {
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("delivered") }),
-  z.object({
-    action: z.literal("postponed"),
-    reason: z.string().trim().min(3).max(500),
-  }),
-  z.object({
-    action: z.literal("refused"),
-    reason: z.string().trim().min(3).max(500),
-  }),
-  z.object({
-    action: z.literal("returned"),
-    reason: z.string().trim().min(3).max(500),
-  }),
+  z.object({ action: z.literal("picked_up") }), // <--- إضافة إجراء التحميل
+  z.object({ action: z.literal("postponed"), reason: z.string().trim().min(3).max(500) }),
+  z.object({ action: z.literal("refused"), reason: z.string().trim().min(3).max(500) }),
+  z.object({ action: z.literal("returned"), reason: z.string().trim().min(3).max(500) }),
 ]);export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -136,7 +128,13 @@ const actionSchema = z.discriminatedUnion("action", [
 
     await prisma.$transaction(
       async (tx) => {
-        if (data.action === "delivered") {
+        if (data.action === "picked_up") {
+          const statusUpdated = await tx.shipment.updateMany({
+            where: { id: shipmentId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } },
+            data: { status: "OUT_FOR_DELIVERY" },
+          });
+          if (statusUpdated.count === 0) throw new ShipmentAlreadyProcessedError();
+        } else if (data.action === "delivered") {
           const statusUpdated = await tx.shipment.updateMany({
             where: {
               id: shipmentId,

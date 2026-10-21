@@ -5,7 +5,8 @@ import { FulfillmentService } from "@/services/fulfillment.service";
 import { getColorHex } from "@/lib/address-colors";
 
 const SHIPPING_FEE = 30;
-const FREE_SHIPPING_THRESHOLD = 300;
+const isFreeShippingEnabled = false; // يُقرأ من إعدادات الأدمن لاحقاً
+    const FREE_SHIPPING_THRESHOLD = 300;
 const TRANSACTION_TIMEOUT_MS = 20000;
 
 type OrderItemInput = {
@@ -198,6 +199,7 @@ export const OrderService = {
     const shippingBySeller = new Map<number, number>();
     let serverShipping = 0;
     const customerCityNormalized = (data.address.city || "").trim().toLowerCase();
+    const isFreeShippingEnabled = false; // يُقرأ من إعدادات الأدمن لاحقاً
     const FREE_SHIPPING_THRESHOLD = 300;
 
     for (const [sellerId, sellerItems] of itemsBySeller) {
@@ -210,7 +212,7 @@ export const OrderService = {
 
       let currentSellerShipping = 0;
       // إذا لم يكن هناك شحن مجاني للمنتج، والمبلغ أقل من 300، نضيف الشحن
-      if (!isAllFree && sellerSubtotal < FREE_SHIPPING_THRESHOLD) {
+      if (!isAllFree && (!isFreeShippingEnabled || sellerSubtotal < FREE_SHIPPING_THRESHOLD)) {
         currentSellerShipping = baseShipping;
       }
       
