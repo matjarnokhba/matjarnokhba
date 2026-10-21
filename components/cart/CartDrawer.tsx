@@ -2,13 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, ShoppingBag, ArrowLeft, Truck } from "lucide-react";
+import { X, ShoppingBag, ArrowLeft } from "lucide-react";
 import CartItemRow from "./CartItemRow";
-import {
-  CURRENCY,
-  SHIPPING_FEE,
-  FREE_SHIPPING_THRESHOLD,
-} from "@/lib/data/products";
+import { CURRENCY } from "@/lib/data/products";
 import type { CartItemV2 } from "@/lib/hooks/useCart";
 
 type CartDrawerProps = {
@@ -48,16 +44,6 @@ export default function CartDrawer({
     if (isOpen) window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [isOpen, onClose]);
-
-  const shipping =
-    subtotal > 0 && subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
-  const total = subtotal + shipping;
-
-  const remainingForFree = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
-  const freeShippingPercent =
-    subtotal >= FREE_SHIPPING_THRESHOLD
-      ? 100
-      : Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
 
   function handleCheckout() {
     onClose();
@@ -118,31 +104,6 @@ export default function CartDrawer({
           </div>
         ) : (
           <>
-            <div className="border-b border-gray-100 bg-[#fff9f5] px-4 py-2.5">
-              <div className="flex items-center gap-2 text-[11px]">
-                <Truck className="h-3.5 w-3.5 shrink-0 text-[#ff5c00]" />
-                {subtotal >= FREE_SHIPPING_THRESHOLD ? (
-                  <span className="font-bold text-green-600">
-                    🎉 مبروك! حصلت على شحن مجاني
-                  </span>
-                ) : (
-                  <span className="text-[#4b5563]">
-                    أضف{" "}
-                    <strong className="text-[#ff5c00]">
-                      {remainingForFree} {CURRENCY}
-                    </strong>{" "}
-                    للحصول على شحن مجاني
-                  </span>
-                )}
-              </div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-gray-200">
-                <div
-                  className="h-full bg-gradient-to-l from-[#ff5c00] to-[#ff8a3d] transition-all duration-500"
-                  style={{ width: `${freeShippingPercent}%` }}
-                />
-              </div>
-            </div>
-
             <div className="flex-1 overflow-y-auto px-4">
               {items.map((item) => (
                 <CartItemRow
