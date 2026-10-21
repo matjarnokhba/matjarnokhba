@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// سيتم قراءتها من قاعدة البيانات لاحقاً، وسنضعها false كافتراضي
-const isFreeShippingEnabled = false;
-const FREE_SHIPPING_THRESHOLD = 300;
-
 type EstimateItem = { variantId: number; quantity: number };
 type EstimateBody = { city?: string; items: EstimateItem[] };
 
@@ -15,16 +11,20 @@ export async function POST(request: Request) {
     const items = Array.isArray(body.items) ? body.items : [];
 
     if (items.length === 0) {
-      return NextResponse.json(
-        { success: false, message: "السلة فارغة" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, message: "السلة فارغة" }, { status: 400 });
     }
 
     const variantIds = items.map((i) => i.variantId).filter((id) => typeof id === "number");
     if (variantIds.length === 0) {
       return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
     }
+
+    // ═══ قراءة إعدادات الشحن من قاعدة البيانات ═══
+    const policies = await prisma.systemPolicy.findMany({
+      where: { key: { in: ["FREE_SHIPPING_ENABLED", "FREE_SHIPPING_THRESHOLD"] } }
+    });
+    const isFreeShippingEnabled = policies.find(p => p.key === "FREE_SHIPPING_ENABLED")?.value === true;
+    const freeShippingThreshold = Number(policies.find(p => p.key === "FREE_SHIPPING_THRESHOLD")?.value) || 300;
 
     const variants = await prisma.productVariant.findMany({
       where: { id: { in: variantIds }, isActive: true },
@@ -45,9 +45,7 @@ export async function POST(request: Request) {
 
     const variantMap = new Map(variants.map((v) => [v.id, v]));
     let subtotal = 0;
-    
-    // تجميع المبالغ حسب التاجر
-    const sellerTotals = new Map<number, { subtotal: number; isAllFree: boolean; sellerCity: string }>();
+    const sellerTotals = new Map<number, { subtotal: number; isAllFree: boolean }>();
 
     for (const item of items) {
       const v = variantMap.get(item.variantId);
@@ -58,23 +56,21 @@ export async function POST(request: Request) {
       subtotal += lineTotal;
 
       const sellerId = v.product.sellerId;
-      const existing = sellerTotals.get(sellerId) || { subtotal: 0, isAllFree: true, sellerCity: v.product.seller?.city || "" };
-      
+      const existing = sellerTotals.get(sellerId) || { subtotal: 0, isAllFree: true };
       existing.subtotal += lineTotal;
       if (!v.product.freeShipping) existing.isAllFree = false;
-      
       sellerTotals.set(sellerId, existing);
     }
 
     let totalShipping = 0;
 
     for (const [, sellerData] of sellerTotals) {
-      // إذا كان كل منتجات التاجر شحن مجاني، أو تجاوز الإجمالي 300، الشحن مجاني
-      if (sellerData.isAllFree || sellerData.subtotal >= FREE_SHIPPING_THRESHOLD) {
-        continue;
-      }
-      
-      // نجعلها 20 درهماً افتراضياً كما طلبت
+      if (sellerData.isAllFree) continue;
+
+      // إذا كان الشحن المجاني مفعلاً، وكان الإجمالي تجاوز السقف، لا نضيف شحن
+      if (isFreeShippingEnabled && subtotal >= freeShippingThreshold) continue;
+
+      // خلاف ذلك نضيف 20 درهماً
       totalShipping += 20;
     }
 

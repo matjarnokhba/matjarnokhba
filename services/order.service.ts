@@ -195,21 +195,23 @@ export const OrderService = {
     });
     const sellerMap = new Map(sellersData.map((s) => [s.id, s]));
 
-    // ═══ 6. حساب الشحن لكل تاجر (20 داخل المدينة / 35 خارجها / مجاني >= 300) ═══
+    // ═══ 6. حساب الشحن بناءً على إعدادات الأدمن ═══
+    const policies = await prisma.systemPolicy.findMany({
+      where: { key: { in: ["FREE_SHIPPING_ENABLED", "FREE_SHIPPING_THRESHOLD"] } }
+    });
+    const isFreeShippingEnabled = policies.find(p => p.key === "FREE_SHIPPING_ENABLED")?.value === true;
+    const FREE_SHIPPING_THRESHOLD = Number(policies.find(p => p.key === "FREE_SHIPPING_THRESHOLD")?.value) || 300;
+
     const shippingBySeller = new Map<number, number>();
     let serverShipping = 0;
-    const customerCityNormalized = (data.address.city || "").trim().toLowerCase();
-    const isFreeShippingEnabled = false; // يُقرأ من إعدادات الأدمن لاحقاً
-    const FREE_SHIPPING_THRESHOLD = 300;
 
     for (const [sellerId, sellerItems] of itemsBySeller) {
       const sellerSubtotal = sellerItems.reduce((s, i) => s + i.lineTotal, 0);
       const isAllFree = sellerItems.every((i) => i.productFreeShipping);
 
       let currentSellerShipping = 0;
-      // إذا لم يكن هناك شحن مجاني للمنتج، والمبلغ أقل من 300، نضيف الشحن (20 درهم)
       if (!isAllFree && (!isFreeShippingEnabled || sellerSubtotal < FREE_SHIPPING_THRESHOLD)) {
-        currentSellerShipping = 20;
+        currentSellerShipping = 20; // نثبتها 20 كقاعدة أساسية
       }
       
       shippingBySeller.set(sellerId, currentSellerShipping);
