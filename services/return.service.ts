@@ -1,3 +1,4 @@
+import { WalletService } from "@/services/wallet.service";
 import { prisma } from "@/lib/prisma";
 import { InventoryService } from "@/services/inventory.service";
 import { LoyaltyService } from "@/services/loyalty.service";
@@ -394,8 +395,12 @@ export const ReturnService = {
 
       const totalOrderRefund = thisReturnSum + addShipping;
       
-      // ═══ خصم رسوم الإرجاع (15 درهم) ═══
-      const customerRefundAmount = Math.max(0, totalOrderRefund - RETURN_FEE);
+      // ═══ خصم رسوم الإرجاع (15 درهم) وتحويلها للمستودع ═══
+      let customerRefundAmount = totalOrderRefund;
+      if (totalOrderRefund > 0) {
+        await WalletService.processReturnFee(tx, returnId, ret.order.orderNumber);
+        customerRefundAmount = Math.max(0, totalOrderRefund - RETURN_FEE);
+      }
 
       // ═══ توزيع المبلغ حسب اختيار الزبون ═══
       if (customerRefundAmount > 0) {

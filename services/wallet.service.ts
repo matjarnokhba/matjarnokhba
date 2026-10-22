@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
+const DRIVER_FEE = 13; // أجر السائق لكل توصيل ناجح
+const PLATFORM_ID = 1; // معرف افتراضي لمحفظة المنصة
+const WAREHOUSE_ID = 1; // معرف افتراضي لمحفظة المستودع
+
 export const WalletService = {
-  // إضافة أرباح محجوزة عند التسليم
-  async addHeldEarning(tx: any, sellerId: number, orderId: number, orderTotal: number) {
+  // ═══ إضافة أرباح محجوزة للتاجر عند التسليم ═══
+  async addHeldEarning(tx: any, sellerId: number, orderId: number, orderTotal: number, orderSubtotal: number) {
     const seller = await tx.seller.findUnique({
       where: { id: sellerId },
       select: { commissionRateOverride: true, heldBalance: true },
@@ -11,20 +15,11 @@ export const WalletService = {
 
     if (!seller) return;
 
-    // ═══ جلب نسبة العمولة الافتراضية من إعدادات الأدمن ═══
-    const policy = await tx.systemPolicy.findUnique({
-      where: { key: "DEFAULT_COMMISSION_RATE" }
-    });
-    
-    // إذا لم تكن محددة، نستخدم 10% كافتراضي
+    const policy = await tx.systemPolicy.findUnique({ where: { key: "DEFAULT_COMMISSION_RATE" } });
     const defaultRate = typeof policy?.value === "number" ? policy.value : 0.10;
     
-    // نسبة العمولة: النسبة المخصصة لكل تاجر، أو النسبة العامة
-    const rate = seller.commissionRateOverride 
-      ? Number(seller.commissionRateOverride) 
-      : defaultRate;
-
-    const commissionAmount = Math.round(orderTotal * rate * 100) / 100;
+    const rate = seller.commissionRateOverride ? Number(seller.commissionRateOverride) : defaultRate;
+    const commissionAmount = Math.round(orderSubtotal * rate * 100) / 100;
     const netEarning = Math.round((orderTotal - commissionAmount) * 100) / 100;
 
     if (netEarning <= 0) return;
@@ -32,17 +27,15 @@ export const WalletService = {
     const beforeHeld = Number(seller.heldBalance);
     const afterHeld = beforeHeld + netEarning;
 
-    // 1. تحديث محفظة التاجر وإجمالياته
     await tx.seller.update({
       where: { id: sellerId },
       data: {
         heldBalance: { increment: netEarning },
-        totalRevenue: { increment: orderTotal },
+        totalRevenue: { increment: orderSubtotal },
         totalCommission: { increment: commissionAmount },
       },
     });
 
-    // 2. تسجيل الحركة في المحفظة
     await tx.walletTransaction.create({
       data: {
         sellerId,
@@ -53,5 +46,84 @@ export const WalletService = {
         description: `أرباح محجوزة (ضمان 3 أيام) من الطلب #${orderId} بعد خصم عمولة ${rate * 100}%`,
       },
     });
+
+    return { commissionAmount };
   },
+
+  // ═══ توزيع أرباح المنصة والمستودع والسائق عند التسليم ═══
+  async processDeliveryFinancials(tx: any, order: any, driverId: number, commissionAmount: number) {
+    // 1. إضافة عمولة المنصة (10%)
+    if (commissionAmount > 0) {
+      const platformWallet = await tx.wallet.upsert({
+        where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
+        create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: commissionAmount },
+        update: { balance: { increment: commissionAmount } }
+      });
+      await tx.walletTransactionUnified.create({
+        data: {
+          walletId: platformWallet.id,
+          amount: commissionAmount,
+          type: "COMMISSION",
+          description: `عمولة المنصة من الطلب #${order.orderNumber}`,
+          referenceId: String(order.id)
+        }
+      });
+    }
+
+    // 2. أجر السائق (13 درهم)
+    const driverWallet = await tx.wallet.upsert({
+      where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+      create: { ownerType: "DRIVER", ownerId: driverId, balance: DRIVER_FEE },
+      update: { balance: { increment: DRIVER_FEE } }
+    });
+    await tx.walletTransactionUnified.create({
+      data: {
+        walletId: driverWallet.id,
+        amount: DRIVER_FEE,
+        type: "EARNING",
+        description: `أجر توصيل الطلب #${order.orderNumber}`,
+        referenceId: String(order.id)
+      }
+    });
+
+    // 3. أرباح المستودع (فرق الشحن: سعر الشحن - 13 درهم)
+    const shippingCost = Number(order.shippingCost || 0);
+    const warehouseProfit = Math.max(0, shippingCost - DRIVER_FEE);
+    
+    if (warehouseProfit > 0) {
+      const warehouseWallet = await tx.wallet.upsert({
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
+        create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: warehouseProfit },
+        update: { balance: { increment: warehouseProfit } }
+      });
+      await tx.walletTransactionUnified.create({
+        data: {
+          walletId: warehouseWallet.id,
+          amount: warehouseProfit,
+          type: "SHIPPING_PROFIT",
+          description: `أرباح شحن من الطلب #${order.orderNumber}`,
+          referenceId: String(order.id)
+        }
+      });
+    }
+  },
+
+  // ═══ إضافة رسوم الإرجاع (15 درهم) لمحفظة المستودع ═══
+  async processReturnFee(tx: any, returnId: number, orderNumber: string) {
+    const RETURN_FEE = 15;
+    const warehouseWallet = await tx.wallet.upsert({
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
+      create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: RETURN_FEE },
+      update: { balance: { increment: RETURN_FEE } }
+    });
+    await tx.walletTransactionUnified.create({
+      data: {
+        walletId: warehouseWallet.id,
+        amount: RETURN_FEE,
+        type: "RETURN_FEE",
+        description: `رسوم إرجاع من الطلب #${orderNumber}`,
+        referenceId: String(returnId)
+      }
+    });
+  }
 };

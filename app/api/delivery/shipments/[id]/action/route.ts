@@ -209,15 +209,31 @@ const actionSchema = z.discriminatedUnion("action", [
           for (const orderId of orderIds) {
             const fresh = await tx.order.findUnique({
               where: { id: orderId },
-              select: { status: true, userId: true, total: true, sellerId: true },
+              select: { status: true, userId: true, total: true, subtotal: true, shippingCost: true, sellerId: true, orderNumber: true },
             });
             if (!fresh) continue;
             if (fresh.status !== "DELIVERED") continue;
 
             // ═══ إضافة الأرباح للمحفظة (محجوزة لمدة 3 أيام) ═══
+            let commissionAmount = 0;
             if (fresh.sellerId) {
-              await WalletService.addHeldEarning(tx, fresh.sellerId, orderId, Number(fresh.total));
+              const result = await WalletService.addHeldEarning(
+                tx, 
+                fresh.sellerId, 
+                orderId, 
+                Number(fresh.total), 
+                Number(fresh.subtotal) // نمرر المجموع الفرعي لحساب العمولة بدقة
+              );
+              if (result) commissionAmount = result.commissionAmount;
             }
+
+            // ═══ توزيع العمولة والخدمات اللوجستية ═══
+            await WalletService.processDeliveryFinancials(
+              tx, 
+              fresh, 
+              auth.person.id, 
+              commissionAmount
+            );
 
             try {
               const award = await LoyaltyService.awardForOrder(tx, {
