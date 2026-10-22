@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/delivery/scan", label: "الماسح", icon: ScanLine, exact: false },
   { href: "/delivery/cash-handover", label: "تسليم الكاش", icon: Wallet, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
+  { href: "/delivery/wallet", label: "محفظتي", icon: Wallet, exact: false },
 ];
 
 export default function DeliverySidebar({
