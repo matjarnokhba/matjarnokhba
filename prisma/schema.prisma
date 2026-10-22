@@ -2436,3 +2436,19 @@ model ShippingProvider {
   config    Json?
   createdAt DateTime @default(now())
 }
+
+// ═══ تسليم أجور السائقين (من المستودع للسائق) ═══
+model DriverPayout {
+  id          Int       @id @default(autoincrement())
+  driverId    Int
+  warehouseId Int
+  amount      Decimal   @db.Decimal(12, 2)
+  method      String    @default("CASH") // CASH, BANK
+  status      String    @default("PENDING") // PENDING, COMPLETED
+  payoutToken String    @unique
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([driverId])
+  @@index([status])
+}

@@ -13,6 +13,7 @@ import {
   X,
   ScanLine,
   Wallet,
+  Banknote,
 } from "lucide-react";
 
 type DeliverySidebarProps = {
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/delivery/shipments", label: "الشحنات", icon: Truck, exact: false },
   { href: "/delivery/scan", label: "الماسح", icon: ScanLine, exact: false },
   { href: "/delivery/cash-handover", label: "تسليم الكاش", icon: Wallet, exact: false },
+  { href: "/delivery/receive-payout", label: "استلام الأجر", icon: Banknote, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
   { href: "/delivery/wallet", label: "محفظتي", icon: Wallet, exact: false },
 ];
