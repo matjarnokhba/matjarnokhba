@@ -1646,6 +1646,7 @@ model DeliveryPerson {
   successfulDeliveries Int                  @default(0)
   failedDeliveries     Int                  @default(0)
   returnCount          Int                  @default(0)
+  weeklyDayOff         Int? // 0=الأحد، 1=الاثنين، ... 6=السبت
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   deletedAt            DateTime?
@@ -1659,6 +1660,7 @@ model DeliveryPerson {
   pickupReturns         ReturnShipment[]       @relation("ReturnPickupDriver")
   deliveryReturns       ReturnShipment[]       @relation("ReturnDeliveryDriver")
   deliveryZones         Zone[]                 @relation("DeliveryPersonZone")
+  daysOff               DriverDayOff[]
 
   @@index([status])
   @@index([city])
@@ -2462,4 +2464,18 @@ model AdminCashHandover {
   handoverToken String    @unique
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
+}
+
+// ═══ غيابات السائقين (المرض أو الطوارئ) ═══
+model DriverDayOff {
+  id        Int      @id @default(autoincrement())
+  driverId  Int
+  date      DateTime @db.Date
+  reason    String
+  createdAt DateTime @default(now())
+
+  driver DeliveryPerson @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, date])
+  @@index([date])
 }

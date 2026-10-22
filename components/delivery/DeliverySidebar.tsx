@@ -14,6 +14,7 @@ import {
   ScanLine,
   Wallet,
   Banknote,
+  CalendarDays,
 } from "lucide-react";
 
 type DeliverySidebarProps = {
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { href: "/delivery/receive-payout", label: "استلام الأجر", icon: Banknote, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
   { href: "/delivery/wallet", label: "محفظتي", icon: Wallet, exact: false },
+  { href: "/delivery/availability", label: "أوقات العمل", icon: CalendarDays, exact: false },
 ];
 
 export default function DeliverySidebar({

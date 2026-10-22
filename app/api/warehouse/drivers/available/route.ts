@@ -24,10 +24,28 @@ export async function GET() {
       );
     }
 
+    // حساب تاريخ اليوم وغداً للتحقق من الأجندة
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayDayOfWeek = today.getDay();
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDayOfWeek = tomorrow.getDay();
+
     const drivers = await prisma.deliveryPerson.findMany({
       where: {
         status: "ACTIVE",
         deletedAt: null,
+        // استبعاد السائقين الذين في يوم راحتهم الأسبوعي (اليوم أو غداً)
+        OR: [
+          { weeklyDayOff: null },
+          { weeklyDayOff: { notIn: [todayDayOfWeek, tomorrowDayOfWeek] } }
+        ],
+        // استبعاد السائقين الذين سجلوا غياباً طارئاً (اليوم أو غداً)
+        daysOff: {
+          none: { date: { in: [today, tomorrow] } }
+        }
       },
       include: {
         user: { select: { id: true, name: true, phone: true } },
