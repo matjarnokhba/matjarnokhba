@@ -30,6 +30,7 @@ const NAV_ITEMS = [
     icon: LayoutDashboard,
     exact: true,
   },
+  { href: "/warehouse/handover", label: "تسليم للإدارة", icon: Banknote, exact: false },
   { href: "/warehouse/scan", label: "مسح QR", icon: QrCode, exact: false },
   {
     href: "/warehouse/receipts",
