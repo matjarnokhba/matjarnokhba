@@ -36,14 +36,14 @@ export async function PATCH(
 
       if (!req || req.status !== "PENDING") throw new Error("الطلب غير موجود أو تمت معالجته مسبقاً");
 
-      // تحديث حالة الطلب
+      // 1. تحديث حالة الطلب
       await tx.withdrawalRequest.update({
         where: { id: withdrawalId },
         data: { status, adminNote: adminNote || null, processedAt: new Date() }
       });
 
-      // إذا تم الرفض، نرجع المبلغ للمحفظة
       if (status === "REJECTED") {
+        // إذا تم الرفض، نرجع المبلغ لمحفظة التاجر
         const seller = req.seller;
         const beforeBal = Number(seller.walletBalance);
         const afterBal = beforeBal + Number(req.amount);
@@ -61,6 +61,29 @@ export async function PATCH(
             balanceBefore: beforeBal,
             balanceAfter: afterBal,
             description: `إرجاع مبلغ السحب المرفوض #${req.id} - ${adminNote || ""}`
+          }
+        });
+      } else if (status === "PAID") {
+        // إذا تم الدفع، نخصم من محفظة المنصة (الأدمن)
+        const platformWallet = await tx.wallet.findUnique({
+          where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: 1 } }
+        });
+
+        if (!platformWallet || Number(platformWallet.balance) < Number(req.amount)) {
+          throw new Error("رصيد محفظة المنصة غير كافٍ لدفع مستحقات التاجر.");
+        }
+
+        await tx.wallet.update({
+          where: { id: platformWallet.id },
+          data: { balance: { decrement: req.amount } }
+        });
+
+        await tx.walletTransactionUnified.create({
+          data: {
+            walletId: platformWallet.id,
+            amount: -Number(req.amount),
+            type: "PAYOUT",
+            description: `دفع مستحقات للتاجر: ${req.seller.storeName} (طلب سحب #${req.id})`,
           }
         });
       }
