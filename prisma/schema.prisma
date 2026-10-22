@@ -2369,3 +2369,70 @@ model CustomerWalletTransaction {
 
   @@index([userId])
 }
+
+// ═══════════════════════════════════════════
+// Unified Wallet & Cash Management
+// ═══════════════════════════════════════════
+
+enum WalletOwnerType {
+  SELLER
+  DRIVER
+  WAREHOUSE
+  PLATFORM
+}
+
+model Wallet {
+  id          Int             @id @default(autoincrement())
+  ownerType   WalletOwnerType
+  ownerId     Int // معرف التاجر أو السائق أو المستودع (أو 1 للمنصة)
+  balance     Decimal         @default(0) @db.Decimal(12, 2)
+  heldBalance Decimal         @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  transactions WalletTransactionUnified[]
+
+  @@unique([ownerType, ownerId])
+  @@index([ownerType])
+}
+
+model WalletTransactionUnified {
+  id          Int      @id @default(autoincrement())
+  walletId    Int
+  amount      Decimal  @db.Decimal(12, 2)
+  type        String // EARNING, WITHDRAWAL, FEE, CASH_COLLECTED, CASH_HANDOVER, SHORTFALL
+  description String
+  referenceId String?
+  createdAt   DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+}
+
+// ═══ تسليم الكاش من السائق للمستودع ═══
+model CashHandover {
+  id            Int       @id @default(autoincrement())
+  driverId      Int
+  warehouseId   Int
+  amount        Decimal   @db.Decimal(12, 2) // المبلغ المستلم فعلياً
+  shortfall     Decimal   @default(0) @db.Decimal(12, 2) // المبلغ الناقص
+  status        String    @default("PENDING") // PENDING, COMPLETED
+  handoverToken String    @unique
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([driverId])
+  @@index([status])
+}
+
+// ═══ ربط شركات التوصيل (للمستقبل) ═══
+model ShippingProvider {
+  id        Int      @id @default(autoincrement())
+  name      String
+  apiKey    String?
+  apiSecret String?
+  isActive  Boolean  @default(true)
+  config    Json?
+  createdAt DateTime @default(now())
+}

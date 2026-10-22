@@ -6,12 +6,13 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
-  QrCode,
+  Truck,
   History,
   LogOut,
   Menu,
   X,
-  Truck,
+  ScanLine,
+  Wallet,
 } from "lucide-react";
 
 type DeliverySidebarProps = {
@@ -23,7 +24,8 @@ const NAV_ITEMS = [
   { href: "/delivery", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/delivery/collections", label: "جمع المنتجات", icon: Package, exact: false },
   { href: "/delivery/shipments", label: "الشحنات", icon: Truck, exact: false },
-  { href: "/delivery/scan", label: "مسح QR", icon: QrCode, exact: false },
+  { href: "/delivery/scan", label: "الماسح", icon: ScanLine, exact: false },
+  { href: "/delivery/cash-handover", label: "تسليم الكاش", icon: Wallet, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
 ];
 
