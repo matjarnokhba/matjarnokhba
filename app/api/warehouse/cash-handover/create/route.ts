@@ -6,6 +6,7 @@ import { SessionService } from "@/services/session.service";
 
 const schema = z.object({
   driverId: z.number().int().positive(),
+  actualAmount: z.number().min(0),
 });
 
 export async function POST(request: Request) {
@@ -19,25 +20,27 @@ export async function POST(request: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
-    // جلب محفظة السائق لمعرفة الكاش الفعلي
+    // جلب محفظة السائق لمعرفة الكاش المتوقع
     const driverWallet = await prisma.wallet.findUnique({
       where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: parsed.data.driverId } }
     });
 
-    const cashExpected = driverWallet ? Number(driverWallet.cashInHand) : 0;
+    const expectedAmount = driverWallet ? Number(driverWallet.cashInHand) : 0;
 
-    if (cashExpected <= 0) {
+    if (expectedAmount <= 0) {
       return NextResponse.json({ success: false, message: "هذا السائق لا يحمل أي كاش حالياً" }, { status: 400 });
     }
 
+    const actualAmount = parsed.data.actualAmount;
+    const shortfall = Math.max(0, expectedAmount - actualAmount);
     const handoverToken = crypto.randomUUID();
 
     const handover = await prisma.cashHandover.create({
       data: {
         driverId: parsed.data.driverId,
         warehouseId: current.user.id,
-        amount: cashExpected, // المبلغ المتوقع (120)
-        shortfall: 0,
+        amount: actualAmount, // المبلغ الذي استلمه المستودع فعلاً
+        shortfall: shortfall,  // النقص (إن وجد)
         handoverToken,
         status: "PENDING",
       },
@@ -47,7 +50,9 @@ export async function POST(request: Request) {
       success: true,
       handoverId: handover.id,
       qrToken: handoverToken,
-      expectedAmount: cashExpected,
+      expectedAmount,
+      actualAmount,
+      shortfall,
     });
   } catch (error) {
     console.error("Cash handover create error:", error);
