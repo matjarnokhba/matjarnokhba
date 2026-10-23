@@ -231,8 +231,7 @@ const actionSchema = z.discriminatedUnion("action", [
             await WalletService.processDeliveryFinancials(
               tx, 
               fresh, 
-              auth.person.id, 
-              commissionAmount
+              auth.person.id
             );
 
             try {
