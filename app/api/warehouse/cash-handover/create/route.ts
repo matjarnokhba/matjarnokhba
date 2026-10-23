@@ -6,8 +6,6 @@ import { SessionService } from "@/services/session.service";
 
 const schema = z.object({
   driverId: z.number().int().positive(),
-  expectedAmount: z.number().positive(), // المبلغ المفروض
-  actualAmount: z.number().min(0),       // المبلغ الذي جلبه السائق فعلياً
 });
 
 export async function POST(request: Request) {
@@ -21,18 +19,25 @@ export async function POST(request: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
-    const { driverId, expectedAmount, actualAmount } = parsed.data;
-    const shortfall = expectedAmount - actualAmount;
+    // جلب محفظة السائق لمعرفة الكاش الفعلي
+    const driverWallet = await prisma.wallet.findUnique({
+      where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: parsed.data.driverId } }
+    });
 
-    // إنشاء رمز QR فريد
+    const cashExpected = driverWallet ? Number(driverWallet.cashInHand) : 0;
+
+    if (cashExpected <= 0) {
+      return NextResponse.json({ success: false, message: "هذا السائق لا يحمل أي كاش حالياً" }, { status: 400 });
+    }
+
     const handoverToken = crypto.randomUUID();
 
     const handover = await prisma.cashHandover.create({
       data: {
-        driverId,
+        driverId: parsed.data.driverId,
         warehouseId: current.user.id,
-        amount: actualAmount,
-        shortfall: shortfall > 0 ? shortfall : 0,
+        amount: cashExpected, // المبلغ المتوقع (120)
+        shortfall: 0,
         handoverToken,
         status: "PENDING",
       },
@@ -42,9 +47,8 @@ export async function POST(request: Request) {
       success: true,
       handoverId: handover.id,
       qrToken: handoverToken,
-      shortfall: shortfall > 0 ? shortfall : 0,
+      expectedAmount: cashExpected,
     });
-
   } catch (error) {
     console.error("Cash handover create error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });

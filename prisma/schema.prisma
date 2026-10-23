@@ -1568,6 +1568,7 @@ model DeliveryPerson {
   deliveryReturns       ReturnShipment[]       @relation("ReturnDeliveryDriver")
   deliveryZones         Zone[]                 @relation("DeliveryPersonZone")
   daysOff               DriverDayOff[]
+  legalNotices          DriverLegalNotice[]
 
   @@index([status])
   @@index([city])
@@ -2293,9 +2294,12 @@ enum WalletOwnerType {
 model Wallet {
   id          Int             @id @default(autoincrement())
   ownerType   WalletOwnerType
-  ownerId     Int // معرف التاجر أو السائق أو المستودع (أو 1 للمنصة)
+  ownerId     Int
   balance     Decimal         @default(0) @db.Decimal(12, 2)
   heldBalance Decimal         @default(0) @db.Decimal(12, 2)
+  cashInHand  Decimal         @default(0) @db.Decimal(12, 2)
+  isBlocked   Boolean         @default(false)
+  blockReason String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -2303,6 +2307,7 @@ model Wallet {
 
   @@unique([ownerType, ownerId])
   @@index([ownerType])
+  @@index([isBlocked])
 }
 
 model WalletTransactionUnified {
@@ -2385,4 +2390,23 @@ model DriverDayOff {
 
   @@unique([driverId, date])
   @@index([date])
+}
+
+// ═══════ الإنذارات القانونية للسائقين ═══════
+model DriverLegalNotice {
+  id          Int       @id @default(autoincrement())
+  driverId    Int
+  amountOwed  Decimal   @db.Decimal(12, 2)
+  reason      String? // سبب التأخير الذي كتبه السائق
+  status      String    @default("WARNING") // WARNING, ESCALATED, RESOLVED, PAID
+  deadlineAt  DateTime
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  escalatedAt DateTime?
+
+  driver DeliveryPerson @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([status])
+  @@index([deadlineAt])
 }
