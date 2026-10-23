@@ -1,0 +1,172 @@
+"use client";
+
+import { useEffect, useState, useRef } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { ArrowRight, Loader2, Printer } from "lucide-react";
+import QRCode from "qrcode";
+
+type LabelData = {
+  id: number;
+  orderNumber: string;
+  total: number;
+  deliveryToken: string | null;
+  customerFullName: string;
+  shippingCityColor: string | null;
+  shippingDistrictColor: string | null;
+  items: any[];
+  seller: { storeName: string };
+};
+
+export default function WarehouseOrderLabelPage() {
+  const params = useParams();
+  const orderId = params.id as string;
+
+  const [order, setOrder] = useState<LabelData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrGenerating, setQrGenerating] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/warehouse/orders/${orderId}/label`);
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          setError(data.message || "الطلب غير موجود");
+          return;
+        }
+        setOrder(data.order);
+      } catch (err) {
+        console.error(err);
+        setError("فشل التحميل");
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (orderId) load();
+  }, [orderId]);
+
+  useEffect(() => {
+    if (loading || !order || !canvasRef.current || qrDataUrl) return;
+    const token = order.deliveryToken;
+    if (!token) return;
+
+    async function generate() {
+      setQrGenerating(true);
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const origin = window.location.origin;
+        const url = `${origin}/d/${token}`;
+        await QRCode.toCanvas(canvas, url, {
+          width: 800, margin: 1, color: { dark: "#0a1f44", light: "#ffffff" }, errorCorrectionLevel: "H",
+        });
+        setQrDataUrl(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.error("QR generation failed:", err);
+      } finally {
+        setQrGenerating(false);
+      }
+    }
+    generate();
+  }, [loading, order, qrDataUrl]);
+
+  function handlePrint() {
+    window.print();
+  }
+
+  if (loading) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-teal-600" /></div>;
+  if (error || !order) return <div className="p-4 pt-16 lg:p-8 lg:pt-8"><div className="rounded-xl bg-red-50 p-8 text-center text-red-700">{error || "حدث خطأ"}</div></div>;
+
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const cityColor = order.shippingCityColor || null;
+  const districtColor = order.shippingDistrictColor || null;
+  const cityTextColor = cityColor ? getContrastText(cityColor) : "#fff";
+  const districtTextColor = districtColor ? getContrastText(districtColor) : "#fff";
+
+  return (
+    <div className="min-h-screen bg-gray-200 p-4 print:bg-white print:p-0">
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+
+      <div className="mx-auto mb-2 flex w-full max-w-[420px] gap-2 print:hidden">
+        <Link href={`/warehouse/orders/${orderId}`} className="flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-teal-600">
+          <ArrowRight className="h-3.5 w-3.5" /> رجوع للطلب
+        </Link>
+        <div className="ml-auto">
+          <button onClick={handlePrint} disabled={qrGenerating} className="flex items-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-teal-700 disabled:opacity-50">
+            {qrGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            طباعة الملصق
+          </button>
+        </div>
+      </div>
+
+      <div className="mx-auto rounded-xl bg-white p-1.5 shadow-xl print:shadow-none" style={{ width: "33%", minWidth: "280px", maxWidth: "420px" }}>
+        <div className="flex items-center justify-between gap-2 border-b-2 border-[#0a1f44] pb-1">
+          <div className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">{order.seller.storeName}</div>
+          <div className="shrink-0 font-mono text-xl font-black leading-none text-[#ff5c00]">{order.orderNumber}</div>
+        </div>
+
+        <div className="mt-1 flex items-stretch justify-center gap-0.5">
+          {cityColor && (
+            <div className="flex w-10 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: cityColor }}>
+              <span className="text-2xl font-black" style={{ color: cityTextColor }}>M</span>
+            </div>
+          )}
+          <div className="flex justify-center">
+            <div className="rounded-lg border-2 border-[#0a1f44] bg-white p-0.5">
+              {qrDataUrl ? <img src={qrDataUrl} alt="QR" className="h-44 w-44 object-contain" /> : <div className="flex h-44 w-44 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-teal-600" /></div>}
+            </div>
+          </div>
+          {districtColor && (
+            <div className="flex w-10 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: districtColor }}>
+              <span className="text-2xl font-black" style={{ color: districtTextColor }}>H</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-1 text-center text-sm font-bold leading-none text-gray-600">📱 امسح الرمز لبدء التوصيل</div>
+
+        <div className="mt-1 rounded-lg border-2 border-gray-300 p-1.5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="shrink-0 text-[10px] font-black uppercase leading-none text-gray-400">إلى</span>
+            <span className="min-w-0 flex-1 truncate text-2xl font-black leading-none text-[#0a1f44]">{order.customerFullName}</span>
+          </div>
+        </div>
+
+        <div className="mt-1 flex items-center justify-between gap-2 border-t-2 border-dashed border-gray-300 pt-1">
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs font-bold leading-none text-gray-500">عدد:</span>
+            <span className="text-4xl font-black leading-none text-[#0a1f44]">{totalQty}</span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs font-bold leading-none text-gray-500">المبلغ:</span>
+            <span className="text-4xl font-black leading-none text-[#ff5c00]">{Number(order.total).toFixed(2)}</span>
+            <span className="text-sm font-bold leading-none text-gray-500">د.م</span>
+          </div>
+        </div>
+
+        <div className="mt-0.5 border-t border-gray-200 pt-0.5 text-center text-xs leading-none text-gray-400">متجر نخبة — Matjar Nokhba</div>
+      </div>
+
+      <style jsx global>{`
+        @media print {
+          body { background: white !important; }
+          @page { margin: 8mm; size: auto; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function getContrastText(hex: string): string {
+  if (!hex) return "#FFFFFF";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#000000" : "#FFFFFF";
+}

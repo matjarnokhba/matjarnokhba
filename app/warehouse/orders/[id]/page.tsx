@@ -476,11 +476,12 @@ export default function WarehouseOrderDetailPage() {
             عرض عبر QR
           </Link>
           <Link
-            href={`/admin/orders/${order.id}`}
+            href={`/warehouse/orders/${order.id}/label`}
+            target="_blank"
             className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
           >
             <Printer className="h-3.5 w-3.5" />
-            عرض إداري
+            ملصق التاجر
           </Link>
         </div>
       </div>
