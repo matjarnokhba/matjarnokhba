@@ -17,6 +17,7 @@ import {
   RotateCcw,
   AlertCircle,
   X,
+  ScanLine,
 } from "lucide-react";
 
 type ShipmentItem = {
@@ -148,7 +149,10 @@ export default function DeliveryShipmentDetailPage() {
     );
   }
 
-  const canAct = ["ASSIGNED", "IN_TRANSIT"].includes(shipment.status);
+  // ═══ منطق الشحنة الجديد ═══
+  const isPendingLoading = ["ASSIGNED", "IN_TRANSIT"].includes(shipment.status);
+  const canAct = ["OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status);
+  
   const firstOrder = shipment.orders[0];
   const address = firstOrder?.shippingAddressSnapshot || {};
 
@@ -171,12 +175,14 @@ export default function DeliveryShipmentDetailPage() {
               {shipment.shipmentNumber}
             </div>
           </div>
-          <div className="rounded-full bg-purple-100 px-4 py-2 text-xs font-bold text-purple-700">
-            {shipment.status === "ASSIGNED"
-              ? "مُسندة"
-              : shipment.status === "IN_TRANSIT"
-                ? "مع السائق"
-                : shipment.status}
+          <div className={`rounded-full px-4 py-2 text-xs font-bold ${
+            isPendingLoading ? "bg-blue-100 text-blue-700" :
+            canAct ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"
+          }`}>
+            {isPendingLoading ? "بانتظار التحميل" : 
+             canAct ? "قيد التوصيل" : 
+             shipment.status === "DELIVERED" ? "تم التسليم" :
+             shipment.status}
           </div>
         </div>
       </div>
@@ -292,7 +298,20 @@ export default function DeliveryShipmentDetailPage() {
         ))}
       </div>
 
-      {/* Actions */}
+      {/* زر بدء التحميل (يظهر فقط عندما تكون الشحنة بانتظار التحميل) */}
+      {isPendingLoading && (
+        <div className="mt-5">
+          <Link
+            href={`/delivery/loading?shipmentId=${shipment.id}`}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 py-4 text-sm font-bold text-white shadow-md hover:opacity-90 transition animate-pulse"
+          >
+            <ScanLine className="h-5 w-5" />
+            بدء تحميل الشحنة ومسح الطلبيات
+          </Link>
+        </div>
+      )}
+
+      {/* أزرار التوصيل (تظهر فقط بعد الخروج من المستودع) */}
       {canAct && (
         <div className="mt-5 space-y-2">
           <button
