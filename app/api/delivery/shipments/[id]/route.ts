@@ -51,6 +51,7 @@ export async function GET(
                 orderNumber: true,
                 customerSnapshot: true,
                 shippingAddressSnapshot: true,
+                total: true, // <--- تمت الإضافة
               },
             },
             orderItem: {
@@ -82,6 +83,18 @@ export async function GET(
       );
     }
 
+    // ═══ حساب المبلغ الإجمالي للتحصيل (من الطلبات نفسها لضمان دقة الشحن) ═══
+    const uniqueOrderTotals = new Map<number, number>();
+    for (const item of shipment.items) {
+      if (!uniqueOrderTotals.has(item.orderId)) {
+        uniqueOrderTotals.set(item.orderId, Number(item.order.total || 0));
+      }
+    }
+    let calculatedCOD = 0;
+    for (const orderTotal of uniqueOrderTotals.values()) {
+      calculatedCOD += orderTotal;
+    }
+
     // ═══ تجميع العناصر حسب الطلب ═══
     const ordersMap = new Map<number, any>();
     for (const item of shipment.items) {
@@ -110,7 +123,7 @@ export async function GET(
         id: shipment.id,
         shipmentNumber: shipment.shipmentNumber,
         status: shipment.status,
-        totalCOD: Number(shipment.totalCOD),
+        totalCOD: calculatedCOD,
         totalOrders: shipment.totalOrders,
         notes: shipment.notes,
         assignedAt: shipment.assignedAt,
