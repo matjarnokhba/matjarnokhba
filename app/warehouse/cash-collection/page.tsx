@@ -1,34 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Truck, CheckCircle2, QrCode, X } from "lucide-react";
+import { Loader2, Truck, CheckCircle2, X, AlertTriangle } from "lucide-react";
 import QRCode from "qrcode";
 
 type DriverCash = {
   id: number;
   name: string;
   phone: string | null;
-  pendingCash: number;
+  cashInHand: number;
 };
 
 export default function WarehouseCashCollectionPage() {
   const [drivers, setDrivers] = useState<DriverCash[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Modal State
   const [selectedDriver, setSelectedDriver] = useState<DriverCash | null>(null);
-  const [expectedAmount, setExpectedAmount] = useState(0);
   const [actualAmount, setActualAmount] = useState("");
-  const [qrToken, setQrToken] = useState("");
   const [qrImage, setQrImage] = useState("");
+  const [handoverInfo, setHandoverInfo] = useState<{ expected: number; actual: number; shortfall: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   async function loadDrivers() {
     try {
       const res = await fetch("/api/warehouse/drivers/cash/pending");
       const data = await res.json();
       if (data.success) {
-        setDrivers(data.drivers.filter((d: DriverCash) => d.pendingCash !== 0));
+        setDrivers(data.drivers.filter((d: DriverCash) => d.cashInHand > 0));
       }
     } catch (e) {
       console.error(e);
@@ -41,45 +40,56 @@ export default function WarehouseCashCollectionPage() {
     loadDrivers();
   }, []);
 
+  function openModal(driver: DriverCash) {
+    setSelectedDriver(driver);
+    setActualAmount(driver.cashInHand.toString());
+    setQrImage("");
+    setHandoverInfo(null);
+    setError("");
+  }
+
   async function handleCreateHandover() {
-    if (!selectedDriver) return;
+    if (!selectedDriver || !actualAmount) return;
     setSubmitting(true);
+    setError("");
     try {
       const res = await fetch("/api/warehouse/cash-handover/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           driverId: selectedDriver.id,
-          expectedAmount: expectedAmount,
           actualAmount: Number(actualAmount),
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setQrToken(data.qrToken);
-        // توليد صورة QR
         const url = await QRCode.toDataURL(data.qrToken, { width: 400, margin: 1 });
         setQrImage(url);
+        setHandoverInfo({
+          expected: data.expectedAmount,
+          actual: data.actualAmount,
+          shortfall: data.shortfall,
+        });
       } else {
-        alert("حدث خطأ");
+        setError(data.message || "حدث خطأ");
       }
     } catch (e) {
-      console.error(e);
+      setError("فشل الاتصال");
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin h-8 w-8 text-[#ff5c00]" /></div>;
+  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin h-8 w-8 text-teal-600" /></div>;
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8" dir="rtl">
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
-          <Truck className="h-6 w-6 text-[#ff5c00]" />
+          <Truck className="h-6 w-6 text-teal-600" />
           تحصيل الكاش من السائقين
         </h1>
-        <p className="mt-1 text-sm text-gray-500">تسجيل المبالغ المستلمة من السائقين وتوليد رمز QR للاعتراف</p>
+        <p className="mt-1 text-sm text-gray-500">سجل المبلغ الذي استلمته من كل سائق، ثم دع السائق يمسح QR للتأكيد</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -95,18 +105,14 @@ export default function WarehouseCashCollectionPage() {
               </div>
             </div>
             
-            <div className="rounded-lg bg-gray-50 p-3 mb-4 flex justify-between items-center">
-              <span className="text-xs font-bold text-gray-600">المبلغ في ذمته:</span>
-              <span className="text-lg font-black text-red-600">{driver.pendingCash.toFixed(2)} د.م</span>
+            <div className="rounded-lg bg-red-50 p-3 mb-4 flex justify-between items-center border border-red-100">
+              <span className="text-xs font-bold text-red-700">الكاش في حوزته:</span>
+              <span className="text-lg font-black text-red-600">{driver.cashInHand.toFixed(2)} د.م</span>
             </div>
 
             <button
-              onClick={() => {
-                setSelectedDriver(driver);
-                setExpectedAmount(driver.pendingCash);
-                setActualAmount(driver.pendingCash.toString());
-              }}
-              className="w-full rounded-lg bg-[#ff5c00] py-2.5 text-sm font-bold text-white transition hover:bg-[#e64a00]"
+              onClick={() => openModal(driver)}
+              className="w-full rounded-lg bg-teal-600 py-2.5 text-sm font-bold text-white transition hover:bg-teal-700"
             >
               استلام الكاش
             </button>
@@ -127,40 +133,68 @@ export default function WarehouseCashCollectionPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-black">استلام كاش من {selectedDriver.name}</h2>
-              <button onClick={() => { setSelectedDriver(null); setQrImage(""); }} className="p-1 hover:bg-gray-100 rounded-full">
+              <button onClick={() => setSelectedDriver(null)} className="p-1 hover:bg-gray-100 rounded-full">
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
 
             {!qrImage ? (
               <div className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-gray-700">المبلغ المفروض (في ذمته)</label>
-                  <input type="text" value={expectedAmount} readOnly className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm font-bold text-gray-600 outline-none" />
+                <div className="rounded-lg bg-gray-50 p-3 flex justify-between items-center">
+                  <span className="text-sm font-bold text-gray-600">المبلغ المتوقع في حوزته:</span>
+                  <span className="text-lg font-black text-gray-900">{selectedDriver.cashInHand.toFixed(2)} د.م</span>
                 </div>
+
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-gray-700">المبلغ المستلم فعلياً</label>
-                  <input type="number" value={actualAmount} onChange={(e) => setActualAmount(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#ff5c00]" />
+                  <label className="mb-1 block text-xs font-bold text-gray-700">المبلغ المستلم فعلياً (د.م)</label>
+                  <input
+                    type="number"
+                    value={actualAmount}
+                    onChange={(e) => setActualAmount(e.target.value)}
+                    min="0"
+                    max={selectedDriver.cashInHand}
+                    step="0.01"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-lg font-bold outline-none focus:border-teal-500"
+                  />
                 </div>
-                {Number(actualAmount) < expectedAmount && (
-                  <div className="rounded-lg bg-red-50 p-2 text-xs text-red-700 font-bold text-center">
-                    يوجد عجز بقيمة {(expectedAmount - Number(actualAmount)).toFixed(2)} د.م سيتم خصمها من محفظة السائق.
+
+                {Number(actualAmount) < selectedDriver.cashInHand && Number(actualAmount) >= 0 && (
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">يوجد نقص بقيمة {(selectedDriver.cashInHand - Number(actualAmount)).toFixed(2)} د.م</p>
+                      <p className="mt-1">سيتم خصم هذا المبلغ من استحقاقات السائق (أجره 13 درهم لكل توصيل).</p>
+                    </div>
                   </div>
                 )}
-                <button onClick={handleCreateHandover} disabled={submitting || !actualAmount} className="w-full rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white hover:bg-[#e64a00] flex justify-center">
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "تأكيد وتوليد QR"}
+
+                {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+
+                <button
+                  onClick={handleCreateHandover}
+                  disabled={submitting || !actualAmount || Number(actualAmount) < 0}
+                  className="w-full rounded-lg bg-teal-600 py-3 text-sm font-bold text-white hover:bg-teal-700 flex justify-center disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "تأكيد وتوليد QR للتسليم"}
                 </button>
               </div>
             ) : (
               <div className="text-center">
-                <div className="bg-green-50 text-green-700 p-3 rounded-lg text-xs font-bold mb-4">
+                <div className="bg-teal-50 text-teal-700 p-3 rounded-lg text-xs font-bold mb-4">
                   الرجاء مطالبة السائق بمسح هذا الرمز للاعتراف باستلام المبلغ.
                 </div>
-                <div className="mx-auto w-64 h-64 bg-white p-2 rounded-xl border-2 border-[#0a1f44]">
+                <div className="mx-auto w-64 h-64 bg-white p-2 rounded-xl border-2 border-teal-600">
                   <img src={qrImage} alt="QR" className="w-full h-full object-contain" />
                 </div>
+                
+                {handoverInfo && handoverInfo.shortfall > 0 && (
+                  <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700 font-bold border border-red-200">
+                    ⚠️ تنبيه: تم تسجيل عجز بقيمة {handoverInfo.shortfall.toFixed(2)} د.م سيُخصم من السائق بعد المسح.
+                  </div>
+                )}
+
                 <button onClick={() => { setSelectedDriver(null); setQrImage(""); loadDrivers(); }} className="mt-6 w-full rounded-lg border-2 border-gray-200 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50">
-                  إغلاق
+                  إغلاق وتحديث القائمة
                 </button>
               </div>
             )}

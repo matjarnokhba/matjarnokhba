@@ -14,32 +14,19 @@ export async function GET() {
       include: { user: { select: { name: true, phone: true } } }
     });
 
-    const driversWithPendingCash = await Promise.all(drivers.map(async (driver) => {
-      // 1. إجمالي المبلغ الذي تم تحصيله (الشحنات المسلمة)
-      const deliveredShipments = await prisma.shipment.aggregate({
-        where: { deliveryPersonId: driver.id, status: "DELIVERED" },
-        _sum: { totalCOD: true }
+    const driversWithCash = await Promise.all(drivers.map(async (driver) => {
+      const wallet = await prisma.wallet.findUnique({
+        where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driver.id } }
       });
-      const totalCollected = Number(deliveredShipments._sum.totalCOD || 0);
-
-      // 2. إجمالي المبلغ الذي تم تسليمه للمستودع
-      const completedHandovers = await prisma.cashHandover.aggregate({
-        where: { driverId: driver.id, status: "COMPLETED" },
-        _sum: { amount: true }
-      });
-      const totalHandedOver = Number(completedHandovers._sum.amount || 0);
-
-      const pendingCash = totalCollected - totalHandedOver;
-
       return {
         id: driver.id,
         name: driver.user.name,
         phone: driver.user.phone,
-        pendingCash
+        cashInHand: wallet ? Number(wallet.cashInHand) : 0
       };
     }));
 
-    return NextResponse.json({ success: true, drivers: driversWithPendingCash });
+    return NextResponse.json({ success: true, drivers: driversWithCash });
   } catch (error) {
     console.error("Pending cash GET error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
