@@ -50,6 +50,7 @@ export async function GET(
                 customerSnapshot: true,
                 shippingCityColor: true,
                 shippingDistrictColor: true,
+                total: true, // <--- تمت الإضافة
               },
             },
           },
@@ -95,6 +96,18 @@ export async function GET(
       rawToken = await ShipmentQRService.getRawToken(shipment.id);
     }
 
+    // ═══ حساب المبلغ الإجمالي للتحصيل (من الطلبات نفسها لضمان دقة الشحن) ═══
+    const uniqueOrders = new Map<number, any>();
+    for (const item of shipment.items) {
+      if (!uniqueOrders.has(item.orderId)) {
+        uniqueOrders.set(item.orderId, item.order);
+      }
+    }
+    let calculatedCOD = 0;
+    for (const ord of uniqueOrders.values()) {
+      calculatedCOD += Number(ord.total || 0);
+    }
+
     // ═══ عدد الطرود = عدد orderIds المختلفة ═══
     const uniqueOrderIds = new Set(shipment.items.map((i) => i.orderId));
 
@@ -119,7 +132,7 @@ export async function GET(
           id: shipment.id,
           shipmentNumber: shipment.shipmentNumber,
           status: shipment.status,
-          totalCOD: Number(shipment.totalCOD),
+          totalCOD: calculatedCOD,
           totalOrders: shipment.totalOrders,
           itemsCount: shipment.items.length,
           createdAt: shipment.createdAt,
