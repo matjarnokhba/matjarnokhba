@@ -26,10 +26,18 @@ export async function GET() {
       }
     });
 
+    const legalNotices = await prisma.driverLegalNotice.findMany({
+      where: { driverId: person.id, status: { in: ["WARNING", "ESCALATED"] } },
+      orderBy: { deadlineAt: "asc" },
+    });
+
     return NextResponse.json({
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
+      cashInHand: wallet ? Number(wallet.cashInHand) : 0,
+      isBlocked: wallet?.isBlocked || false,
       transactions: wallet?.transactions || [],
+      legalNotices,
     });
   } catch (error) {
     console.error("Driver wallet GET error:", error);
