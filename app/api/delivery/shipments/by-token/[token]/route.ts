@@ -55,7 +55,7 @@ export async function GET(
     }
 
     // ═══ التحقق: الحالة ═══
-    if (!["ASSIGNED", "IN_TRANSIT"].includes(shipment.status)) {
+    if (!["ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status)) {
       return NextResponse.json(
         {
           success: false,
