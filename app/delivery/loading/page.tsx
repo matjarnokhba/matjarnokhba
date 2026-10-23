@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
-import { Scan, X, Loader2, AlertCircle, CheckCircle2, Package, Truck, ArrowRight } from "lucide-react";
+import { Scan, X, Loader2, AlertCircle, CheckCircle2, Package, Truck } from "lucide-react";
 
 type OrderItem = {
   orderId: number;
@@ -27,6 +27,7 @@ function LoadingContent() {
   const lastScanTimeRef = useRef<number>(0);
   const scannerDivId = "qr-reader";
 
+  // ═══ 1. تحميل الشحنة إذا كان الرابط يحتوي على رقم الشحنة ═══
   useEffect(() => {
     async function loadShipment() {
       if (!shipmentId) return;
@@ -38,7 +39,7 @@ function LoadingContent() {
           const initialOrders = data.shipment.orders.map((o: any) => ({
             orderId: o.orderId,
             orderNumber: o.orderNumber,
-            isScanned: data.shipment.status === "OUT_FOR_DELIVERY" // نعتبرها ممسوحة إذا كان السائق قد خرج
+            isScanned: data.shipment.status === "OUT_FOR_DELIVERY"
           }));
           setOrders(initialOrders);
         }
@@ -81,20 +82,12 @@ function LoadingContent() {
               if (now - lastScanTimeRef.current < 2000) return;
               lastScanTimeRef.current = now;
 
-              const text = result.getText();
-              let token = text;
-              if (token.includes("/d/")) {
-                const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
-                if (match) token = match[1];
-              }
-
-              handleScanToken(token);
+              handleScanResult(result.getText());
             }
           }
         );
         controlsRef.current = controls;
       } catch (err) {
-        console.error(err);
         setError("تعذر فتح الكاميرا");
         setScanning(false);
       }
@@ -109,12 +102,64 @@ function LoadingContent() {
     setScanning(false);
   }
 
-  async function handleScanToken(token: string) {
+  function playSound(type: "success" | "error") {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      if (type === "success") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+      } else {
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      }
+      if (navigator.vibrate) navigator.vibrate(type === "success" ? 100 : [100, 50, 100]);
+    } catch (e) {}
+  }
+
+  async function handleScanResult(text: string) {
+    let token = text.trim();
+    
+    // استخراج الرمز من الرابط إذا كان رابطاً كاملاً
+    if (token.includes("/sd/")) {
+      const match = token.match(/\/sd\/([A-Za-z0-9_-]+)/);
+      if (match) token = match[1];
+    } else if (token.includes("/d/")) {
+      const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
+      if (match) token = match[1];
+    }
+
     if (loading) return;
     setLoading(true);
     setError("");
 
     try {
+      // ═══ 1. هل هو QR شحنة؟ ═══
+      const shipmentRes = await fetch(`/api/delivery/shipments/by-token/${token}`);
+      if (shipmentRes.ok) {
+         const shipmentData = await shipmentRes.json();
+         if (shipmentData.success) {
+             playSound("success");
+             setShipmentStatus(shipmentData.shipment.status);
+             setOrders(shipmentData.shipment.orders.map((o: any) => ({
+                 orderId: o.orderId,
+                 orderNumber: o.orderNumber,
+                 isScanned: false // نضعها كغير ممسوحة حتى يمسحها السائق
+             })));
+             return;
+         }
+      }
+
+      // ═══ 2. هل هو QR طلبية؟ ═══
       const res = await fetch("/api/delivery/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,33 +193,11 @@ function LoadingContent() {
     }
   }
 
-  function playSound(type: "success" | "error") {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      if (type === "success") {
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.1);
-      } else {
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(300, ctx.currentTime);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.3);
-      }
-      if (navigator.vibrate) navigator.vibrate(type === "success" ? 100 : [100, 50, 100]);
-    } catch (e) {}
-  }
-
   async function completeLoading() {
-    if (!shipmentId) return;
+    if (!shipmentId) {
+      setError("يرجى مسح QR الشحنة أولاً");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`/api/delivery/shipments/${shipmentId}/action`, {
@@ -184,7 +207,7 @@ function LoadingContent() {
       });
       
       if (res.ok) {
-        router.push(`/delivery/shipments/${shipmentId}`);
+        router.push(`/delivery/shipments`);
       } else {
         setError("فشل تحديث حالة الشحنة");
       }
@@ -206,7 +229,7 @@ function LoadingContent() {
             <Package className="h-6 w-6 text-[#ff5c00]" />
             تجهيز الشحنة للخروج
             </h1>
-            <p className="mt-1 text-sm text-gray-500">امسح كل طرد لتأكيد استلامك له من المستودع.</p>
+            <p className="mt-1 text-sm text-gray-500">امسح QR الشحنة، ثم امسح كل طرد لتأكيد استلامك له.</p>
        </div>
 
        <div className="mx-auto max-w-2xl space-y-4">
