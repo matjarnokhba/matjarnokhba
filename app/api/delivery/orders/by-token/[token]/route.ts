@@ -44,6 +44,11 @@ export async function GET(
         deliveryPerson: {
           include: { user: { select: { name: true } } },
         },
+        shipmentItems: {
+          include: {
+            shipment: true,
+          }
+        }
       },
     });
 
@@ -54,24 +59,59 @@ export async function GET(
       );
     }
 
-    // ═══ التحقق: مُسند لهذا السائق ═══
-    if (order.deliveryPersonId !== auth.person.id) {
+    // ═══ التحقق من الإسناد للسائق ═══
+    let assigned = order.deliveryPersonId === auth.person.id;
+    if (!assigned && order.shipmentItems.length > 0) {
+       const shipment = order.shipmentItems[0].shipment;
+       if (shipment.deliveryPersonId === auth.person.id) {
+          assigned = true;
+       }
+    }
+
+    if (!assigned) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "هذا الطلب ليس مُسنداً إليك",
-        },
+        { success: false, message: "هذا الطلب ليس مُسنداً إليك" },
         { status: 403 }
       );
     }
 
-    // ═══ التحقق: الحالة ═══
+    // ═══ إذا كانت الطلبية تنتمي لشحنة (QR التاجر) ═══
+    if (order.shipmentItems.length > 0) {
+      const shipmentId = order.shipmentItems[0].shipmentId;
+      
+      // حساب عدد الطلبات المختلفة داخل هذه الشحنة
+      const distinctOrdersInShipment = await prisma.shipmentItem.findMany({
+        where: { shipmentId: shipmentId },
+        select: { orderId: true },
+        distinct: ['orderId']
+      });
+
+      if (distinctOrdersInShipment.length > 1) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            message: "هذا الـ QR يدل على جزء من شحنة. يرجى مسح الـ QR الخاص بالشحنة من المستودع." 
+          },
+          { status: 400 }
+        );
+      } else {
+        // في حال كانت الشحنة تحتوي على طلب واحد فقط، نعيد رقم الشحنة لكي تفتح الواجهة الشحنة مباشرة
+        return NextResponse.json(
+          { 
+            success: true, 
+            singleOrderShipmentId: shipmentId 
+          },
+          { status: 200 }
+        );
+      }
+    }
+
+    // ═══ التحقق من الحالة (في حال لم تكن الطلبية تابعة لأي شحنة) ═══
     if (order.status !== "SHIPPED" && order.status !== "PROCESSING") {
       return NextResponse.json(
         {
           success: false,
           message: `لا يمكن التصرف بهذا الطلب — حالته: ${order.status}`,
-          order: { id: order.id, orderNumber: order.orderNumber, status: order.status },
         },
         { status: 400 }
       );

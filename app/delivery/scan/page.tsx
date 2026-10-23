@@ -16,8 +16,6 @@ import {
   XCircle,
   RotateCcw,
   Truck,
-  Store,
-  Globe,
 } from "lucide-react";
 
 // ═══════ الأنواع ═══════
@@ -158,7 +156,6 @@ export default function DeliveryScanPage() {
 
     // ═══ حالة رابط كامل ═══
     if (token.includes("/d/")) {
-      // Order QR
       const match = token.match(/\/d\/([A-Za-z0-9_-]+)/);
       if (match) {
         await loadOrderByToken(match[1]);
@@ -167,7 +164,6 @@ export default function DeliveryScanPage() {
     }
 
     if (token.includes("/sd/")) {
-      // Shipment QR
       const match = token.match(/\/sd\/([A-Za-z0-9_-]+)/);
       if (match) {
         await loadShipmentByToken(match[1]);
@@ -177,15 +173,16 @@ export default function DeliveryScanPage() {
 
     // ═══ حالة token مباشر — نجرب الاثنين ═══
     if (token.length >= 20 && !token.includes("/")) {
-      // جرب كشحنة أولاً (الأحدث)
       const shipmentFound = await tryLoadShipment(token);
       if (shipmentFound) return;
 
-      // ثم كطلب
       const orderFound = await tryLoadOrder(token);
       if (orderFound) return;
 
-      setScanError("الرمز غير معروف. تأكد من أنه QR طلب أو شحنة.");
+      // إذا لم يتم تعيين خطأ محدد سابقاً، نضع الخطأ الافتراضي
+      if (!scanError) {
+        setScanError("الرمز غير معروف. تأكد من أنه QR طلب أو شحنة.");
+      }
       return;
     }
 
@@ -224,12 +221,40 @@ export default function DeliveryScanPage() {
       const res = await fetch(`/api/delivery/orders/by-token/${token}`);
       const data = await res.json();
 
-      if (res.ok && data.success && data.order) {
-        setResult({ type: "order", data: data.order });
-        return true;
+      if (res.ok && data.success) {
+        // إذا كان QR التاجر ولكن الشحنة تحتوي على طلب واحد فقط، نفتح الشحنة
+        if (data.singleOrderShipmentId) {
+          return await loadShipmentById(data.singleOrderShipmentId);
+        }
+        if (data.order) {
+          setResult({ type: "order", data: data.order });
+          return true;
+        }
+      } else {
+        if (data.message) setScanError(data.message);
       }
       return false;
     } catch {
+      setScanError("فشل الاتصال بالخادم");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ═══ تحميل الشحنة برقمها (لتحويل QR التاجر إلى شحنة) ═══
+  async function loadShipmentById(shipmentId: number): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/delivery/shipments/${shipmentId}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResult({ type: "shipment", data: data.shipment });
+        return true;
+      }
+      setScanError(data.message || "فشل تحميل الشحنة");
+      return false;
+    } catch {
+      setScanError("فشل الاتصال بالخادم");
       return false;
     } finally {
       setLoading(false);
@@ -239,14 +264,14 @@ export default function DeliveryScanPage() {
   // ═══ تحميل مباشر ═══
   async function loadOrderByToken(token: string) {
     const found = await tryLoadOrder(token);
-    if (!found) {
+    if (!found && !scanError) {
       setScanError("الطلب غير موجود أو ليس مُسنداً إليك");
     }
   }
 
   async function loadShipmentByToken(token: string) {
     const found = await tryLoadShipment(token);
-    if (!found) {
+    if (!found && !scanError) {
       setScanError("الشحنة غير موجودة أو ليست مُسندة إليك");
     }
   }
@@ -590,7 +615,6 @@ function ShipmentDetails({
   const firstOrder = shipment.orders[0];
   const address = firstOrder?.shippingAddressSnapshot || {};
 
-  // ═══ عدد العناصر الإجمالي ═══
   const totalItems = shipment.orders.reduce(
     (sum, o) => sum + o.items.reduce((s, i) => s + i.quantity, 0),
     0
@@ -628,7 +652,6 @@ function ShipmentDetails({
           postalCode={address.postalCode}
         />
 
-        {/* قائمة الطلبات والعناصر */}
         <div className="space-y-3">
           {shipment.orders.map((o) => (
             <div
