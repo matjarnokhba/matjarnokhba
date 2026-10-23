@@ -92,7 +92,11 @@ export async function GET(
         id: shipment.id,
         shipmentNumber: shipment.shipmentNumber,
         status: shipment.status,
-        totalCOD: Number(shipment.totalCOD),
+        totalCOD: shipment.items.reduce((sum: number, item: any, idx: number, arr: any[]) => {
+          const firstIdx = arr.findIndex((i: any) => i.orderId === item.orderId);
+          if (firstIdx === idx) return sum + Number(item.order?.total || 0);
+          return sum;
+        }, 0),
         totalOrders: shipment.totalOrders,
         notes: shipment.notes,
         customer: shipment.customer,

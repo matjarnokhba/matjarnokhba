@@ -51,6 +51,7 @@ export const ShipmentQRService = {
                 orderNumber: true,
                 customerSnapshot: true,
                 shippingAddressSnapshot: true,
+                total: true,
               },
             },
             orderItem: {

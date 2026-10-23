@@ -101,7 +101,15 @@ export async function GET(
           id: shipment.id,
           shipmentNumber: shipment.shipmentNumber,
           status: shipment.status,
-          totalCOD: shipment.totalCOD,
+          totalCOD: shipment.items.reduce((sum, item) => {
+            if (!item.order?.id) return sum;
+            // نحسب من كل orderId مرة واحدة فقط
+            const firstForOrder = shipment.items.find((i) => i.orderId === item.orderId);
+            if (firstForOrder && firstForOrder.id === item.id) {
+              return sum + Number(item.order.total || 0);
+            }
+            return sum;
+          }, 0),
           totalOrders: shipment.totalOrders,
           itemsCount: shipment.items.length,
           city,
