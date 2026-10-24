@@ -620,6 +620,9 @@ function ShipmentDetails({
     0
   );
 
+  // ═══ زر التسليم الجزئي يظهر فقط إذا كان هناك أكثر من طلبية ═══
+  const canPartialDelivery = shipment.orders.length > 1;
+
   return (
     <>
       <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm">
@@ -704,6 +707,17 @@ function ShipmentDetails({
           </span>
         </div>
       </div>
+
+      {/* ═══ زر التسليم الجزئي (يظهر فقط عند تعدد الطلبيات) ═══ */}
+      {canPartialDelivery && (
+        <a
+          href={`/delivery/shipments/${shipment.id}/partial-delivery`}
+          className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 py-4 text-sm font-bold text-white shadow-md transition hover:opacity-95"
+        >
+          <Package className="h-5 w-5" />
+          تسليم جزئي — تحديد كل طلبية (قبول/رفض)
+        </a>
+      )}
 
       <ActionButtons onAction={onAction} submitting={submitting} />
     </>
