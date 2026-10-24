@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Wallet,
   Banknote,
+  PackageX,
 } from "lucide-react";
 
 type Props = {
@@ -54,6 +55,12 @@ const NAV_ITEMS = [
     href: "/warehouse/returns",
     label: "الإرجاعات",
     icon: RotateCcw,
+    exact: false,
+  },
+  {
+    href: "/warehouse/returns-in-transit",
+    label: "مرتجعات في الطريق",
+    icon: PackageX,
     exact: false,
   },
   {

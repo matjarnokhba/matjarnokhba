@@ -15,6 +15,7 @@ import {
   Wallet,
   Banknote,
   CalendarDays,
+  PackageX,
 } from "lucide-react";
 
 type DeliverySidebarProps = {
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/delivery/shipments", label: "الشحنات", icon: Truck, exact: false },
   { href: "/delivery/scan", label: "الماسح", icon: ScanLine, exact: false },
   { href: "/delivery/cash-handover", label: "تسليم الكاش", icon: Wallet, exact: false },
+  { href: "/delivery/refused-handover", label: "تسليم مرتجعات", icon: PackageX, exact: false },
   { href: "/delivery/receive-payout", label: "استلام الأجر", icon: Banknote, exact: false },
   { href: "/delivery/history", label: "السجل", icon: History, exact: false },
   { href: "/delivery/wallet", label: "محفظتي", icon: Wallet, exact: false },
@@ -59,7 +61,6 @@ export default function DeliverySidebar({
 
   return (
     <>
-      {/* Mobile Toggle */}
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
@@ -68,7 +69,6 @@ export default function DeliverySidebar({
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* Overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -76,13 +76,11 @@ export default function DeliverySidebar({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed bottom-0 right-0 top-0 z-50 flex w-64 flex-col transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header */}
         <div className="flex h-16 items-center justify-between border-b border-gray-100 bg-gradient-to-l from-green-50 to-white px-4">
           <Link href="/delivery" className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 text-white">
@@ -102,7 +100,6 @@ export default function DeliverySidebar({
           </button>
         </div>
 
-        {/* Driver Info */}
         <div className="border-b border-gray-100 px-4 py-3">
           <div className="text-[10px] text-gray-500">السائق</div>
           <div className="mt-0.5 truncate text-sm font-bold text-gray-900">
@@ -113,7 +110,6 @@ export default function DeliverySidebar({
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-24">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -137,7 +133,6 @@ export default function DeliverySidebar({
           })}
         </nav>
 
-        {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 border-t border-gray-100 bg-white p-3">
           <button
             onClick={handleLogout}

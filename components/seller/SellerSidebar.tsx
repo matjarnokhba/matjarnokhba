@@ -22,6 +22,7 @@ import {
   ScanLine,
   RotateCcw,
   BadgeCheck,
+  PackageX,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
+  { href: "/seller/returns-batches", label: "مرتجعات من المستودع", icon: PackageX, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
   { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact:false },
   { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false },
@@ -74,7 +76,6 @@ export default function SellerSidebar({
 
   return (
     <>
-      {/* Mobile Toggle */}
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
@@ -83,7 +84,6 @@ export default function SellerSidebar({
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* Overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -91,13 +91,11 @@ export default function SellerSidebar({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed bottom-0 right-0 top-0 z-50 flex w-64 flex-col transform bg-white shadow-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header */}
         <div className="flex h-16 items-center justify-between border-b border-gray-100 bg-gradient-to-l from-[#fff4ed] to-white px-4">
           <Link href="/seller" className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-sm font-black text-white">
@@ -117,7 +115,6 @@ export default function SellerSidebar({
           </button>
         </div>
 
-        {/* Store Info */}
         <div className="border-b border-gray-100 px-4 py-3">
           <div className="text-[10px] text-gray-500">متجرك</div>
           <div className="mt-0.5 flex items-center gap-1.5">
@@ -140,7 +137,6 @@ export default function SellerSidebar({
           </Link>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-24">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -164,7 +160,6 @@ export default function SellerSidebar({
           })}
         </nav>
 
-        {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 border-t border-gray-100 bg-white p-3">
           <button
             onClick={handleLogout}

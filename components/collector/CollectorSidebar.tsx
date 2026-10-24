@@ -14,6 +14,7 @@ import {
   UserCheck,
   Truck,
   RotateCcw,
+  Store,
 } from "lucide-react";
 
 type Props = {
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/collector/scan", label: "مسح QR", icon: QrCode, exact: false },
   { href: "/collector/batch", label: "الدفعة الحالية", icon: Truck, exact: false },
   { href: "/collector/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
+  { href: "/collector/seller-returns", label: "مرتجعات التجار", icon: Store, exact: false },
   { href: "/collector/tasks", label: "مهامي", icon: Package, exact: false },
   { href: "/collector/history", label: "السجل", icon: History, exact: false },
 ];

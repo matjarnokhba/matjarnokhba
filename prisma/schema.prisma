@@ -524,6 +524,7 @@ model Seller {
   walletTransactions   WalletTransaction[]
   withdrawalRequests   WithdrawalRequest[]
   subscriptionLogs     SubscriptionLog[]
+  sellerReturnBatches  SellerReturnBatch[]
 
   @@index([status])
   @@index([deletedAt])
@@ -1558,17 +1559,18 @@ model DeliveryPerson {
   updatedAt            DateTime             @updatedAt
   deletedAt            DateTime?
 
-  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
-  assignedOrders        Order[]                @relation("OrderDeliveryPerson")
-  deliveryAttempts      DeliveryAttempt[]
-  shipments             Shipment[]             @relation("ShipmentDeliveryPerson")
-  collectionAssignments CollectionAssignment[]
-  deliveryAssignments   DeliveryAssignment[]
-  pickupReturns         ReturnShipment[]       @relation("ReturnPickupDriver")
-  deliveryReturns       ReturnShipment[]       @relation("ReturnDeliveryDriver")
-  deliveryZones         Zone[]                 @relation("DeliveryPersonZone")
-  daysOff               DriverDayOff[]
-  legalNotices          DriverLegalNotice[]
+  user                   User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedOrders         Order[]                @relation("OrderDeliveryPerson")
+  deliveryAttempts       DeliveryAttempt[]
+  shipments              Shipment[]             @relation("ShipmentDeliveryPerson")
+  collectionAssignments  CollectionAssignment[]
+  deliveryAssignments    DeliveryAssignment[]
+  pickupReturns          ReturnShipment[]       @relation("ReturnPickupDriver")
+  deliveryReturns        ReturnShipment[]       @relation("ReturnDeliveryDriver")
+  deliveryZones          Zone[]                 @relation("DeliveryPersonZone")
+  daysOff                DriverDayOff[]
+  legalNotices           DriverLegalNotice[]
+  refusedHandoverBatches RefusedHandoverBatch[]
 
   @@index([status])
   @@index([city])
@@ -1697,7 +1699,7 @@ model Shipment {
 }
 
 model ShipmentItem {
-  id                    Int       @id @default(autoincrement())
+  id                    Int                  @id @default(autoincrement())
   shipmentId            Int
   orderId               Int
   orderItemId           Int
@@ -1706,12 +1708,14 @@ model ShipmentItem {
   variantId             Int?
   sellerId              Int
   quantity              Int
-  codAmount             Decimal   @db.Decimal(10, 2)
-  refusedQuantity       Int       @default(0)
+  codAmount             Decimal              @db.Decimal(10, 2)
+  refusedQuantity       Int                  @default(0)
   refusedAt             DateTime?
   refusedReason         String?
   returnedToWarehouseAt DateTime?
-  createdAt             DateTime  @default(now())
+  refusedHandoverItem   RefusedHandoverItem?
+  sellerReturnItem      SellerReturnItem?
+  createdAt             DateTime             @default(now())
 
   shipment        Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   order           Order            @relation("OrderShipmentItems", fields: [orderId], references: [id], onDelete: Restrict)
@@ -2418,4 +2422,76 @@ model DriverLegalNotice {
   @@index([driverId])
   @@index([status])
   @@index([deadlineAt])
+}
+
+// ═══════════════════════════════════════════
+// Refused Handover (السائق → المستودع)
+// ═══════════════════════════════════════════
+model RefusedHandoverBatch {
+  id            Int       @id @default(autoincrement())
+  batchCode     String    @unique
+  driverId      Int
+  warehouseId   Int
+  status        String    @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  qrTokenHash   String    @unique
+  qrTokenEnc    Bytes
+  totalQuantity Int
+  itemsCount    Int
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  driver DeliveryPerson        @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  items  RefusedHandoverItem[]
+
+  @@index([driverId])
+  @@index([status])
+}
+
+model RefusedHandoverItem {
+  id             Int @id @default(autoincrement())
+  batchId        Int
+  shipmentItemId Int @unique
+  quantity       Int
+
+  batch        RefusedHandoverBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  shipmentItem ShipmentItem         @relation(fields: [shipmentItemId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+}
+
+// ═══════════════════════════════════════════
+// Seller Return (المستودع → التاجر)
+// ═══════════════════════════════════════════
+model SellerReturnBatch {
+  id            Int       @id @default(autoincrement())
+  batchNumber   String    @unique
+  sellerId      Int
+  warehouseId   Int
+  collectorId   Int?
+  status        String    @default("PENDING") // PENDING, PICKED_UP, CONFIRMED, CANCELLED
+  qrTokenHash   String    @unique
+  qrTokenEnc    Bytes
+  totalQuantity Int
+  itemsCount    Int
+  createdAt     DateTime  @default(now())
+  pickedUpAt    DateTime?
+  confirmedAt   DateTime?
+
+  seller Seller             @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  items  SellerReturnItem[]
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+model SellerReturnItem {
+  id             Int @id @default(autoincrement())
+  batchId        Int
+  shipmentItemId Int @unique
+  quantity       Int
+
+  batch        SellerReturnBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  shipmentItem ShipmentItem      @relation(fields: [shipmentItemId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
 }
