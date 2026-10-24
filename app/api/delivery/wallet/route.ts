@@ -23,14 +23,16 @@ export async function GET() {
       },
     });
 
-    // ═══ حساب حظر ديناميكي (لا نثق بالـ flag المخزن) ═══
     const cashInHand = wallet ? Number(wallet.cashInHand) : 0;
     const cashHeldSince = wallet?.cashHeldSince || null;
     const cashHeldHours = cashHeldSince
       ? Math.floor((Date.now() - new Date(cashHeldSince).getTime()) / (1000 * 60 * 60))
       : 0;
+    const isHeldOver24h = cashHeldHours >= 24;
 
-    const pendingRefused = await prisma.shipmentItem.count({
+    const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const pendingRefusedCount = await prisma.shipmentItem.count({
       where: {
         shipment: { deliveryPersonId: person.id },
         refusedAt: { not: null },
@@ -38,15 +40,25 @@ export async function GET() {
       },
     });
 
-    const isHeldOver24h = cashHeldHours >= 24;
-    const isBlocked = (cashInHand > 0 && isHeldOver24h) || pendingRefused > 0;
+    const pendingRefusedOver24hCount = await prisma.shipmentItem.count({
+      where: {
+        shipment: { deliveryPersonId: person.id },
+        refusedAt: { not: null, lt: cutoff24h },
+        returnedToWarehouseAt: null,
+      },
+    });
+
+    const isBlocked =
+      (cashInHand > 0 && isHeldOver24h) || pendingRefusedOver24hCount > 0;
 
     let blockReason: string | null = null;
     if (isBlocked) {
-      blockReason =
-        cashInHand > 0 && isHeldOver24h
-          ? `كاش محتجز لأكثر من ${cashHeldHours} ساعة`
-          : "بضاعة مرفوضة لم تُرجع للمستودع";
+      if (cashInHand > 0 && isHeldOver24h) {
+        blockReason = `كاش محتجز ${cashInHand.toFixed(2)} د.م منذ ${cashHeldHours} ساعة. يجب تسليمه للمستودع.`;
+      }
+      if (pendingRefusedOver24hCount > 0) {
+        blockReason = `لديك ${pendingRefusedOver24hCount} منتج مرفوض منذ أكثر من 24 ساعة. يجب إرجاعه للمستودع.`;
+      }
     }
 
     const legalNotices = await prisma.driverLegalNotice.findMany({
@@ -62,6 +74,8 @@ export async function GET() {
       cashHeldHours,
       isBlocked,
       blockReason,
+      pendingRefusedCount,
+      pendingRefusedOver24hCount,
       transactions: wallet?.transactions || [],
       legalNotices,
     });

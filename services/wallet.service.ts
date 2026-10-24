@@ -18,20 +18,27 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
     ? Date.now() - new Date(cashHeldSince).getTime() > 24 * 60 * 60 * 1000
     : false;
 
-  const pendingRefused = await tx.shipmentItem.count({
+  const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const pendingRefusedOver24h = await tx.shipmentItem.count({
     where: {
       shipment: { deliveryPersonId: driverId },
-      refusedAt: { not: null },
+      refusedAt: { not: null, lt: cutoff24h },
       returnedToWarehouseAt: null,
     },
   });
 
-  const shouldBlock = (hasCash && isHeldOver24h) || pendingRefused > 0;
-  const reason = shouldBlock
-    ? hasCash && isHeldOver24h
-      ? "كاش محتجز لأكثر من 24 ساعة"
-      : "بضاعة مرفوضة لم تُرجع للمستودع"
-    : null;
+  const shouldBlock = (hasCash && isHeldOver24h) || pendingRefusedOver24h > 0;
+
+  let reason: string | null = null;
+  if (shouldBlock) {
+    if (hasCash && isHeldOver24h) {
+      reason = "كاش محتجز لأكثر من 24 ساعة";
+    }
+    if (pendingRefusedOver24h > 0) {
+      reason = "بضاعة مرفوضة منذ أكثر من 24 ساعة لم تُرجع للمستودع";
+    }
+  }
 
   if (wallet.isBlocked !== shouldBlock || wallet.blockReason !== reason) {
     await tx.wallet.update({

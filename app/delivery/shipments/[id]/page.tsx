@@ -323,35 +323,19 @@ export default function DeliveryShipmentDetailPage() {
         </div>
       )}
 
-      {/* أزرار التوصيل (تظهر فقط بعد الخروج من المستودع) */}
+      {/* زر فتح الماسح (قبل اتخاذ أي إجراء) */}
       {canAct && (
         <div className="mt-5 space-y-2">
-          {/* زر التسليم الجزئي (الأهم - يقود لصفحة مستقلة) */}
           <Link
-            href={`/delivery/shipments/${shipment.id}/partial-delivery`}
+            href="/delivery/scan"
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 py-4 text-sm font-bold text-white shadow-md hover:opacity-90 transition"
           >
-            <Package className="h-5 w-5" />
-            تسليم جزئي / رفض جزئي
+            <ScanLine className="h-5 w-5" />
+            فتح ماسح QR — امسح طلبية الزبون
           </Link>
-
-          {/* زر التسليم الكامل (اختصار سريع) */}
-          <button
-            onClick={() => setActionModal("delivered")}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 py-4 text-sm font-bold text-white shadow-md"
-          >
-            <Check className="h-5 w-5" />
-            تم تسليم الشحنة كاملة
-          </button>
-
-          {/* زر التأجيل */}
-          <button
-            onClick={() => setActionModal("postponed")}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-500 bg-amber-50 py-3.5 text-sm font-bold text-amber-700"
-          >
-            <Clock className="h-5 w-5" />
-            تأجيل التوصيل
-          </button>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            بعد مسح QR، ستظهر أزرار التسليم/الرفض تلقائياً
+          </p>
         </div>
       )}
 
