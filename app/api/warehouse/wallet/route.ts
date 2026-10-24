@@ -9,22 +9,22 @@ export async function GET() {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
-    const warehouseId = 1;
-
     const wallet = await prisma.wallet.findUnique({
-      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: 1 } },
       include: {
         transactions: {
           orderBy: { createdAt: "desc" },
           take: 50,
-        }
-      }
+        },
+      },
     });
 
     return NextResponse.json({
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
       cashInHand: wallet ? Number(wallet.cashInHand) : 0,
+      cashOwedToPlatform: wallet ? Number(wallet.cashOwedToPlatform) : 0,
+      cashOwedToDrivers: wallet ? Number(wallet.cashOwedToDrivers) : 0,
       transactions: wallet?.transactions || [],
     });
   } catch (error) {

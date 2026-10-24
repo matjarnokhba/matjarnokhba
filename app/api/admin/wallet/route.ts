@@ -9,27 +9,25 @@ export async function GET() {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
-    const platformId = 1;
-
     const wallet = await prisma.wallet.findUnique({
-      where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: platformId } },
+      where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: 1 } },
       include: {
         transactions: {
           orderBy: { createdAt: "desc" },
           take: 50,
-        }
-      }
+        },
+      },
     });
 
     const subRevenue = await prisma.subscriptionLog.aggregate({
-      _sum: { amount: true }
+      _sum: { amount: true },
     });
 
     return NextResponse.json({
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
       heldBalance: wallet ? Number(wallet.heldBalance) : 0,
-      cashInHand: wallet ? Number(wallet.cashInHand) : 0, // <--- تمت الإضافة
+      cashInHand: wallet ? Number(wallet.cashInHand) : 0,
       transactions: wallet?.transactions || [],
       subscriptionRevenue: Number(subRevenue._sum.amount || 0),
     });
