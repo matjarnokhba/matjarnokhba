@@ -142,6 +142,9 @@ export async function GET(
             unitPrice: si.orderItem.unitPrice,
             total: si.orderItem.total,
             codAmount: si.codAmount,
+            refusedAt: si.refusedAt,
+            refusedReason: si.refusedReason,
+            returnedToWarehouseAt: si.returnedToWarehouseAt,
           })),
         },
         (_, value) => {
