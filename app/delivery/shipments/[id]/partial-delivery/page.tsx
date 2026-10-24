@@ -2,18 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, XCircle, AlertCircle, ArrowRight, Package, Calculator } from "lucide-react";
+import {
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  Package,
+  Calculator,
+  Minus,
+  Plus,
+  Ban,
+} from "lucide-react";
 
-type ShipmentOrder = {
+type ShipmentItemDecision = {
+  shipmentItemId: number;
+  productName: string;
+  variantName: string | null;
+  imageUrl: string | null;
+  originalQuantity: number;
+  acceptedQuantity: number;
+  reason: string;
+  codAmount: number;
+};
+
+type OrderGroup = {
   orderId: number;
   orderNumber: string;
-  items: Array<{
-    id: number;
-    productName: string;
-    variantName: string | null;
-    imageUrl: string | null;
-    quantity: number;
-  }>;
+  total: number;
+  items: ShipmentItemDecision[];
 };
 
 type Shipment = {
@@ -23,14 +39,19 @@ type Shipment = {
   totalCOD: number;
   totalOrders: number;
   customer: { name: string; phone: string | null } | null;
-  orders: ShipmentOrder[];
-};
-
-type OrderChoice = {
-  orderId: number;
-  orderNumber: string;
-  accepted: boolean;
-  reason: string;
+  orders: Array<{
+    orderId: number;
+    orderNumber: string;
+    total: number;
+    items: Array<{
+      shipmentItemId: number;
+      productName: string;
+      variantName: string | null;
+      imageUrl: string | null;
+      quantity: number;
+      codAmount: number;
+    }>;
+  }>;
 };
 
 export default function PartialDeliveryPage() {
@@ -39,7 +60,7 @@ export default function PartialDeliveryPage() {
   const shipmentId = params.id as string;
 
   const [shipment, setShipment] = useState<Shipment | null>(null);
-  const [choices, setChoices] = useState<OrderChoice[]>([]);
+  const [groups, setGroups] = useState<OrderGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -49,19 +70,30 @@ export default function PartialDeliveryPage() {
       try {
         const res = await fetch(`/api/delivery/shipments/${shipmentId}`);
         const data = await res.json();
-        if (data.success) {
-          setShipment(data.shipment);
-          setChoices(
-            data.shipment.orders.map((o: ShipmentOrder) => ({
-              orderId: o.orderId,
-              orderNumber: o.orderNumber,
-              accepted: true,
-              reason: "",
-            }))
-          );
-        } else {
+        if (!data.success) {
           setError(data.message || "فشل التحميل");
+          return;
         }
+        setShipment(data.shipment);
+
+        const initialGroups: OrderGroup[] = data.shipment.orders.map(
+          (o: any) => ({
+            orderId: o.orderId,
+            orderNumber: o.orderNumber,
+            total: o.total,
+            items: o.items.map((i: any) => ({
+              shipmentItemId: i.shipmentItemId,
+              productName: i.productName,
+              variantName: i.variantName,
+              imageUrl: i.imageUrl,
+              originalQuantity: i.quantity,
+              acceptedQuantity: i.quantity,
+              reason: "",
+              codAmount: i.codAmount,
+            })),
+          })
+        );
+        setGroups(initialGroups);
       } catch {
         setError("فشل الاتصال");
       } finally {
@@ -71,32 +103,132 @@ export default function PartialDeliveryPage() {
     if (shipmentId) load();
   }, [shipmentId]);
 
-  function toggleAccept(orderId: number) {
-    setChoices((prev) =>
-      prev.map((c) =>
-        c.orderId === orderId
-          ? { ...c, accepted: !c.accepted, reason: c.accepted ? "" : c.reason }
-          : c
-      )
+  function updateAccepted(
+    orderId: number,
+    shipmentItemId: number,
+    delta: number
+  ) {
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.orderId !== orderId) return g;
+        return {
+          ...g,
+          items: g.items.map((i) => {
+            if (i.shipmentItemId !== shipmentItemId) return i;
+            const newVal = Math.max(
+              0,
+              Math.min(i.originalQuantity, i.acceptedQuantity + delta)
+            );
+            return { ...i, acceptedQuantity: newVal };
+          }),
+        };
+      })
     );
   }
 
-  function setReason(orderId: number, reason: string) {
-    setChoices((prev) =>
-      prev.map((c) => (c.orderId === orderId ? { ...c, reason } : c))
+  function setAccepted(
+    orderId: number,
+    shipmentItemId: number,
+    value: number
+  ) {
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.orderId !== orderId) return g;
+        return {
+          ...g,
+          items: g.items.map((i) => {
+            if (i.shipmentItemId !== shipmentItemId) return i;
+            const newVal = Math.max(
+              0,
+              Math.min(i.originalQuantity, isNaN(value) ? 0 : value)
+            );
+            return { ...i, acceptedQuantity: newVal };
+          }),
+        };
+      })
     );
   }
 
-  const acceptedChoices = choices.filter((c) => c.accepted);
-  const refusedChoices = choices.filter((c) => !c.accepted);
-  const allRefused = acceptedChoices.length === 0;
-  const allAccepted = refusedChoices.length === 0;
+  function setReason(orderId: number, shipmentItemId: number, reason: string) {
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.orderId !== orderId) return g;
+        return {
+          ...g,
+          items: g.items.map((i) =>
+            i.shipmentItemId === shipmentItemId ? { ...i, reason } : i
+          ),
+        };
+      })
+    );
+  }
 
-  const canSubmit = refusedChoices.every((c) => c.reason.trim().length >= 3);
+  function acceptAll() {
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        items: g.items.map((i) => ({
+          ...i,
+          acceptedQuantity: i.originalQuantity,
+          reason: "",
+        })),
+      }))
+    );
+  }
+
+  function refuseAll() {
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        items: g.items.map((i) => ({
+          ...i,
+          acceptedQuantity: 0,
+          reason: i.reason || "رفض كامل من الزبون",
+        })),
+      }))
+    );
+  }
+
+  // ═══ الحسابات ═══
+  const allItems = groups.flatMap((g) => g.items);
+  const hasAnyRefusal = allItems.some(
+    (i) => i.acceptedQuantity < i.originalQuantity
+  );
+  const hasMissingReasons = allItems.some(
+    (i) =>
+      i.acceptedQuantity < i.originalQuantity && i.reason.trim().length < 3
+  );
+
+  let calculatedCOD = 0;
+  let totalRefused = 0;
+  let totalAccepted = 0;
+
+  for (const group of groups) {
+    let orderAcceptedSubtotal = 0;
+    let orderHasAccepted = false;
+
+    for (const item of group.items) {
+      const acceptedAmount =
+        (item.codAmount / item.originalQuantity) * item.acceptedQuantity;
+      orderAcceptedSubtotal += acceptedAmount;
+      totalAccepted += item.acceptedQuantity;
+      totalRefused += item.originalQuantity - item.acceptedQuantity;
+      if (item.acceptedQuantity > 0) orderHasAccepted = true;
+    }
+
+    // الشحن يُحسب فقط إذا قُبل شيء من الأوردر
+    const shipping = orderHasAccepted
+      ? Number((shipment as any)?.orders?.find((o: any) => o.orderId === group.orderId)?.shippingCost || 0)
+      : 0;
+
+    calculatedCOD += orderAcceptedSubtotal + shipping;
+  }
+
+  const canSubmit = !hasMissingReasons;
 
   async function handleSubmit() {
-    if (!canSubmit) {
-      setError("يجب كتابة سبب رفض لكل طلبية مرفوضة (3 أحرف على الأقل)");
+    if (hasMissingReasons) {
+      setError("يجب كتابة سبب رفض لكل منتج تم رفض جزء منه (3 أحرف على الأقل)");
       return;
     }
 
@@ -104,17 +236,22 @@ export default function PartialDeliveryPage() {
     setError("");
 
     try {
-      const res = await fetch(`/api/delivery/shipments/${shipmentId}/partial-delivery`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          acceptedOrderIds: acceptedChoices.map((c) => c.orderId),
-          refusedOrders: refusedChoices.map((c) => ({
-            orderId: c.orderId,
-            reason: c.reason.trim(),
-          })),
+      const decisions = allItems.map((i) => ({
+        shipmentItemId: i.shipmentItemId,
+        refusedQuantity: i.originalQuantity - i.acceptedQuantity,
+        ...(i.acceptedQuantity < i.originalQuantity && {
+          reason: i.reason.trim(),
         }),
-      });
+      }));
+
+      const res = await fetch(
+        `/api/delivery/shipments/${shipmentId}/partial-delivery`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisions }),
+        }
+      );
 
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -122,7 +259,7 @@ export default function PartialDeliveryPage() {
         return;
       }
 
-      router.push(`/delivery/shipments/${shipmentId}`);
+      router.push(`/delivery/shipments`);
       router.refresh();
     } catch {
       setError("فشل الاتصال");
@@ -153,7 +290,7 @@ export default function PartialDeliveryPage() {
   if (!shipment) return null;
 
   return (
-    <div className="p-4 pt-16 pb-24 lg:p-8 lg:pt-8 min-h-screen bg-gray-50" dir="rtl">
+    <div className="p-4 pt-16 pb-32 lg:p-8 lg:pt-8 min-h-screen bg-gray-50" dir="rtl">
       <div className="mx-auto max-w-2xl space-y-4">
         <button
           onClick={() => router.back()}
@@ -164,111 +301,229 @@ export default function PartialDeliveryPage() {
         </button>
 
         <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <h1 className="text-xl font-black">تسليم جزئي - الشحنة {shipment.shipmentNumber}</h1>
+          <h1 className="text-xl font-black">
+            تسليم الشحنة {shipment.shipmentNumber}
+          </h1>
           <p className="mt-1 text-sm text-gray-600">
-            حدد لكل طلبية: هل قبلها الزبون أم رفضها؟
+            حدد الكمية المقبولة لكل منتج. الكمية المتبقية تُعتبر مرفوضة (يجب
+            كتابة السبب).
           </p>
+
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={acceptAll}
+              className="flex-1 rounded-lg border-2 border-green-500 bg-green-50 py-2 text-xs font-bold text-green-700 hover:bg-green-100"
+            >
+              <CheckCircle2 className="inline h-4 w-4 mr-1" />
+              قبول الكل
+            </button>
+            <button
+              onClick={refuseAll}
+              className="flex-1 rounded-lg border-2 border-red-500 bg-red-50 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
+            >
+              <Ban className="inline h-4 w-4 mr-1" />
+              رفض الكل
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {shipment.orders.map((order) => {
-            const choice = choices.find((c) => c.orderId === order.orderId)!;
-            return (
-              <div
-                key={order.orderId}
-                className={`rounded-2xl p-4 shadow-sm border-2 transition ${
-                  choice.accepted
-                    ? "bg-green-50 border-green-300"
-                    : "bg-red-50 border-red-300"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <div className="font-mono font-black text-sm">{order.orderNumber}</div>
-                  <button
-                    onClick={() => toggleAccept(order.orderId)}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                      choice.accepted
-                        ? "bg-green-600 text-white hover:bg-green-700"
-                        : "bg-red-600 text-white hover:bg-red-700"
+        {groups.map((group) => (
+          <div key={group.orderId} className="rounded-2xl bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <div className="font-mono text-sm font-black text-green-600">
+                {group.orderNumber}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                {group.items.length} منتج
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {group.items.map((item) => {
+                const refused = item.originalQuantity - item.acceptedQuantity;
+                const isFullyAccepted = refused === 0;
+                const isFullyRefused = item.acceptedQuantity === 0;
+
+                return (
+                  <div
+                    key={item.shipmentItemId}
+                    className={`rounded-xl border-2 p-3 transition ${
+                      isFullyAccepted
+                        ? "border-green-200 bg-green-50/50"
+                        : isFullyRefused
+                          ? "border-red-200 bg-red-50/50"
+                          : "border-amber-200 bg-amber-50/50"
                     }`}
                   >
-                    {choice.accepted ? (
-                      <>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        مقبولة
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="h-3.5 w-3.5" />
-                        مرفوضة
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {order.items.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2 text-xs">
+                    <div className="flex items-start gap-3">
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt="" className="h-8 w-8 rounded object-cover" />
+                        <img
+                          src={item.imageUrl}
+                          alt={item.productName}
+                          className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                        />
                       ) : (
-                        <div className="flex h-8 w-8 items-center justify-center rounded bg-gray-200">
-                          <Package className="h-4 w-4 text-gray-400" />
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gray-200">
+                          <Package className="h-6 w-6 text-gray-400" />
                         </div>
                       )}
-                      <span className="flex-1 truncate">{item.productName}</span>
-                      <span className="font-bold">×{item.quantity}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold">
+                          {item.productName}
+                        </div>
+                        {item.variantName && (
+                          <div className="text-[11px] text-gray-500">
+                            {item.variantName}
+                          </div>
+                        )}
+                        <div className="mt-1 text-[11px] text-gray-600">
+                          الكمية المطلوبة: <strong>{item.originalQuantity}</strong>
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
 
-                {!choice.accepted && (
-                  <div className="mt-3">
-                    <label className="block text-[11px] font-bold text-red-800 mb-1">
-                      سبب الرفض <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={choice.reason}
-                      onChange={(e) => setReason(order.orderId, e.target.value)}
-                      placeholder="مثال: المنتج تالف، السعر مرتفع، إلخ"
-                      className="w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500"
-                    />
+                    {/* محدد الكمية المقبولة */}
+                    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-white p-3 border border-gray-200">
+                      <div className="flex-1 min-w-[150px]">
+                        <label className="mb-1 block text-[10px] font-bold text-gray-600">
+                          الكمية المقبولة
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateAccepted(group.orderId, item.shipmentItemId, -1)
+                            }
+                            disabled={item.acceptedQuantity <= 0}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-30"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <input
+                            type="number"
+                            value={item.acceptedQuantity}
+                            onChange={(e) =>
+                              setAccepted(
+                                group.orderId,
+                                item.shipmentItemId,
+                                Number(e.target.value)
+                              )
+                            }
+                            min={0}
+                            max={item.originalQuantity}
+                            className="w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm font-bold outline-none focus:border-green-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateAccepted(group.orderId, item.shipmentItemId, 1)
+                            }
+                            disabled={
+                              item.acceptedQuantity >= item.originalQuantity
+                            }
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-30"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-center">
+                        <div className="text-[10px] font-bold text-gray-600">
+                          مرفوض
+                        </div>
+                        <div
+                          className={`text-lg font-black ${
+                            refused > 0 ? "text-red-600" : "text-gray-400"
+                          }`}
+                        >
+                          {refused}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* سبب الرفض */}
+                    {refused > 0 && (
+                      <div className="mt-2">
+                        <label className="mb-1 block text-[10px] font-bold text-red-700">
+                          سبب رفض الـ {refused} منتج <span>*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={item.reason}
+                          onChange={(e) =>
+                            setReason(
+                              group.orderId,
+                              item.shipmentItemId,
+                              e.target.value
+                            )
+                          }
+                          placeholder="مثال: المنتج تالف"
+                          className="w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500"
+                        />
+                        {item.reason.trim().length > 0 &&
+                          item.reason.trim().length < 3 && (
+                            <div className="mt-1 text-[10px] text-red-600">
+                              السبب قصير جداً (3 أحرف على الأقل)
+                            </div>
+                          )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
+        {/* ملخص */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-black">
             <Calculator className="h-4 w-4 text-[#ff5c00]" />
             ملخص التسليم
           </h2>
-          
+
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-600">الطلبات المقبولة:</span>
-              <span className="font-bold text-green-600">{acceptedChoices.length} / {shipment.orders.length}</span>
+              <span className="text-gray-600">إجمالي الكميات:</span>
+              <span className="font-bold">
+                {allItems.reduce((s, i) => s + i.originalQuantity, 0)}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">الطلبات المرفوضة:</span>
-              <span className="font-bold text-red-600">{refusedChoices.length}</span>
+              <span className="text-gray-600">مقبول:</span>
+              <span className="font-bold text-green-600">{totalAccepted}</span>
             </div>
-            
-            {allRefused && (
-              <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-800 border border-red-200">
-                ⚠️ رفض كامل: لن يتم تحصيل أي مبلغ من الزبون. سيتم إرجاع كل البضاعة للمستودع، ولن تأخذ أجر التوصيل.
-              </div>
-            )}
-            
-            {!allRefused && !allAccepted && (
-              <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-800 border border-blue-200">
-                ℹ️ تسليم جزئي: سيتم تحصيل مبلغ الطلبات المقبولة + رسوم الشحن.
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span className="text-gray-600">مرفوض:</span>
+              <span className="font-bold text-red-600">{totalRefused}</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-100 pt-2">
+              <span className="text-gray-600">المبلغ المطلوب تحصيله:</span>
+              <span className="text-lg font-black text-[#ff5c00]">
+                {calculatedCOD.toFixed(2)} د.م
+              </span>
+            </div>
           </div>
+
+          {!hasAnyRefusal && (
+            <div className="mt-3 rounded-lg bg-green-50 p-3 text-xs text-green-800 border border-green-200">
+              ✅ كل المنتجات مقبولة — سيتم تسجيل تسليم كامل.
+            </div>
+          )}
+          {hasAnyRefusal &&
+            totalAccepted === 0 && (
+              <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-800 border border-red-200">
+                ⚠️ رفض كامل — سيتم إرجاع كل المنتجات للمستودع، ولن يتم تحصيل أي مبلغ.
+              </div>
+            )}
+          {hasAnyRefusal &&
+            totalAccepted > 0 &&
+            totalRefused > 0 && (
+              <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200">
+                ℹ️ تسليم جزئي — سيتم تحصيل مبلغ المنتجات المقبولة + الشحن.
+              </div>
+            )}
         </div>
 
         {error && (
@@ -285,12 +540,12 @@ export default function PartialDeliveryPage() {
         >
           {submitting ? (
             <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-          ) : allRefused ? (
+          ) : totalAccepted === 0 ? (
             "تأكيد الرفض الكامل والإرجاع"
-          ) : allAccepted ? (
-            "تأكيد التسليم الكامل"
-          ) : (
+          ) : hasAnyRefusal ? (
             "تأكيد التسليم الجزئي"
+          ) : (
+            "تأكيد التسليم الكامل"
           )}
         </button>
       </div>

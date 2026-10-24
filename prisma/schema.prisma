@@ -1707,6 +1707,7 @@ model ShipmentItem {
   sellerId              Int
   quantity              Int
   codAmount             Decimal   @db.Decimal(10, 2)
+  refusedQuantity       Int       @default(0)
   refusedAt             DateTime?
   refusedReason         String?
   returnedToWarehouseAt DateTime?

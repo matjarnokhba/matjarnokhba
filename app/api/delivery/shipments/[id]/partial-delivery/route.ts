@@ -5,13 +5,15 @@ import { SessionService } from "@/services/session.service";
 import { PartialDeliveryService } from "@/services/partial-delivery.service";
 
 const schema = z.object({
-  acceptedOrderIds: z.array(z.number().int().positive()),
-  refusedOrders: z.array(
-    z.object({
-      orderId: z.number().int().positive(),
-      reason: z.string().trim().min(3),
-    })
-  ),
+  decisions: z
+    .array(
+      z.object({
+        shipmentItemId: z.number().int().positive(),
+        refusedQuantity: z.number().int().min(0),
+        reason: z.string().trim().optional(),
+      })
+    )
+    .min(1),
 });
 
 export async function POST(
@@ -21,23 +23,41 @@ export async function POST(
   try {
     const current = await SessionService.getCurrent();
     if (!current || current.user.role !== "DELIVERY") {
-      return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
+      return NextResponse.json(
+        { success: false, message: "غير مصرح" },
+        { status: 403 }
+      );
     }
 
     const person = await prisma.deliveryPerson.findUnique({
       where: { userId: current.user.id },
       select: { id: true },
     });
-    if (!person) return NextResponse.json({ success: false, message: "السائق غير موجود" }, { status: 404 });
+    if (!person) {
+      return NextResponse.json(
+        { success: false, message: "السائق غير موجود" },
+        { status: 404 }
+      );
+    }
 
     const { id } = await params;
     const shipmentId = parseInt(id);
+    if (isNaN(shipmentId)) {
+      return NextResponse.json(
+        { success: false, message: "معرف غير صحيح" },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
     const parsed = schema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, message: parsed.error.issues[0]?.message || "بيانات غير صحيحة" },
+        {
+          success: false,
+          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
+        },
         { status: 400 }
       );
     }
@@ -45,8 +65,7 @@ export async function POST(
     const result = await PartialDeliveryService.processPartialDelivery(
       shipmentId,
       person.id,
-      parsed.data.acceptedOrderIds,
-      parsed.data.refusedOrders
+      parsed.data.decisions
     );
 
     return NextResponse.json({ success: true, result });

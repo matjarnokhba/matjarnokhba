@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 
     let statusFilter: any = {};
     if (status === "ACTIVE") {
-      statusFilter = { in: ["ASSIGNED", "IN_TRANSIT"] };
+      statusFilter = { in: ["ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY"] };
     } else if (status === "COMPLETED") {
       statusFilter = {
         in: ["DELIVERED", "REFUSED", "RETURNED", "PARTIALLY_DELIVERED"],
@@ -61,6 +61,7 @@ export async function GET(request: Request) {
             order: {
               select: {
                 shippingAddressSnapshot: true,
+                total: true,
               },
             },
           },
@@ -71,19 +72,27 @@ export async function GET(request: Request) {
     });
 
     const formatted = shipments.map((s) => {
-      // ═══ استخراج المدينة من أول طلب ═══
       let city: string | null = null;
+      let calculatedCOD = 0;
+      const uniqueOrders = new Set<number>();
+
       if (s.items.length > 0) {
-        const firstAddress = s.items[0]?.order
-          ?.shippingAddressSnapshot as any;
+        const firstAddress = s.items[0]?.order?.shippingAddressSnapshot as any;
         city = firstAddress?.city || null;
+
+        for (const item of s.items) {
+          if (!uniqueOrders.has(item.orderId)) {
+            uniqueOrders.add(item.orderId);
+            calculatedCOD += Number(item.order?.total || 0);
+          }
+        }
       }
 
       return {
         id: s.id,
         shipmentNumber: s.shipmentNumber,
         status: s.status,
-        totalCOD: Number(s.totalCOD),
+        totalCOD: calculatedCOD,
         totalOrders: s.totalOrders,
         totalItems: s.items.length,
         customer: s.customer

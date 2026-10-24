@@ -2,9 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 import { updateDriverBlockStatus } from "./wallet.service";
 
-type RefusedOrder = {
-  orderId: number;
-  reason: string;
+type ItemDecision = {
+  shipmentItemId: number;
+  refusedQuantity: number;
+  reason?: string;
 };
 
 const PLATFORM_ID = 1;
@@ -14,8 +15,7 @@ export const PartialDeliveryService = {
   async processPartialDelivery(
     shipmentId: number,
     driverId: number,
-    acceptedOrderIds: number[],
-    refusedOrders: RefusedOrder[]
+    decisions: ItemDecision[]
   ) {
     return prisma.$transaction(
       async (tx) => {
@@ -31,6 +31,7 @@ export const PartialDeliveryService = {
                     total: true,
                     subtotal: true,
                     shippingCost: true,
+                    discount: true,
                     sellerId: true,
                     status: true,
                     userId: true,
@@ -51,118 +52,205 @@ export const PartialDeliveryService = {
           );
         }
 
-        const allOrderIds = Array.from(
-          new Set(shipment.items.map((i) => i.orderId))
-        );
-        const acceptedSet = new Set(acceptedOrderIds);
-        const refusedSet = new Set(refusedOrders.map((r) => r.orderId));
-
-        for (const id of acceptedSet) {
-          if (!allOrderIds.includes(id))
-            throw new Error(`الطلبية ${id} ليست ضمن هذه الشحنة`);
-        }
-        for (const r of refusedOrders) {
-          if (!allOrderIds.includes(r.orderId))
-            throw new Error(`الطلبية ${r.orderId} ليست ضمن هذه الشحنة`);
-          if (!r.reason || r.reason.trim().length < 3)
-            throw new Error(`سبب رفض الطلبية ${r.orderId} مطلوب`);
-        }
-        for (const id of allOrderIds) {
-          if (!acceptedSet.has(id) && !refusedSet.has(id))
-            throw new Error(`يجب تحديد الطلبية ${id}`);
-          if (acceptedSet.has(id) && refusedSet.has(id))
-            throw new Error(`الطلبية ${id} مكررة`);
+        // ═══ التحقق من القرارات ═══
+        const decisionMap = new Map<number, ItemDecision>();
+        for (const d of decisions) {
+          if (d.refusedQuantity < 0)
+            throw new Error("الكمية المرفوضة لا يمكن أن تكون سالبة");
+          decisionMap.set(d.shipmentItemId, d);
         }
 
-        const uniqueAcceptedOrders = new Map<number, any>();
-        const uniqueRefusedOrders = new Map<number, any>();
         for (const item of shipment.items) {
-          if (
-            acceptedSet.has(item.orderId) &&
-            !uniqueAcceptedOrders.has(item.orderId)
-          ) {
-            uniqueAcceptedOrders.set(item.orderId, item.order);
+          if (!decisionMap.has(item.id)) {
+            throw new Error(`يجب إعطاء قرار لكل منتج`);
+          }
+          const d = decisionMap.get(item.id)!;
+          if (d.refusedQuantity > item.quantity) {
+            throw new Error(
+              `الكمية المرفوضة تتجاوز الكمية الكلية للمنتج`
+            );
           }
           if (
-            refusedSet.has(item.orderId) &&
-            !uniqueRefusedOrders.has(item.orderId)
+            d.refusedQuantity > 0 &&
+            (!d.reason || d.reason.trim().length < 3)
           ) {
-            uniqueRefusedOrders.set(item.orderId, item.order);
+            throw new Error(
+              `سبب الرفض مطلوب للمنتج الذي تم رفض جزء منه`
+            );
           }
         }
 
-        const acceptedOrders = Array.from(uniqueAcceptedOrders.values());
-        const isFullRefusal = acceptedOrders.length === 0;
-        const isFullDelivery = refusedOrders.length === 0;
-
-        const COD = acceptedOrders.reduce((s, o) => s + Number(o.total), 0);
-        const driverFee = isFullRefusal ? 0 : Number(shipment.driverFee);
-
-        const totalShipping = acceptedOrders.reduce(
-          (s, o) => s + Number(o.shippingCost || 0),
-          0
-        );
-        const warehouseProfit = isFullRefusal
-          ? 0
-          : Math.max(0, totalShipping - driverFee);
-
+        // ═══ الحساب لكل عنصر ═══
         const now = new Date();
+        const itemData = shipment.items.map((item) => {
+          const d = decisionMap.get(item.id)!;
+          const acceptedQty = item.quantity - d.refusedQuantity;
+          const unitAmount = Number(item.codAmount) / item.quantity;
+          const acceptedAmount = unitAmount * acceptedQty;
+
+          return {
+            item,
+            decision: d,
+            acceptedQty,
+            acceptedAmount,
+            isFullyAccepted: acceptedQty === item.quantity,
+            isFullyRefused: acceptedQty === 0,
+          };
+        });
+
+        // ═══ تجميع لكل أوردر ═══
+        const orderMap = new Map<number, typeof shipment.items>();
         for (const item of shipment.items) {
-          if (refusedSet.has(item.orderId)) {
-            await tx.shipmentItem.update({
-              where: { id: item.id },
+          if (!orderMap.has(item.orderId)) orderMap.set(item.orderId, []);
+          orderMap.get(item.orderId)!.push(item);
+        }
+
+        let totalCOD = 0;
+        const orderUpdates: Array<{
+          orderId: number;
+          status: "DELIVERED" | "PARTIALLY_DELIVERED" | "RETURNED";
+          acceptedSubtotal: number;
+          shippingCost: number;
+        }> = [];
+
+        for (const [orderId, orderItems] of orderMap) {
+          const order = orderItems[0].order;
+          let totalAcceptedQty = 0;
+          let totalQty = 0;
+          let acceptedSubtotal = 0;
+
+          for (const oi of orderItems) {
+            const data = itemData.find((i) => i.item.id === oi.id)!;
+            totalAcceptedQty += data.acceptedQty;
+            totalQty += oi.quantity;
+            acceptedSubtotal += data.acceptedAmount;
+          }
+
+          const shipping =
+            totalAcceptedQty > 0 ? Number(order.shippingCost || 0) : 0;
+          totalCOD += acceptedSubtotal + shipping;
+
+          let status: "DELIVERED" | "PARTIALLY_DELIVERED" | "RETURNED";
+          if (totalAcceptedQty === 0) status = "RETURNED";
+          else if (totalAcceptedQty === totalQty) status = "DELIVERED";
+          else status = "PARTIALLY_DELIVERED";
+
+          orderUpdates.push({
+            orderId,
+            status,
+            acceptedSubtotal,
+            shippingCost: shipping,
+          });
+        }
+
+        // ═══ تحديث ShipmentItems + FulfillmentItems ═══
+        for (const data of itemData) {
+          const item = data.item;
+          const d = data.decision;
+
+          await tx.shipmentItem.update({
+            where: { id: item.id },
+            data: {
+              refusedQuantity: d.refusedQuantity,
+              refusedAt: d.refusedQuantity > 0 ? now : null,
+              refusedReason:
+                d.refusedQuantity > 0 ? d.reason || null : null,
+            },
+          });
+
+          if (item.fulfillmentItemId) {
+            const fiStatus: FulfillmentStatus = data.isFullyRefused
+              ? "RETURNED"
+              : "DELIVERED";
+
+            await tx.fulfillmentItem.update({
+              where: { id: item.fulfillmentItemId },
+              data: { status: fiStatus },
+            });
+
+            await tx.fulfillmentStatusHistory.create({
               data: {
-                refusedAt: now,
-                refusedReason:
-                  refusedOrders.find((r) => r.orderId === item.orderId)
-                    ?.reason || "رفض من الزبون",
+                fulfillmentItemId: item.fulfillmentItemId,
+                fromStatus: "SHIPPED" as FulfillmentStatus,
+                toStatus: fiStatus,
+                changedById: driverId,
+                note: data.isFullyRefused
+                  ? `رفض كامل: ${d.reason || ""}`
+                  : data.isFullyAccepted
+                    ? `تسليم كامل`
+                    : `رفض جزئي (${d.refusedQuantity}/${item.quantity}): ${d.reason || ""}`,
               },
             });
-            if (item.fulfillmentItemId) {
-              await tx.fulfillmentItem.update({
-                where: { id: item.fulfillmentItemId },
-                data: { status: "RETURNED" as FulfillmentStatus },
-              });
-            }
-          } else {
-            if (item.fulfillmentItemId) {
-              await tx.fulfillmentItem.update({
-                where: { id: item.fulfillmentItemId },
-                data: { status: "DELIVERED" as FulfillmentStatus },
-              });
-            }
           }
         }
 
-        for (const orderId of uniqueAcceptedOrders.keys()) {
+        // ═══ تحديث Orders ═══
+        for (const update of orderUpdates) {
+          const originalOrder = shipment.items.find(
+            (i) => i.orderId === update.orderId
+          )!.order;
+
+          const newTotal = Math.max(
+            0,
+            update.acceptedSubtotal +
+              update.shippingCost -
+              Number(originalOrder.discount || 0)
+          );
+
           await tx.order.update({
-            where: { id: orderId },
+            where: { id: update.orderId },
             data: {
-              status: "DELIVERED",
-              deliveredAt: now,
-              paymentStatus: "PAID",
+              status: update.status,
+              subtotal: update.acceptedSubtotal,
+              total: newTotal,
+              ...(update.status !== "RETURNED" && { deliveredAt: now }),
+              ...(update.status === "DELIVERED" && {
+                paymentStatus: "PAID",
+              }),
+              ...(update.status === "PARTIALLY_DELIVERED" && {
+                paymentStatus: "PARTIALLY_REFUNDED",
+              }),
+            },
+          });
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: update.orderId,
+              fromStatus: originalOrder.status,
+              toStatus: update.status,
+              changedById: driverId,
+              note:
+                update.status === "RETURNED"
+                  ? "رفض كامل من الزبون"
+                  : update.status === "PARTIALLY_DELIVERED"
+                    ? "تسليم جزئي"
+                    : "تسليم كامل",
             },
           });
         }
-        for (const orderId of uniqueRefusedOrders.keys()) {
-          await tx.order.update({
-            where: { id: orderId },
-            data: { status: "RETURNED" },
-          });
-        }
 
-        const newStatus = isFullRefusal
+        // ═══ حالة الشحنة ═══
+        const allOrdersReturned = orderUpdates.every(
+          (u) => u.status === "RETURNED"
+        );
+        const allOrdersDelivered = orderUpdates.every(
+          (u) => u.status === "DELIVERED"
+        );
+        const shipmentStatus = allOrdersReturned
           ? "REFUSED"
-          : isFullDelivery
+          : allOrdersDelivered
             ? "DELIVERED"
             : "PARTIALLY_DELIVERED";
 
         await tx.shipment.update({
           where: { id: shipmentId },
-          data: { status: newStatus, totalCOD: COD },
+          data: { status: shipmentStatus, totalCOD },
         });
 
-        if (!isFullRefusal) {
+        // ═══ توزيع الأموال ═══
+        if (!allOrdersReturned) {
+          const driverFee = Number(shipment.driverFee);
+
           const existingWallet = await tx.wallet.findUnique({
             where: {
               ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId },
@@ -180,12 +268,12 @@ export const PartialDeliveryService = {
               ownerType: "DRIVER",
               ownerId: driverId,
               balance: driverFee,
-              cashInHand: COD,
+              cashInHand: totalCOD,
               cashHeldSince: new Date(),
             },
             update: {
               balance: { increment: driverFee },
-              cashInHand: { increment: COD },
+              cashInHand: { increment: totalCOD },
               ...(wasCashZero && { cashHeldSince: new Date() }),
             },
           });
@@ -198,6 +286,15 @@ export const PartialDeliveryService = {
               description: `أجر توصيل شحنة #${shipment.shipmentNumber}`,
             },
           });
+
+          const totalAcceptedShipping = orderUpdates.reduce(
+            (s, u) => s + u.shippingCost,
+            0
+          );
+          const warehouseProfit = Math.max(
+            0,
+            totalAcceptedShipping - driverFee
+          );
 
           if (warehouseProfit > 0) {
             const whWallet = await tx.wallet.upsert({
@@ -231,12 +328,16 @@ export const PartialDeliveryService = {
             typeof policy?.value === "number" ? policy.value : 0.1;
 
           const sellerSubtotals = new Map<number, number>();
-          for (const order of acceptedOrders) {
+          for (const update of orderUpdates) {
+            if (update.acceptedSubtotal <= 0) continue;
+            const order = shipment.items.find(
+              (i) => i.orderId === update.orderId
+            )!.order;
             if (!order.sellerId) continue;
-            const current = sellerSubtotals.get(order.sellerId) || 0;
+            const cur = sellerSubtotals.get(order.sellerId) || 0;
             sellerSubtotals.set(
               order.sellerId,
-              current + Number(order.subtotal)
+              cur + update.acceptedSubtotal
             );
           }
 
@@ -246,7 +347,6 @@ export const PartialDeliveryService = {
               where: { id: sellerId },
             });
             if (!seller) continue;
-
             const rate = seller.commissionRateOverride
               ? Number(seller.commissionRateOverride)
               : defaultRate;
@@ -277,7 +377,7 @@ export const PartialDeliveryService = {
           }
 
           if (totalCommission > 0) {
-            const platformWallet = await tx.wallet.upsert({
+            const pw = await tx.wallet.upsert({
               where: {
                 ownerType_ownerId: {
                   ownerType: "PLATFORM",
@@ -293,7 +393,7 @@ export const PartialDeliveryService = {
             });
             await tx.walletTransactionUnified.create({
               data: {
-                walletId: platformWallet.id,
+                walletId: pw.id,
                 amount: totalCommission,
                 type: "COMMISSION",
                 description: `عمولة من شحنة #${shipment.shipmentNumber}`,
@@ -302,17 +402,14 @@ export const PartialDeliveryService = {
           }
         }
 
-        // ═══ تحديث AssemblyFile لكل عميل متأثر ═══
+        // ═══ AssemblyFile ═══
         try {
           const { AssemblyService } = await import("./assembly.service");
-          const affectedUserIds = new Set<number>();
-          for (const order of acceptedOrders) {
-            affectedUserIds.add(order.userId);
+          const userIds = new Set<number>();
+          for (const item of shipment.items) {
+            if (item.order?.userId) userIds.add(item.order.userId);
           }
-          for (const order of uniqueRefusedOrders.values()) {
-            affectedUserIds.add(order.userId);
-          }
-          for (const userId of affectedUserIds) {
+          for (const userId of userIds) {
             await AssemblyService.rebuildForUser(tx, userId);
           }
         } catch (e) {
@@ -322,12 +419,9 @@ export const PartialDeliveryService = {
         await updateDriverBlockStatus(tx, driverId);
 
         return {
-          COD,
-          driverFee,
-          acceptedCount: acceptedOrders.length,
-          refusedCount: refusedOrders.length,
-          isFullRefusal,
-          isFullDelivery,
+          totalCOD,
+          allOrdersReturned,
+          allOrdersDelivered,
         };
       },
       { timeout: 30000 }
@@ -342,7 +436,7 @@ export const PartialDeliveryService = {
           include: {
             items: {
               where: {
-                refusedAt: { not: null },
+                refusedQuantity: { gt: 0 },
                 returnedToWarehouseAt: null,
               },
               include: {
@@ -382,7 +476,7 @@ export const PartialDeliveryService = {
             await InventoryService.returnStock(
               tx,
               item.variantId,
-              item.quantity,
+              item.refusedQuantity,
               shipmentId,
               "استلام مرتجع من السائق",
               "RETURN"
@@ -400,7 +494,7 @@ export const PartialDeliveryService = {
                   userId: seller.userId,
                   type: "ORDER_STATUS_CHANGED",
                   title: "↩️ استلام مرتجع في المستودع",
-                  message: `الطلبية #${item.order.orderNumber} تم استلامها. البضاعة عادت لمخزونك.`,
+                  message: `الطلبية #${item.order.orderNumber}: ${item.refusedQuantity} منتج تم استلامه. البضاعة عادت لمخزونك.`,
                   link: `/seller/orders/${item.orderId}`,
                   category: "ORDER",
                   severity: "INFO",
@@ -411,10 +505,9 @@ export const PartialDeliveryService = {
 
           affectedOrders.add(item.orderId);
           affectedUserIds.add(item.order.userId);
-          returnedCount++;
+          returnedCount += item.refusedQuantity;
         }
 
-        // ═══ تحديث AssemblyFile ═══
         try {
           const { AssemblyService } = await import("./assembly.service");
           for (const userId of affectedUserIds) {

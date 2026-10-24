@@ -27,7 +27,6 @@ import Footer from "@/components/layout/Footer";
 import ReviewModal from "@/components/reviews/ReviewModal";
 import ReturnModal from "@/components/returns/ReturnModal";
 
-// ═══════ الأنواع ═══════
 type OrderItem = {
   id: number;
   productName: string;
@@ -35,6 +34,8 @@ type OrderItem = {
   sku: string;
   imageUrl: string | null;
   quantity: number;
+  acceptedQuantity: number;
+  refusedQuantity: number;
   unitPrice: string;
   total: string;
   refusedAt: string | null;
@@ -86,7 +87,6 @@ type ReturnRequest = {
   }[];
 };
 
-// ═══════ الحالات ═══════
 const STATUS_FLOW = [
   { key: "NEW", label: "قيد المراجعة", icon: Clock },
   { key: "PROCESSING", label: "قيد التجهيز", icon: Package },
@@ -197,13 +197,11 @@ export default function OrderDetailPage() {
       setLoading(true);
       const res = await fetch(`/api/orders/${orderId}`);
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         setError(data.message || "الطلب غير موجود");
         setLoading(false);
         return;
       }
-
       setOrder(data.order);
     } catch (err) {
       console.error(err);
@@ -218,9 +216,7 @@ export default function OrderDetailPage() {
       const res = await fetch(`/api/returns?orderId=${orderId}`);
       const data = await res.json();
       if (data.success) setReturns(data.returns);
-    } catch {
-      // silent
-    }
+    } catch {}
   }
 
   useEffect(() => {
@@ -231,7 +227,6 @@ export default function OrderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
-  // جلب المراجعات
   useEffect(() => {
     async function loadReviews() {
       try {
@@ -240,33 +235,26 @@ export default function OrderDetailPage() {
         if (data.success && data.reviews) {
           setReviewedItems(data.reviews.map((r: any) => r.orderItemId));
         }
-      } catch {
-        // silent
-      }
+      } catch {}
     }
     if (orderId) loadReviews();
   }, [orderId]);
 
-  // ═══ العدّاد التنازلي ═══
   useEffect(() => {
     if (!order || order.status !== "NEW") {
       setTimeLeft(0);
       return;
     }
-
     const expiresAt = new Date(order.createdAt).getTime() + 30 * 60 * 1000;
-
     const tick = () => {
       const remaining = Math.max(0, expiresAt - Date.now());
       setTimeLeft(remaining);
     };
-
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [order]);
 
-  // ═══ إلغاء الطلب ═══
   async function handleCancelOrder() {
     setCancelling(true);
     try {
@@ -274,13 +262,11 @@ export default function OrderDetailPage() {
         method: "PATCH",
       });
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         alert(data.message || "فشل الإلغاء");
         setCancelling(false);
         return;
       }
-
       setShowCancelConfirm(false);
       window.location.reload();
     } catch {
@@ -296,17 +282,11 @@ export default function OrderDetailPage() {
     return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
 
-  // ═══ حالة التحميل ═══
   if (loading) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
         <TopBar />
-        <Header
-          search={search}
-          onSearchChange={setSearch}
-          cartCount={0}
-          onCartClick={() => {}}
-        />
+        <Header search={search} onSearchChange={setSearch} cartCount={0} onCartClick={() => {}} />
         <div className="flex flex-col items-center justify-center py-32">
           <Loader2 className="h-10 w-10 animate-spin text-[#ff5c00]" />
           <p className="mt-4 text-sm text-[#6b7280]">جاري تحميل الطلب...</p>
@@ -316,17 +296,11 @@ export default function OrderDetailPage() {
     );
   }
 
-  // ═══ خطأ ═══
   if (error || !order) {
     return (
       <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
         <TopBar />
-        <Header
-          search={search}
-          onSearchChange={setSearch}
-          cartCount={0}
-          onCartClick={() => {}}
-        />
+        <Header search={search} onSearchChange={setSearch} cartCount={0} onCartClick={() => {}} />
         <div className="mx-auto flex max-w-lg flex-col items-center px-4 py-20 text-center">
           <div className="text-6xl">😕</div>
           <h1 className="mt-4 text-2xl font-black">{error || "الطلب غير موجود"}</h1>
@@ -344,7 +318,6 @@ export default function OrderDetailPage() {
 
   const statusInfo = STATUS_INFO[order.status] || STATUS_INFO.NEW;
   const StatusIcon = statusInfo.icon;
-
   const isPartialDelivery = order.status === "PARTIALLY_DELIVERED";
 
   const isTrackingActive = [
@@ -360,8 +333,6 @@ export default function OrderDetailPage() {
     : STATUS_FLOW.findIndex((s) => s.key === order.status);
 
   const address = order.shippingAddressSnapshot;
-
-  // ═══ هل يمكن طلب إرجاع؟ ═══
   const hasActiveReturn = returns.some(
     (r) => r.status === "PENDING" || r.status === "APPROVED"
   );
@@ -369,17 +340,20 @@ export default function OrderDetailPage() {
     (order.status === "DELIVERED" || order.status === "PARTIALLY_DELIVERED") &&
     !hasActiveReturn;
 
+  const totalAcceptedQty = order.items.reduce(
+    (s, i) => s + i.acceptedQuantity,
+    0
+  );
+  const totalRefusedQty = order.items.reduce(
+    (s, i) => s + i.refusedQuantity,
+    0
+  );
+
   return (
     <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
       <TopBar />
-      <Header
-        search={search}
-        onSearchChange={setSearch}
-        cartCount={0}
-        onCartClick={() => {}}
-      />
+      <Header search={search} onSearchChange={setSearch} cartCount={0} onCartClick={() => {}} />
 
-      {/* Breadcrumb */}
       <div className="border-b border-gray-100 bg-white">
         <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-2 text-xs text-[#6b7280]">
           <button
@@ -390,16 +364,13 @@ export default function OrderDetailPage() {
             رجوع
           </button>
           <span>/</span>
-          <Link href="/orders" className="hover:text-[#ff5c00]">
-            طلباتي
-          </Link>
+          <Link href="/orders" className="hover:text-[#ff5c00]">طلباتي</Link>
           <span>/</span>
           <span className="font-mono">{order.orderNumber}</span>
         </div>
       </div>
 
       <div className="mx-auto max-w-4xl px-4 py-6">
-        {/* ═══ رأس الصفحة ═══ */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -417,10 +388,7 @@ export default function OrderDetailPage() {
                 })}
               </div>
             </div>
-
-            <div
-              className={`flex items-center gap-2 self-start rounded-full px-4 py-2 ${statusInfo.bg}`}
-            >
+            <div className={`flex items-center gap-2 self-start rounded-full px-4 py-2 ${statusInfo.bg}`}>
               <StatusIcon className={`h-4 w-4 ${statusInfo.color}`} />
               <span className={`text-sm font-bold ${statusInfo.color}`}>
                 {statusInfo.label}
@@ -429,7 +397,6 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* ═══ العدّاد + زر الإلغاء ═══ */}
         {order.status === "NEW" && timeLeft > 0 && (
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 shadow-sm ring-1 ring-amber-200">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -438,15 +405,12 @@ export default function OrderDetailPage() {
                   <Clock className="h-5 w-5 text-amber-700" />
                 </div>
                 <div>
-                  <div className="text-sm font-black text-amber-800">
-                    طلبك قيد الانتظار
-                  </div>
+                  <div className="text-sm font-black text-amber-800">طلبك قيد الانتظار</div>
                   <div className="mt-0.5 text-xs text-amber-700">
                     سنؤكد الطلب قريباً — إذا لم يتم التأكيد، سيلغى تلقائياً بعد
                   </div>
                 </div>
               </div>
-
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-white px-3 py-2 font-mono text-lg font-black tabular-nums text-amber-700 shadow-sm">
                   {formatTime(timeLeft)}
@@ -462,7 +426,6 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══ نجاح الإرجاع ═══ */}
         {returnSuccess && (
           <div className="mt-4 rounded-2xl bg-green-50 p-4 shadow-sm ring-1 ring-green-200">
             <div className="flex items-center gap-2">
@@ -474,11 +437,9 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══ شريط التتبع ═══ */}
         {isTrackingActive && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-5 text-base font-black">حالة الطلب</h2>
-
             <div className="relative">
               <div className="absolute left-0 right-0 top-5 h-1 bg-gray-100" />
               <div
@@ -487,18 +448,13 @@ export default function OrderDetailPage() {
                   width: `${(currentStepIndex / (STATUS_FLOW.length - 1)) * 100}%`,
                 }}
               />
-
               <div className="relative flex justify-between">
                 {STATUS_FLOW.map((step, idx) => {
                   const StepIcon = step.icon;
                   const isDone = idx <= currentStepIndex;
                   const isCurrent = idx === currentStepIndex;
-
                   return (
-                    <div
-                      key={step.key}
-                      className="flex flex-1 flex-col items-center"
-                    >
+                    <div key={step.key} className="flex flex-1 flex-col items-center">
                       <div
                         className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-2 transition ${
                           isDone
@@ -523,99 +479,57 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══ ملخص الرفض الجزئي ═══ */}
-        {isPartialDelivery &&
-          (() => {
-            const refusedItems = order.items.filter((i) => i.refusedAt);
-            const acceptedItems = order.items.filter((i) => !i.refusedAt);
-            const refusedTotal = refusedItems.reduce(
-              (s, i) => s + Number(i.total),
-              0
-            );
-            const acceptedTotal = acceptedItems.reduce(
-              (s, i) => s + Number(i.total),
-              0
-            );
-
-            return (
-              <div className="mt-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5 shadow-sm">
-                <h2 className="mb-4 flex items-center gap-2 text-base font-black text-amber-900">
-                  <AlertTriangle className="h-5 w-5" />
-                  تفاصيل التسليم الجزئي
-                </h2>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-lg bg-green-100 p-3 border border-green-200">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-5 w-5 text-green-700" />
-                      <span className="text-sm font-bold text-green-800">
-                        المنتجات المسلّمة
-                      </span>
-                    </div>
-                    <div className="text-left">
-                      <div className="text-xs text-green-700">
-                        {acceptedItems.length} منتج
-                      </div>
-                      <div className="font-black text-green-800">
-                        {acceptedTotal.toFixed(2)} {CURRENCY}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-lg bg-red-100 p-3 border border-red-200">
-                    <div className="flex items-center gap-2">
-                      <XCircle className="h-5 w-5 text-red-700" />
-                      <span className="text-sm font-bold text-red-800">
-                        المنتجات المرفوضة
-                      </span>
-                    </div>
-                    <div className="text-left">
-                      <div className="text-xs text-red-700">
-                        {refusedItems.length} منتج
-                      </div>
-                      <div className="font-black text-red-800 line-through">
-                        {refusedTotal.toFixed(2)} {CURRENCY}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg bg-white p-3 border border-amber-300 mt-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold text-gray-700">
-                        المبلغ المدفوع فعلياً (مع الشحن)
-                      </span>
-                      <span className="text-lg font-black text-amber-900">
-                        {Number(order.total).toFixed(2)} {CURRENCY}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-gray-500 mt-1">
-                      (المبلغ المدفوع = المنتجات المسلّمة + الشحن الكامل، تم
-                      إرجاع ثمن المنتجات المرفوضة)
-                    </p>
-                  </div>
+        {isPartialDelivery && (
+          <div className="mt-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5 shadow-sm">
+            <h2 className="mb-4 flex items-center gap-2 text-base font-black text-amber-900">
+              <AlertTriangle className="h-5 w-5" />
+              تفاصيل التسليم الجزئي
+            </h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-green-100 p-3 border border-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-700" />
+                  <span className="text-sm font-bold text-green-800">الكميات المسلّمة</span>
+                </div>
+                <div className="text-2xl font-black text-green-800">{totalAcceptedQty}</div>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-red-100 p-3 border border-red-200">
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-red-700" />
+                  <span className="text-sm font-bold text-red-800">الكميات المرفوضة</span>
+                </div>
+                <div className="text-2xl font-black text-red-800">{totalRefusedQty}</div>
+              </div>
+              <div className="rounded-lg bg-white p-3 border border-amber-300">
+                <div className="flex justify-between text-sm">
+                  <span className="font-bold text-gray-700">المبلغ المدفوع فعلياً (مع الشحن)</span>
+                  <span className="text-lg font-black text-amber-900">
+                    {Number(order.total).toFixed(2)} {CURRENCY}
+                  </span>
                 </div>
               </div>
-            );
-          })()}
+            </div>
+          </div>
+        )}
 
-        {/* ═══ المنتجات ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
             <ShoppingBag className="h-4 w-4 text-[#ff5c00]" />
             المنتجات ({order.items.length})
           </h2>
-
           <div className="space-y-3">
             {order.items.map((item) => {
               const isReviewed = reviewedItems.includes(item.id);
               const canReview = order.status === "DELIVERED";
-              const isRefused = !!item.refusedAt;
+              const hasRefused = item.refusedQuantity > 0;
+              const isFullyRefused = item.acceptedQuantity === 0;
+              const isPartiallyRefused = hasRefused && !isFullyRefused;
 
               return (
                 <div
                   key={item.id}
                   className={`border-b border-gray-100 pb-3 last:border-0 last:pb-0 ${
-                    isRefused ? "bg-red-50/50 -mx-2 px-2 rounded-lg py-2" : ""
+                    hasRefused ? "bg-red-50/50 -mx-2 px-2 rounded-lg py-2" : ""
                   }`}
                 >
                   <div className="flex gap-3">
@@ -625,7 +539,7 @@ export default function OrderDetailPage() {
                           src={item.imageUrl}
                           alt={item.productName}
                           className={`h-full w-full object-cover ${
-                            isRefused ? "opacity-50" : ""
+                            isFullyRefused ? "opacity-50" : ""
                           }`}
                         />
                       ) : (
@@ -634,53 +548,50 @@ export default function OrderDetailPage() {
                         </div>
                       )}
                     </div>
-
                     <div className="min-w-0 flex-1">
-                      <div className="line-clamp-2 text-sm font-bold">
-                        {item.productName}
-                      </div>
+                      <div className="line-clamp-2 text-sm font-bold">{item.productName}</div>
                       {item.variantName && (
-                        <div className="mt-0.5 text-xs text-[#6b7280]">
-                          {item.variantName}
-                        </div>
+                        <div className="mt-0.5 text-xs text-[#6b7280]">{item.variantName}</div>
                       )}
                       <div className="mt-1 text-xs text-[#6b7280]">
-                        الكمية: {item.quantity}
+                        الكمية المطلوبة: {item.quantity}
                       </div>
 
-                      {isRefused ? (
+                      {isFullyRefused ? (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700">
                           <XCircle className="h-3 w-3" />
-                          مرفوض: {item.refusedReason || "رفض الزبون"}
+                          مرفوض كلياً: {item.refusedReason || "رفض الزبون"}
                         </div>
-                      ) : order.status === "PARTIALLY_DELIVERED" ||
-                        order.status === "DELIVERED" ? (
+                      ) : isPartiallyRefused ? (
+                        <>
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700">
+                            <CheckCircle2 className="h-3 w-3" />
+                            مسلّم: {item.acceptedQuantity}
+                          </div>
+                          <div className="mt-1 ml-1 inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700">
+                            <XCircle className="h-3 w-3" />
+                            مرفوض: {item.refusedQuantity} — {item.refusedReason || "رفض الزبون"}
+                          </div>
+                        </>
+                      ) : order.status === "PARTIALLY_DELIVERED" || order.status === "DELIVERED" ? (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700">
                           <CheckCircle2 className="h-3 w-3" />
                           تم التسليم
                         </div>
                       ) : null}
                     </div>
-
                     <div className="shrink-0 text-left">
                       <div
                         className={`text-sm font-black ${
-                          isRefused
-                            ? "text-gray-400 line-through"
-                            : "text-[#ff5c00]"
+                          isFullyRefused ? "text-gray-400 line-through" : "text-[#ff5c00]"
                         }`}
                       >
                         {item.total} {CURRENCY}
                       </div>
-                      {item.quantity > 1 && (
-                        <div className="text-[10px] text-[#6b7280]">
-                          {item.unitPrice} × {item.quantity}
-                        </div>
-                      )}
                     </div>
                   </div>
 
-                  {canReview && !isRefused && (
+                  {canReview && !isFullyRefused && (
                     <div className="mt-2 pl-19">
                       {isReviewed ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700">
@@ -709,7 +620,6 @@ export default function OrderDetailPage() {
             })}
           </div>
 
-          {/* ═══ زر طلب الإرجاع ═══ */}
           {canRequestReturn && (
             <div className="mt-4 border-t border-gray-100 pt-4">
               <button
@@ -726,29 +636,20 @@ export default function OrderDetailPage() {
           )}
         </div>
 
-        {/* ═══ طلبات الإرجاع السابقة ═══ */}
         {returns.length > 0 && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-base font-black">
               <RotateCcw className="h-4 w-4 text-[#ff5c00]" />
               طلبات الإرجاع
             </h2>
-
             <div className="space-y-3">
               {returns.map((ret) => {
                 const info = RETURN_STATUS_INFO[ret.status];
                 return (
-                  <div
-                    key={ret.id}
-                    className="rounded-xl border border-gray-100 bg-gray-50 p-3"
-                  >
+                  <div key={ret.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold">
-                        طلب إرجاع #{ret.id}
-                      </span>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${info.bg} ${info.color}`}
-                      >
+                      <span className="text-xs font-bold">طلب إرجاع #{ret.id}</span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${info.bg} ${info.color}`}>
                         {info.label}
                       </span>
                     </div>
@@ -757,10 +658,7 @@ export default function OrderDetailPage() {
                     </div>
                     <div className="mt-2 space-y-1">
                       {ret.items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between text-[10px] text-gray-500"
-                        >
+                        <div key={item.id} className="flex items-center justify-between text-[10px] text-gray-500">
                           <span className="truncate">
                             {item.orderItem.productName} (×{item.quantity})
                           </span>
@@ -772,11 +670,6 @@ export default function OrderDetailPage() {
                         </div>
                       ))}
                     </div>
-                    {ret.adminNote && (
-                      <div className="mt-2 rounded bg-white px-2 py-1 text-[10px] text-gray-500">
-                        <strong>ملاحظة الإدارة:</strong> {ret.adminNote}
-                      </div>
-                    )}
                     <div className="mt-2 text-[10px] text-gray-400">
                       {new Date(ret.requestedAt).toLocaleDateString("ar-MA", {
                         day: "numeric",
@@ -791,13 +684,11 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ═══ العنوان ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
             <MapPin className="h-4 w-4 text-[#ff5c00]" />
             عنوان الشحن
           </h2>
-
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-[#6b7280]" />
@@ -817,76 +708,47 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* ═══ ملخص الأسعار ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-base font-black">ملخص الطلب</h2>
-
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-[#6b7280]">المجموع الفرعي</span>
-              <span className="font-bold">
-                {order.subtotal} {CURRENCY}
-              </span>
+              <span className="font-bold">{order.subtotal} {CURRENCY}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#6b7280]">الشحن</span>
-              <span
-                className={
-                  Number(order.shippingCost) === 0
-                    ? "font-bold text-green-600"
-                    : "font-bold"
-                }
-              >
-                {Number(order.shippingCost) === 0
-                  ? "مجاني"
-                  : `${order.shippingCost} ${CURRENCY}`}
+              <span className={Number(order.shippingCost) === 0 ? "font-bold text-green-600" : "font-bold"}>
+                {Number(order.shippingCost) === 0 ? "مجاني" : `${order.shippingCost} ${CURRENCY}`}
               </span>
             </div>
             {Number(order.discount) > 0 && (
               <div className="flex justify-between">
                 <span className="text-[#6b7280]">الخصم</span>
-                <span className="font-bold text-green-600">
-                  -{order.discount} {CURRENCY}
-                </span>
+                <span className="font-bold text-green-600">-{order.discount} {CURRENCY}</span>
               </div>
             )}
             <div className="flex justify-between border-t border-dashed border-gray-200 pt-3">
               <span className="font-bold">الإجمالي</span>
-              <span className="text-xl font-black text-[#ff5c00]">
-                {order.total} {CURRENCY}
-              </span>
+              <span className="text-xl font-black text-[#ff5c00]">{order.total} {CURRENCY}</span>
             </div>
-          </div>
-
-          <div className="mt-4 rounded-lg bg-[#fff4ed] px-3 py-2 text-xs text-[#6b7280]">
-            💵 الدفع عند الاستلام — ادفع نقداً أو بالبطاقة عند وصول طلبك
           </div>
         </div>
 
-        {/* ═══ سجل الحالة ═══ */}
         {order.statusHistory.length > 0 && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-base font-black">سجل الطلب</h2>
-
             <div className="space-y-3">
               {order.statusHistory.map((h) => {
                 const info = STATUS_INFO[h.toStatus] || STATUS_INFO.NEW;
                 const Icon = info.icon;
-
                 return (
                   <div key={h.id} className="flex gap-3">
-                    <div
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${info.bg}`}
-                    >
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${info.bg}`}>
                       <Icon className={`h-4 w-4 ${info.color}`} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-bold">{info.label}</div>
-                      {h.note && (
-                        <div className="mt-0.5 text-xs text-[#6b7280]">
-                          {h.note}
-                        </div>
-                      )}
+                      {h.note && <div className="mt-0.5 text-xs text-[#6b7280]">{h.note}</div>}
                       <div className="mt-0.5 text-[10px] text-[#9ca3af]">
                         {new Date(h.createdAt).toLocaleDateString("ar-MA", {
                           day: "numeric",
@@ -917,7 +779,6 @@ export default function OrderDetailPage() {
 
       <Footer />
 
-      {/* ═══ Modal المراجعة ═══ */}
       {reviewModal && (
         <ReviewModal
           isOpen={true}
@@ -932,7 +793,6 @@ export default function OrderDetailPage() {
         />
       )}
 
-      {/* ═══ Modal تأكيد الإلغاء ═══ */}
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
@@ -943,22 +803,15 @@ export default function OrderDetailPage() {
             <p className="mt-2 text-sm text-gray-600">
               هل أنت متأكد من إلغاء الطلب؟
               <br />
-              <span className="text-xs text-gray-400">
-                سيُحرَّر المخزون ولا يمكن التراجع.
-              </span>
+              <span className="text-xs text-gray-400">سيُحرَّر المخزون ولا يمكن التراجع.</span>
             </p>
-
             <div className="mt-6 flex gap-2">
               <button
                 onClick={handleCancelOrder}
                 disabled={cancelling}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 py-2.5 text-sm font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
               >
-                {cancelling ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <XCircle className="h-4 w-4" />
-                )}
+                {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                 نعم، ألغِ
               </button>
               <button
@@ -973,7 +826,6 @@ export default function OrderDetailPage() {
         </div>
       )}
 
-      {/* ═══ Modal الإرجاع ═══ */}
       {showReturnModal && (
         <ReturnModal
           orderId={order.id}

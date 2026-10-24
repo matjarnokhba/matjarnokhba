@@ -24,12 +24,8 @@ export async function GET(
       );
     }
 
-    // ═══ جلب الطلب مع كل التفاصيل (بما فيها حقول الرفض) ═══
     const order = await prisma.order.findFirst({
-      where: {
-        id: orderId,
-        userId: current.user.id,
-      },
+      where: { id: orderId, userId: current.user.id },
       include: {
         items: {
           select: {
@@ -57,6 +53,7 @@ export async function GET(
           select: {
             id: true,
             orderItemId: true,
+            refusedQuantity: true,
             refusedAt: true,
             refusedReason: true,
             returnedToWarehouseAt: true,
@@ -72,14 +69,16 @@ export async function GET(
       );
     }
 
-    // ═══ دمج حقول الرفض مع كل منتج ═══
-    const refusedMap = new Map<number, any>();
+    const shipmentMap = new Map<number, any>();
     for (const si of order.shipmentItems) {
-      refusedMap.set(si.orderItemId, si);
+      shipmentMap.set(si.orderItemId, si);
     }
 
     const itemsWithRefusal = order.items.map((item) => {
-      const refusal = refusedMap.get(item.id);
+      const si = shipmentMap.get(item.id);
+      const refusedQuantity = si?.refusedQuantity || 0;
+      const acceptedQuantity = item.quantity - refusedQuantity;
+
       return {
         id: item.id,
         productName: item.productName,
@@ -87,32 +86,34 @@ export async function GET(
         sku: item.sku,
         imageUrl: item.imageUrl,
         quantity: item.quantity,
+        acceptedQuantity,
+        refusedQuantity,
         unitPrice: String(item.unitPrice),
         total: String(item.total),
-        refusedAt: refusal?.refusedAt || null,
-        refusedReason: refusal?.refusedReason || null,
-        returnedToWarehouseAt: refusal?.returnedToWarehouseAt || null,
+        refusedAt: si?.refusedAt || null,
+        refusedReason: si?.refusedReason || null,
+        returnedToWarehouseAt: si?.returnedToWarehouseAt || null,
       };
     });
 
-    // ═══ Serialize Decimals ═══
-    const serialized = {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      subtotal: String(order.subtotal),
-      shippingCost: String(order.shippingCost),
-      discount: String(order.discount),
-      total: String(order.total),
-      createdAt: order.createdAt,
-      shippingAddressSnapshot: order.shippingAddressSnapshot,
-      items: itemsWithRefusal,
-      statusHistory: order.statusHistory,
-    };
-
-    return NextResponse.json({ success: true, order: serialized });
+    return NextResponse.json({
+      success: true,
+      order: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        subtotal: String(order.subtotal),
+        shippingCost: String(order.shippingCost),
+        discount: String(order.discount),
+        total: String(order.total),
+        createdAt: order.createdAt,
+        shippingAddressSnapshot: order.shippingAddressSnapshot,
+        items: itemsWithRefusal,
+        statusHistory: order.statusHistory,
+      },
+    });
   } catch (error) {
     console.error("Order detail error:", error);
     return NextResponse.json(

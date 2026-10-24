@@ -51,7 +51,10 @@ export async function GET(
                 orderNumber: true,
                 customerSnapshot: true,
                 shippingAddressSnapshot: true,
-                total: true, // <--- تمت الإضافة
+                subtotal: true,
+                shippingCost: true,
+                discount: true,
+                total: true,
               },
             },
             orderItem: {
@@ -61,6 +64,7 @@ export async function GET(
                 variantName: true,
                 quantity: true,
                 imageUrl: true,
+                unitPrice: true,
               },
             },
           },
@@ -75,7 +79,6 @@ export async function GET(
       );
     }
 
-    // ═══ التحقق: الشحنة مُسندة لهذا السائق ═══
     if (shipment.deliveryPersonId !== auth.person.id) {
       return NextResponse.json(
         { success: false, message: "هذه الشحنة ليست مُسندة إليك" },
@@ -83,19 +86,6 @@ export async function GET(
       );
     }
 
-    // ═══ حساب المبلغ الإجمالي للتحصيل (من الطلبات نفسها لضمان دقة الشحن) ═══
-    const uniqueOrderTotals = new Map<number, number>();
-    for (const item of shipment.items) {
-      if (!uniqueOrderTotals.has(item.orderId)) {
-        uniqueOrderTotals.set(item.orderId, Number(item.order.total || 0));
-      }
-    }
-    let calculatedCOD = 0;
-    for (const orderTotal of uniqueOrderTotals.values()) {
-      calculatedCOD += orderTotal;
-    }
-
-    // ═══ تجميع العناصر حسب الطلب ═══
     const ordersMap = new Map<number, any>();
     for (const item of shipment.items) {
       const oid = item.orderId;
@@ -105,15 +95,23 @@ export async function GET(
           orderNumber: item.order.orderNumber,
           customerSnapshot: item.order.customerSnapshot,
           shippingAddressSnapshot: item.order.shippingAddressSnapshot,
+          subtotal: Number(item.order.subtotal),
+          shippingCost: Number(item.order.shippingCost || 0),
+          discount: Number(item.order.discount || 0),
+          total: Number(item.order.total),
           items: [],
         });
       }
       ordersMap.get(oid).items.push({
         id: item.id,
+        shipmentItemId: item.id,
         productName: item.orderItem.productName,
         variantName: item.orderItem.variantName,
         imageUrl: item.orderItem.imageUrl,
         quantity: item.quantity,
+        unitPrice: Number(item.orderItem.unitPrice),
+        codAmount: Number(item.codAmount),
+        refusedQuantity: item.refusedQuantity || 0,
       });
     }
 
@@ -123,7 +121,7 @@ export async function GET(
         id: shipment.id,
         shipmentNumber: shipment.shipmentNumber,
         status: shipment.status,
-        totalCOD: calculatedCOD,
+        totalCOD: Number(shipment.totalCOD),
         totalOrders: shipment.totalOrders,
         notes: shipment.notes,
         assignedAt: shipment.assignedAt,

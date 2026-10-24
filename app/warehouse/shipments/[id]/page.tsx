@@ -35,6 +35,7 @@ export default function ShipmentDetailPage() {
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+
   const [showReceiveRefusedModal, setShowReceiveRefusedModal] = useState(false);
   const [receivingRefused, setReceivingRefused] = useState(false);
 
@@ -79,15 +80,22 @@ export default function ShipmentDetailPage() {
     setCancelling(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/warehouse/shipments/${shipmentId}/cancel`, { method: "POST" });
+      const res = await fetch(`/api/warehouse/shipments/${shipmentId}/cancel`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setMessage({ type: "error", text: data.message || "فشل الإلغاء" });
         return;
       }
       setShowCancelModal(false);
-      setMessage({ type: "success", text: `✅ تم إلغاء الشحنة — ${data.itemsRestored} عنصر عاد للإسناد` });
-      setTimeout(() => { window.location.href = "/warehouse/shipments"; }, 1200);
+      setMessage({
+        type: "success",
+        text: `✅ تم إلغاء الشحنة — ${data.itemsRestored} عنصر عاد للإسناد`,
+      });
+      setTimeout(() => {
+        window.location.href = "/warehouse/shipments";
+      }, 1200);
     } catch {
       setMessage({ type: "error", text: "فشل الاتصال" });
     } finally {
@@ -162,7 +170,10 @@ export default function ShipmentDetailPage() {
         <div className="rounded-xl bg-red-50 p-8 text-center">
           <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
           <h2 className="mt-3 text-lg font-black">{error}</h2>
-          <Link href="/warehouse/shipments" className="mt-6 inline-block rounded-full bg-teal-600 px-6 py-2.5 text-sm font-bold text-white">
+          <Link
+            href="/warehouse/shipments"
+            className="mt-6 inline-block rounded-full bg-teal-600 px-6 py-2.5 text-sm font-bold text-white"
+          >
             العودة
           </Link>
         </div>
@@ -173,23 +184,41 @@ export default function ShipmentDetailPage() {
   const canAssign = !shipment.deliveryPerson && shipment.status === "READY";
   const canCancel = shipment.status === "READY" && !shipment.deliveryPerson;
 
+  // ═══ حساب المرتجعات المعلقة (باستخدام refusedQuantity الجديد) ═══
   const refusedItems = (shipment.items || []).filter(
-    (i: any) => i.refusedAt && !i.returnedToWarehouseAt
+    (i: any) => (i.refusedQuantity || 0) > 0 && !i.returnedToWarehouseAt
+  );
+  const totalRefusedQty = refusedItems.reduce(
+    (s: number, i: any) => s + (i.refusedQuantity || 0),
+    0
   );
   const hasRefusedItemsToReceive = refusedItems.length > 0;
 
   let statusLabel = shipment.status;
   let statusClass = "bg-white/20";
-  if (shipment.status === "DELIVERED") { statusLabel = "تم التسليم"; statusClass = "bg-green-400 text-green-950"; }
-  else if (shipment.status === "PARTIALLY_DELIVERED") { statusLabel = "تسليم جزئي"; statusClass = "bg-amber-400 text-amber-950"; }
-  else if (shipment.status === "REFUSED") { statusLabel = "مرفوضة كاملة"; statusClass = "bg-red-400 text-red-950"; }
-  else if (shipment.status === "OUT_FOR_DELIVERY") { statusLabel = "قيد التوصيل"; }
-  else if (shipment.status === "ASSIGNED") { statusLabel = "بانتظار التحميل"; }
-  else if (shipment.status === "READY") { statusLabel = "جاهزة للإسناد"; }
+  if (shipment.status === "DELIVERED") {
+    statusLabel = "تم التسليم";
+    statusClass = "bg-green-400 text-green-950";
+  } else if (shipment.status === "PARTIALLY_DELIVERED") {
+    statusLabel = "تسليم جزئي";
+    statusClass = "bg-amber-400 text-amber-950";
+  } else if (shipment.status === "REFUSED") {
+    statusLabel = "مرفوضة كاملة";
+    statusClass = "bg-red-400 text-red-950";
+  } else if (shipment.status === "OUT_FOR_DELIVERY") {
+    statusLabel = "قيد التوصيل";
+  } else if (shipment.status === "ASSIGNED") {
+    statusLabel = "بانتظار التحميل";
+  } else if (shipment.status === "READY") {
+    statusLabel = "جاهزة للإسناد";
+  }
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
-      <Link href="/warehouse/shipments" className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-teal-600">
+      <Link
+        href="/warehouse/shipments"
+        className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-teal-600"
+      >
         <ArrowRight className="h-3.5 w-3.5" />
         رجوع للشحنات
       </Link>
@@ -198,8 +227,12 @@ export default function ShipmentDetailPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[11px] opacity-90">رقم الشحنة</div>
-            <div className="mt-1 font-mono text-xl font-black">{shipment.shipmentNumber}</div>
-            <div className={`mt-2 inline-block rounded-full px-3 py-1 text-[11px] font-bold ${statusClass}`}>
+            <div className="mt-1 font-mono text-xl font-black">
+              {shipment.shipmentNumber}
+            </div>
+            <div
+              className={`mt-2 inline-block rounded-full px-3 py-1 text-[11px] font-bold ${statusClass}`}
+            >
               {statusLabel}
             </div>
           </div>
@@ -210,19 +243,29 @@ export default function ShipmentDetailPage() {
       </div>
 
       {message && (
-        <div className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+        <div
+          className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
+            message.type === "success"
+              ? "bg-green-50 text-green-700"
+              : "bg-red-50 text-red-700"
+          }`}
+        >
           {message.text}
         </div>
       )}
 
+      {/* ═══ تنبيه المرتجعات ═══ */}
       {hasRefusedItemsToReceive && (
         <div className="mt-4 rounded-2xl bg-amber-50 border-2 border-amber-500 p-5">
           <div className="flex items-start gap-3">
             <RotateCcw className="h-8 w-8 text-amber-600 shrink-0" />
             <div className="flex-1">
-              <h3 className="font-black text-amber-900 text-lg">⚠️ يوجد {refusedItems.length} منتج مرفوض بانتظار الاستلام</h3>
+              <h3 className="font-black text-amber-900 text-lg">
+                ⚠️ يوجد {totalRefusedQty} منتج مرفوض بانتظار الاستلام
+              </h3>
               <p className="mt-1 text-sm text-amber-800">
-                السائق أرجع هذه المنتجات، وتحتاج لتأكيد استلامها في المستودع لكي تعود للمخزون.
+                السائق أرجع هذه المنتجات، وتحتاج لتأكيد استلامها في المستودع لكي
+                تعود للمخزون.
               </p>
               <button
                 onClick={() => setShowReceiveRefusedModal(true)}
@@ -238,15 +281,21 @@ export default function ShipmentDetailPage() {
 
       <div className="mt-4 grid grid-cols-3 gap-3">
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-          <div className="text-2xl font-black text-teal-700">{shipment.totalOrders}</div>
+          <div className="text-2xl font-black text-teal-700">
+            {shipment.totalOrders}
+          </div>
           <div className="mt-1 text-[10px] text-gray-500">طلب</div>
         </div>
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-          <div className="text-2xl font-black text-teal-700">{shipment.itemsCount}</div>
+          <div className="text-2xl font-black text-teal-700">
+            {shipment.itemsCount}
+          </div>
           <div className="mt-1 text-[10px] text-gray-500">عنصر</div>
         </div>
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-          <div className="text-lg font-black text-teal-700">{Number(shipment.totalCOD).toFixed(0)}</div>
+          <div className="text-lg font-black text-teal-700">
+            {Number(shipment.totalCOD).toFixed(0)}
+          </div>
           <div className="mt-1 text-[10px] text-gray-500">{CURRENCY}</div>
         </div>
       </div>
@@ -290,33 +339,61 @@ export default function ShipmentDetailPage() {
           </h2>
           <div className="space-y-2">
             {shipment.items.map((item: any) => {
-              const isRefused = !!item.refusedAt;
+              const refusedQty = item.refusedQuantity || 0;
               const isReturned = !!item.returnedToWarehouseAt;
+              const hasRefusal = refusedQty > 0;
               return (
-                <div key={item.id} className={`flex items-center gap-3 rounded-lg p-2.5 ${isRefused ? "bg-red-50 border border-red-200" : "bg-gray-50"}`}>
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-3 rounded-lg p-2.5 ${
+                    hasRefusal
+                      ? "bg-red-50 border border-red-200"
+                      : "bg-gray-50"
+                  }`}
+                >
                   {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.productName} className="h-11 w-11 shrink-0 rounded object-cover" />
+                    <img
+                      src={item.imageUrl}
+                      alt={item.productName}
+                      className="h-11 w-11 shrink-0 rounded object-cover"
+                    />
                   ) : (
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-gray-200">
                       <Package className="h-5 w-5 text-gray-400" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="line-clamp-1 text-xs font-bold">{item.productName}</div>
-                    {item.variantName && <div className="text-[10px] text-gray-500">{item.variantName}</div>}
+                    <div className="line-clamp-1 text-xs font-bold">
+                      {item.productName}
+                    </div>
+                    {item.variantName && (
+                      <div className="text-[10px] text-gray-500">
+                        {item.variantName}
+                      </div>
+                    )}
                     <div className="mt-0.5 text-[10px] text-gray-500">
                       طلب: <span className="font-mono">{item.orderNumber}</span>
                     </div>
-                    {isRefused && (
+                    {hasRefusal && (
                       <div className="mt-1 text-[10px] text-red-700">
-                        ❌ مرفوض: {item.refusedReason}
-                        {isReturned && <span className="text-green-600 font-bold"> ✓ تم استلامه</span>}
+                        ❌ مرفوض: {refusedQty} من {item.quantity}
+                        {item.refusedReason && ` — ${item.refusedReason}`}
+                        {isReturned && (
+                          <span className="text-green-600 font-bold">
+                            {" "}
+                            ✓ تم استلامه
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
                   <div className="text-left">
-                    <div className="text-xs font-black text-teal-700">×{item.quantity}</div>
-                    <div className="text-[10px] text-gray-500">{Number(item.total).toFixed(2)}</div>
+                    <div className="text-xs font-black text-teal-700">
+                      ×{item.quantity}
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      {Number(item.total).toFixed(2)}
+                    </div>
                   </div>
                 </div>
               );
@@ -338,15 +415,23 @@ export default function ShipmentDetailPage() {
                 {shipment.deliveryPerson.name.charAt(0)}
               </div>
               <div>
-                <div className="text-sm font-bold">{shipment.deliveryPerson.name}</div>
+                <div className="text-sm font-bold">
+                  {shipment.deliveryPerson.name}
+                </div>
                 {shipment.deliveryPerson.phone && (
-                  <div className="text-[11px] text-gray-500" dir="ltr">{shipment.deliveryPerson.phone}</div>
+                  <div className="text-[11px] text-gray-500" dir="ltr">
+                    {shipment.deliveryPerson.phone}
+                  </div>
                 )}
               </div>
             </div>
             {shipment.assignedAt && (
               <div className="text-[10px] text-gray-400">
-                أُسندت في: {new Date(shipment.assignedAt).toLocaleString("ar-MA", { dateStyle: "short", timeStyle: "short" })}
+                أُسندت في:{" "}
+                {new Date(shipment.assignedAt).toLocaleString("ar-MA", {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                })}
               </div>
             )}
           </div>
@@ -359,24 +444,37 @@ export default function ShipmentDetailPage() {
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        <Link href={`/warehouse/shipments/${shipmentId}/label`} className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800">
+        <Link
+          href={`/warehouse/shipments/${shipmentId}/label`}
+          className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
+        >
           <Printer className="h-4 w-4" />
           طباعة الملصق
         </Link>
-        <Link href="/warehouse/scan" className="flex items-center justify-center gap-2 rounded-xl border border-teal-600 bg-white py-3.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50">
+
+        <Link
+          href="/warehouse/scan"
+          className="flex items-center justify-center gap-2 rounded-xl border border-teal-600 bg-white py-3.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50"
+        >
           <QrCode className="h-4 w-4" />
           QR للمسح
         </Link>
 
         {canAssign && (
-          <button onClick={() => setShowAssignModal(true)} className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white transition hover:bg-teal-700 sm:col-span-2">
+          <button
+            onClick={() => setShowAssignModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white transition hover:bg-teal-700 sm:col-span-2"
+          >
             <Truck className="h-4 w-4" />
             إسناد سائق
           </button>
         )}
 
         {canCancel && (
-          <button onClick={() => setShowCancelModal(true)} className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 transition hover:bg-red-100 sm:col-span-2">
+          <button
+            onClick={() => setShowCancelModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700 transition hover:bg-red-100 sm:col-span-2"
+          >
             <X className="h-4 w-4" />
             إلغاء الشحنة
           </button>
@@ -389,16 +487,32 @@ export default function ShipmentDetailPage() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
               <X className="h-7 w-7 text-red-600" />
             </div>
-            <h3 className="mt-4 text-center text-lg font-black">تأكيد إلغاء الشحنة</h3>
+            <h3 className="mt-4 text-center text-lg font-black">
+              تأكيد إلغاء الشحنة
+            </h3>
             <p className="mt-2 text-center text-sm text-gray-600">
-              سيتم إلغاء الشحنة <strong className="font-mono">{shipment.shipmentNumber}</strong> وإرجاع كل العناصر.
+              سيتم إلغاء الشحنة{" "}
+              <strong className="font-mono">{shipment.shipmentNumber}</strong>{" "}
+              وإرجاع كل العناصر.
             </p>
             <div className="mt-6 flex gap-2">
-              <button onClick={handleCancel} disabled={cancelling} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-                {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {cancelling ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
                 تأكيد الإلغاء
               </button>
-              <button onClick={() => setShowCancelModal(false)} disabled={cancelling} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700"
+              >
                 رجوع
               </button>
             </div>
@@ -411,7 +525,13 @@ export default function ShipmentDetailPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-black">إسناد سائق</h3>
-              <button onClick={() => { setShowAssignModal(false); setSelectedDriver(null); }} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setSelectedDriver(null);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -423,23 +543,47 @@ export default function ShipmentDetailPage() {
               <div className="max-h-72 space-y-2 overflow-y-auto">
                 {drivers.map((d) => {
                   const selected = selectedDriver === d.id;
-                  const servesCity = shipment.city && (d.city === shipment.city || d.cities?.includes(shipment.city));
+                  const servesCity =
+                    shipment.city &&
+                    (d.city === shipment.city ||
+                      d.cities?.includes(shipment.city));
                   return (
                     <button
                       key={d.id}
                       onClick={() => setSelectedDriver(d.id)}
-                      className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-right transition ${selected ? "border-teal-600 bg-teal-50" : servesCity ? "border-green-300 bg-green-50" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                      className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-right transition ${
+                        selected
+                          ? "border-teal-600 bg-teal-50"
+                          : servesCity
+                            ? "border-green-300 bg-green-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
                     >
-                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-white ${selected ? "bg-teal-600" : servesCity ? "bg-green-500" : "bg-gray-400"}`}>
+                      <div
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-white ${
+                          selected
+                            ? "bg-teal-600"
+                            : servesCity
+                              ? "bg-green-500"
+                              : "bg-gray-400"
+                        }`}
+                      >
                         {d.name.charAt(0)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold">{d.name}</span>
-                          {servesCity && <span className="rounded-full bg-green-200 px-1.5 py-0.5 text-[9px] font-bold text-green-800">مناسب</span>}
+                          {servesCity && (
+                            <span className="rounded-full bg-green-200 px-1.5 py-0.5 text-[9px] font-bold text-green-800">
+                              مناسب
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-gray-500">
-                          📍 {d.city}{d.cities?.length > 1 && ` +${d.cities.length - 1}`}{" · "}{d.activeShipments} شحنة نشطة
+                          📍 {d.city}
+                          {d.cities?.length > 1 && ` +${d.cities.length - 1}`}
+                          {" · "}
+                          {d.activeShipments} شحنة نشطة
                         </div>
                       </div>
                       {selected && <Check className="h-4 w-4 text-teal-600" />}
@@ -449,11 +593,26 @@ export default function ShipmentDetailPage() {
               </div>
             )}
             <div className="mt-4 flex gap-2">
-              <button onClick={handleAssign} disabled={!selectedDriver || assigning} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-bold text-white transition hover:bg-teal-700 disabled:opacity-50">
-                {assigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              <button
+                onClick={handleAssign}
+                disabled={!selectedDriver || assigning}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-bold text-white transition hover:bg-teal-700 disabled:opacity-50"
+              >
+                {assigning ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
                 تأكيد
               </button>
-              <button onClick={() => { setShowAssignModal(false); setSelectedDriver(null); }} disabled={assigning} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setSelectedDriver(null);
+                }}
+                disabled={assigning}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700"
+              >
                 إلغاء
               </button>
             </div>
@@ -467,26 +626,46 @@ export default function ShipmentDetailPage() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
               <RotateCcw className="h-7 w-7 text-amber-600" />
             </div>
-            <h3 className="mt-4 text-center text-lg font-black">تأكيد استلام المرتجعات</h3>
+            <h3 className="mt-4 text-center text-lg font-black">
+              تأكيد استلام المرتجعات
+            </h3>
             <p className="mt-2 text-center text-sm text-gray-600">
-              سيتم استلام <strong>{refusedItems.length}</strong> عنصر مرتجع. البضاعة ستعود للمخزون وإشعار التجار.
+              سيتم استلام <strong>{totalRefusedQty}</strong> منتج مرتجع من{" "}
+              <strong>{refusedItems.length}</strong> عنصر. البضاعة ستعود
+              للمخزون وإشعار التجار.
             </p>
 
             <div className="mt-4 max-h-40 overflow-y-auto rounded-lg bg-gray-50 p-3 space-y-1">
               {refusedItems.map((item: any) => (
                 <div key={item.id} className="text-xs flex justify-between">
-                  <span className="truncate">{item.productName} ×{item.quantity}</span>
-                  <span className="text-gray-500 font-mono text-[10px]">{item.orderNumber}</span>
+                  <span className="truncate">
+                    {item.productName} ×{item.refusedQuantity}
+                  </span>
+                  <span className="text-gray-500 font-mono text-[10px]">
+                    {item.orderNumber}
+                  </span>
                 </div>
               ))}
             </div>
 
             <div className="mt-6 flex gap-2">
-              <button onClick={handleReceiveRefused} disabled={receivingRefused} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-600 py-2.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50">
-                {receivingRefused ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              <button
+                onClick={handleReceiveRefused}
+                disabled={receivingRefused}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-600 py-2.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {receivingRefused ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
                 تأكيد الاستلام
               </button>
-              <button onClick={() => setShowReceiveRefusedModal(false)} disabled={receivingRefused} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700">
+              <button
+                onClick={() => setShowReceiveRefusedModal(false)}
+                disabled={receivingRefused}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-bold text-gray-700"
+              >
                 إلغاء
               </button>
             </div>
