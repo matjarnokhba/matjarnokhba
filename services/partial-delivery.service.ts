@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
+import { updateDriverBlockStatus } from "./wallet.service";
 
 type RefusedOrder = {
   orderId: number;
@@ -9,40 +10,7 @@ type RefusedOrder = {
 const PLATFORM_ID = 1;
 const WAREHOUSE_ID = 1;
 
-/**
- * تحديث حالة حظر السائق بناءً على:
- * 1. هل لديه كاش في حوزته؟
- * 2. هل لديه بضاعة مرفوضة لم يرجعها للمستودع؟
- */
-export async function updateDriverBlockStatus(tx: any, driverId: number) {
-  const wallet = await tx.wallet.findUnique({
-    where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
-  });
-
-  if (!wallet) return;
-
-  const hasCash = Number(wallet.cashInHand) > 0;
-
-  const pendingRefused = await tx.shipmentItem.count({
-    where: {
-      shipment: { deliveryPersonId: driverId },
-      refusedAt: { not: null },
-      returnedToWarehouseAt: null,
-    },
-  });
-
-  const shouldBlock = hasCash || pendingRefused > 0;
-
-  if (wallet.isBlocked !== shouldBlock) {
-    await tx.wallet.update({
-      where: { id: wallet.id },
-      data: { isBlocked: shouldBlock },
-    });
-  }
-}
-
 export const PartialDeliveryService = {
-  // ═══════ 1. معالجة التسليم الجزئي ═══════
   async processPartialDelivery(
     shipmentId: number,
     driverId: number,
@@ -51,7 +19,6 @@ export const PartialDeliveryService = {
   ) {
     return prisma.$transaction(
       async (tx) => {
-        // 1. جلب الشحنة مع كل التفاصيل
         const shipment = await tx.shipment.findUnique({
           where: { id: shipmentId },
           include: {
@@ -75,12 +42,12 @@ export const PartialDeliveryService = {
         });
 
         if (!shipment) throw new Error("الشحنة غير موجودة");
-        if (shipment.deliveryPersonId !== driverId) throw new Error("هذه الشحنة ليست مُسندة إليك");
+        if (shipment.deliveryPersonId !== driverId)
+          throw new Error("هذه الشحنة ليست مُسندة إليك");
         if (!["OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status)) {
           throw new Error(`لا يمكن تعديل الشحنة في حالتها الحالية: ${shipment.status}`);
         }
 
-        // 2. التحقق من صحة الأوردرات
         const allOrderIds = Array.from(new Set(shipment.items.map((i) => i.orderId)));
         const acceptedSet = new Set(acceptedOrderIds);
         const refusedSet = new Set(refusedOrders.map((r) => r.orderId));
@@ -89,19 +56,18 @@ export const PartialDeliveryService = {
           if (!allOrderIds.includes(id)) throw new Error(`الطلبية ${id} ليست ضمن هذه الشحنة`);
         }
         for (const r of refusedOrders) {
-          if (!allOrderIds.includes(r.orderId)) throw new Error(`الطلبية ${r.orderId} ليست ضمن هذه الشحنة`);
-          if (!r.reason || r.reason.trim().length < 3) throw new Error(`سبب رفض الطلبية ${r.orderId} مطلوب`);
+          if (!allOrderIds.includes(r.orderId))
+            throw new Error(`الطلبية ${r.orderId} ليست ضمن هذه الشحنة`);
+          if (!r.reason || r.reason.trim().length < 3)
+            throw new Error(`سبب رفض الطلبية ${r.orderId} مطلوب`);
         }
         for (const id of allOrderIds) {
-          if (!acceptedSet.has(id) && !refusedSet.has(id)) {
-            throw new Error(`يجب تحديد الطلبية ${id} (مقبولة أو مرفوضة)`);
-          }
-          if (acceptedSet.has(id) && refusedSet.has(id)) {
+          if (!acceptedSet.has(id) && !refusedSet.has(id))
+            throw new Error(`يجب تحديد الطلبية ${id}`);
+          if (acceptedSet.has(id) && refusedSet.has(id))
             throw new Error(`الطلبية ${id} مكررة`);
-          }
         }
 
-        // 3. حساب COD
         const uniqueAcceptedOrders = new Map<number, any>();
         const uniqueRefusedOrders = new Map<number, any>();
         for (const item of shipment.items) {
@@ -119,12 +85,15 @@ export const PartialDeliveryService = {
 
         const COD = acceptedOrders.reduce((s, o) => s + Number(o.total), 0);
         const driverFee = isFullRefusal ? 0 : Number(shipment.driverFee);
-        
-        // أرباح المستودع: الشحن الكامل للطلبات المقبولة - أجر السائق
-        const totalShipping = acceptedOrders.reduce((s, o) => s + Number(o.shippingCost || 0), 0);
-        const warehouseProfit = isFullRefusal ? 0 : Math.max(0, totalShipping - driverFee);
 
-        // 4. تحديث ShipmentItems + OrderItems
+        const totalShipping = acceptedOrders.reduce(
+          (s, o) => s + Number(o.shippingCost || 0),
+          0
+        );
+        const warehouseProfit = isFullRefusal
+          ? 0
+          : Math.max(0, totalShipping - driverFee);
+
         const now = new Date();
         for (const item of shipment.items) {
           if (refusedSet.has(item.orderId)) {
@@ -132,10 +101,11 @@ export const PartialDeliveryService = {
               where: { id: item.id },
               data: {
                 refusedAt: now,
-                refusedReason: refusedOrders.find((r) => r.orderId === item.orderId)?.reason || "رفض من الزبون",
+                refusedReason:
+                  refusedOrders.find((r) => r.orderId === item.orderId)?.reason ||
+                  "رفض من الزبون",
               },
             });
-
             if (item.fulfillmentItemId) {
               await tx.fulfillmentItem.update({
                 where: { id: item.fulfillmentItemId },
@@ -152,7 +122,6 @@ export const PartialDeliveryService = {
           }
         }
 
-        // 5. تحديث حالات الطلبات
         for (const orderId of uniqueAcceptedOrders.keys()) {
           await tx.order.update({
             where: { id: orderId },
@@ -160,13 +129,9 @@ export const PartialDeliveryService = {
           });
         }
         for (const orderId of uniqueRefusedOrders.keys()) {
-          await tx.order.update({
-            where: { id: orderId },
-            data: { status: "RETURNED" },
-          });
+          await tx.order.update({ where: { id: orderId }, data: { status: "RETURNED" } });
         }
 
-        // 6. تحديث الشحنة
         const newStatus = isFullRefusal
           ? "REFUSED"
           : isFullDelivery
@@ -175,21 +140,30 @@ export const PartialDeliveryService = {
 
         await tx.shipment.update({
           where: { id: shipmentId },
-          data: {
-            status: newStatus,
-            totalCOD: COD,
-          },
+          data: { status: newStatus, totalCOD: COD },
         });
 
-        // 7. توزيع الأموال (فقط لو لم يكن رفضاً كاملاً)
         if (!isFullRefusal) {
-          // أ. السائق: أجر + كاش في الحوزة
+          // ═══ السائق: كاش بدون حظر فوري ═══
+          const existingWallet = await tx.wallet.findUnique({
+            where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+            select: { cashInHand: true },
+          });
+          const wasCashZero = !existingWallet || Number(existingWallet.cashInHand) === 0;
+
           const driverWallet = await tx.wallet.upsert({
             where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
-            create: { ownerType: "DRIVER", ownerId: driverId, balance: driverFee, cashInHand: COD },
+            create: {
+              ownerType: "DRIVER",
+              ownerId: driverId,
+              balance: driverFee,
+              cashInHand: COD,
+              cashHeldSince: new Date(),
+            },
             update: {
               balance: { increment: driverFee },
               cashInHand: { increment: COD },
+              ...(wasCashZero && { cashHeldSince: new Date() }),
             },
           });
 
@@ -202,14 +176,12 @@ export const PartialDeliveryService = {
             },
           });
 
-          // ب. المستودع: ربح الشحن
           if (warehouseProfit > 0) {
             const whWallet = await tx.wallet.upsert({
               where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
               create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: warehouseProfit },
               update: { balance: { increment: warehouseProfit } },
             });
-
             await tx.walletTransactionUnified.create({
               data: {
                 walletId: whWallet.id,
@@ -220,9 +192,10 @@ export const PartialDeliveryService = {
             });
           }
 
-          // ج. المنصة + التجار (عمولات على الطلبات المقبولة فقط)
-          const policy = await tx.systemPolicy.findUnique({ where: { key: "DEFAULT_COMMISSION_RATE" } });
-          const defaultRate = typeof policy?.value === "number" ? policy.value : 0.10;
+          const policy = await tx.systemPolicy.findUnique({
+            where: { key: "DEFAULT_COMMISSION_RATE" },
+          });
+          const defaultRate = typeof policy?.value === "number" ? policy.value : 0.1;
 
           const sellerSubtotals = new Map<number, number>();
           for (const order of acceptedOrders) {
@@ -232,15 +205,15 @@ export const PartialDeliveryService = {
           }
 
           let totalCommission = 0;
-
           for (const [sellerId, subtotal] of sellerSubtotals) {
             const seller = await tx.seller.findUnique({ where: { id: sellerId } });
             if (!seller) continue;
 
-            const rate = seller.commissionRateOverride ? Number(seller.commissionRateOverride) : defaultRate;
+            const rate = seller.commissionRateOverride
+              ? Number(seller.commissionRateOverride)
+              : defaultRate;
             const commission = Math.round(subtotal * rate * 100) / 100;
             const netEarning = Math.round((subtotal - commission) * 100) / 100;
-
             totalCommission += commission;
 
             await tx.seller.update({
@@ -264,14 +237,12 @@ export const PartialDeliveryService = {
             });
           }
 
-          // د. المنصة: العمولات
           if (totalCommission > 0) {
             const platformWallet = await tx.wallet.upsert({
               where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
               create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: totalCommission },
               update: { balance: { increment: totalCommission } },
             });
-
             await tx.walletTransactionUnified.create({
               data: {
                 walletId: platformWallet.id,
@@ -283,7 +254,7 @@ export const PartialDeliveryService = {
           }
         }
 
-        // 8. تحديث حالة الحظر
+        // ═══ لا نحظر السائق هنا — الحظر يحدث فقط بعد 24 ساعة ═══
         await updateDriverBlockStatus(tx, driverId);
 
         return {
@@ -299,7 +270,6 @@ export const PartialDeliveryService = {
     );
   },
 
-  // ═══════ 2. استلام البضاعة المرفوضة (للمستودع) ═══════
   async receiveRefusedItems(shipmentId: number, warehouseUserId: number) {
     return prisma.$transaction(
       async (tx) => {
@@ -307,10 +277,7 @@ export const PartialDeliveryService = {
           where: { id: shipmentId },
           include: {
             items: {
-              where: {
-                refusedAt: { not: null },
-                returnedToWarehouseAt: null,
-              },
+              where: { refusedAt: { not: null }, returnedToWarehouseAt: null },
               include: {
                 orderItem: true,
                 order: { select: { id: true, sellerId: true, orderNumber: true } },
@@ -328,13 +295,11 @@ export const PartialDeliveryService = {
         const affectedOrders = new Set<number>();
 
         for (const item of shipment.items) {
-          // 1. تعليم كـ "تم الاستلام في المستودع"
           await tx.shipmentItem.update({
             where: { id: item.id },
             data: { returnedToWarehouseAt: now },
           });
 
-          // 2. إرجاع المخزون
           if (item.variantId) {
             await InventoryService.returnStock(
               tx,
@@ -346,7 +311,6 @@ export const PartialDeliveryService = {
             );
           }
 
-          // 3. إشعار التاجر
           if (item.order.sellerId) {
             const seller = await tx.seller.findUnique({
               where: { id: item.order.sellerId },
@@ -358,7 +322,7 @@ export const PartialDeliveryService = {
                   userId: seller.userId,
                   type: "ORDER_STATUS_CHANGED",
                   title: "↩️ استلام مرتجع في المستودع",
-                  message: `الطلبية #${item.order.orderNumber} تم استلامها في المستودع. البضاعة عادت لمخزونك.`,
+                  message: `الطلبية #${item.order.orderNumber} تم استلامها. البضاعة عادت لمخزونك.`,
                   link: `/seller/orders/${item.orderId}`,
                   category: "ORDER",
                   severity: "INFO",
@@ -371,7 +335,6 @@ export const PartialDeliveryService = {
           returnedCount++;
         }
 
-        // 4. تحديث حالة الحظر للسائق
         if (shipment.deliveryPersonId) {
           await updateDriverBlockStatus(tx, shipment.deliveryPersonId);
         }

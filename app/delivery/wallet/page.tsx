@@ -22,6 +22,8 @@ export default function DeliveryWalletPage() {
   const [balance, setBalance] = useState(0);
   const [cashInHand, setCashInHand] = useState(0);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [blockReason, setBlockReason] = useState<string | null>(null);
+  const [cashHeldHours, setCashHeldHours] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [legalNotices, setLegalNotices] = useState<LegalNotice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +37,8 @@ export default function DeliveryWalletPage() {
           setBalance(data.balance);
           setCashInHand(data.cashInHand);
           setIsBlocked(data.isBlocked);
+          setBlockReason(data.blockReason || null);
+          setCashHeldHours(data.cashHeldHours || 0);
           setTransactions(data.transactions);
           setLegalNotices(data.legalNotices || []);
         }
@@ -67,18 +71,39 @@ export default function DeliveryWalletPage() {
         <p className="mt-1 text-sm text-gray-500">أرباحك وعمولاتك من عمليات التوصيل</p>
       </div>
 
-      {/* ═══ تحذير الحظر ═══ */}
+      {/* ═══ تحذير الحظر (فقط بعد 24 ساعة) ═══ */}
       {isBlocked && cashInHand > 0 && (
         <div className="mb-4 rounded-2xl bg-red-50 border-2 border-red-500 p-5">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-8 w-8 text-red-600 shrink-0" />
             <div>
-              <h3 className="font-black text-red-900 text-lg">⚠️ حسابك موقوف مؤقتاً</h3>
+              <h3 className="font-black text-red-900 text-lg">🚫 حسابك موقوف</h3>
               <p className="mt-1 text-sm text-red-800">
-                لديك مبلغ <strong className="text-2xl">{cashInHand.toFixed(2)} د.م</strong> كاش في حوزتك يجب تسليمه للمستودع قبل أي شيء آخر.
+                {blockReason || `لديك ${cashInHand.toFixed(2)} د.م في حوزتك منذ ${cashHeldHours} ساعة.`}
               </p>
               <p className="mt-2 text-xs text-red-700">
-                لا يمكنك استلام شحنات جديدة أو سحب الأموال حتى تقوم بتسليم الكاش للمستودع.
+                لا يمكنك استلام شحنات جديدة أو سحب الأموال حتى تسليم الكاش للمستودع.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ تنبيه أصفر (بين 0 و 24 ساعة) ═══ */}
+      {!isBlocked && cashInHand > 0 && (
+        <div className="mb-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-8 w-8 text-amber-600 shrink-0" />
+            <div>
+              <h3 className="font-black text-amber-900 text-base">
+                💰 لديك كاش في حوزتك يجب تسليمه
+              </h3>
+              <p className="mt-1 text-sm text-amber-800">
+                المبلغ: <strong>{cashInHand.toFixed(2)} د.م</strong>
+                {cashHeldHours > 0 && ` (منذ ${cashHeldHours} ساعة)`}
+              </p>
+              <p className="mt-2 text-xs text-amber-700">
+                ⏰ سيتم إيقاف حسابك تلقائياً إذا لم تسلّم المبلغ خلال 24 ساعة.
               </p>
             </div>
           </div>

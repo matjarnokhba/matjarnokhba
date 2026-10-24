@@ -1,29 +1,73 @@
 import { prisma } from "@/lib/prisma";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
-const DRIVER_FEE = 13; // أجر السائق لكل توصيل
-const PLATFORM_ID = 1; // معرف محفظة المنصة
-const WAREHOUSE_ID = 1; // معرف محفظة المستودع
+const DRIVER_FEE = 13;
+const PLATFORM_ID = 1;
+const WAREHOUSE_ID = 1;
+
+// ═══ دالة تحديث حظر السائق (فقط بعد 24 ساعة أو بضاعة معلقة) ═══
+export async function updateDriverBlockStatus(tx: any, driverId: number) {
+  const wallet = await tx.wallet.findUnique({
+    where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+  });
+  if (!wallet) return;
+
+  const hasCash = Number(wallet.cashInHand) > 0;
+  const cashHeldSince = wallet.cashHeldSince as Date | null;
+  const isHeldOver24h = cashHeldSince
+    ? Date.now() - new Date(cashHeldSince).getTime() > 24 * 60 * 60 * 1000
+    : false;
+
+  const pendingRefused = await tx.shipmentItem.count({
+    where: {
+      shipment: { deliveryPersonId: driverId },
+      refusedAt: { not: null },
+      returnedToWarehouseAt: null,
+    },
+  });
+
+  const shouldBlock = (hasCash && isHeldOver24h) || pendingRefused > 0;
+  const reason = shouldBlock
+    ? hasCash && isHeldOver24h
+      ? "كاش محتجز لأكثر من 24 ساعة"
+      : "بضاعة مرفوضة لم تُرجع للمستودع"
+    : null;
+
+  if (wallet.isBlocked !== shouldBlock || wallet.blockReason !== reason) {
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { isBlocked: shouldBlock, blockReason: reason },
+    });
+  }
+}
 
 export const WalletService = {
-  // ═══ 1. إضافة أرباح محجوزة للتاجر عند التسليم (وتسجيل أمانات المنصة) ═══
-  async addHeldEarning(tx: any, sellerId: number, orderId: number, orderTotal: number, orderSubtotal: number) {
+  // ═══ إضافة أرباح محجوزة للتاجر ═══
+  async addHeldEarning(
+    tx: any,
+    sellerId: number,
+    orderId: number,
+    orderTotal: number,
+    orderSubtotal: number
+  ) {
     const seller = await tx.seller.findUnique({
       where: { id: sellerId },
       select: { commissionRateOverride: true, heldBalance: true },
     });
     if (!seller) return { commissionAmount: 0 };
 
-    const policy = await tx.systemPolicy.findUnique({ where: { key: "DEFAULT_COMMISSION_RATE" } });
-    const defaultRate = typeof policy?.value === "number" ? policy.value : 0.10;
-    const rate = seller.commissionRateOverride ? Number(seller.commissionRateOverride) : defaultRate;
-    
+    const policy = await tx.systemPolicy.findUnique({
+      where: { key: "DEFAULT_COMMISSION_RATE" },
+    });
+    const defaultRate = typeof policy?.value === "number" ? policy.value : 0.1;
+    const rate = seller.commissionRateOverride
+      ? Number(seller.commissionRateOverride)
+      : defaultRate;
+
     const commissionAmount = Math.round(orderSubtotal * rate * 100) / 100;
     const netEarning = Math.round((orderSubtotal - commissionAmount) * 100) / 100;
-
     if (netEarning <= 0) return { commissionAmount: 0 };
 
-    // أ. تحديث محفظة التاجر (رصيد محجوز)
     const beforeHeld = Number(seller.heldBalance);
     const afterHeld = beforeHeld + netEarning;
 
@@ -43,55 +87,82 @@ export const WalletService = {
         amount: netEarning,
         balanceBefore: beforeHeld,
         balanceAfter: afterHeld,
-        description: `أرباح محجوزة (ضمان 3 أيام) من الطلب #${orderId} بعد خصم عمولة ${rate * 100}%`,
+        description: `أرباح محجوزة من الطلب #${orderId} بعد خصم عمولة ${rate * 100}%`,
       },
     });
 
-    // ب. تحديث محفظة المنصة (أرباح + أمانات التجار)
     const platformWallet = await tx.wallet.upsert({
       where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
-      create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: commissionAmount, heldBalance: netEarning },
-      update: { balance: { increment: commissionAmount }, heldBalance: { increment: netEarning } }
+      create: {
+        ownerType: "PLATFORM",
+        ownerId: PLATFORM_ID,
+        balance: commissionAmount,
+        heldBalance: netEarning,
+      },
+      update: {
+        balance: { increment: commissionAmount },
+        heldBalance: { increment: netEarning },
+      },
     });
-    
+
     await tx.walletTransactionUnified.create({
       data: {
         walletId: platformWallet.id,
         amount: commissionAmount,
         type: "COMMISSION",
         description: `عمولة المنصة من الطلب #${orderId}`,
-      }
+      },
     });
 
     return { commissionAmount };
   },
 
-  // ═══ 2. توزيع أرباح السائق والمستودع (وتسجيل الكاش في حوزة السائق) ═══
+  // ═══ توزيع أرباح السائق والمستودع ═══
   async processDeliveryFinancials(tx: any, order: any, driverId: number) {
-    // أ. السائق: استحقاق 13 درهم + كاش في الحوزة (total) + حظر
+    // جلب حالة الكاش قبل التحديث (لكي نعرف إن كان صفر ثم صار موجباً)
+    const existingDriverWallet = await tx.wallet.findUnique({
+      where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+      select: { cashInHand: true },
+    });
+    const wasCashZero =
+      !existingDriverWallet || Number(existingDriverWallet.cashInHand) === 0;
+
     const driverWallet = await tx.wallet.upsert({
       where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
-      create: { ownerType: "DRIVER", ownerId: driverId, balance: DRIVER_FEE, cashInHand: order.total, isBlocked: true },
-      update: { balance: { increment: DRIVER_FEE }, cashInHand: { increment: order.total }, isBlocked: true }
+      create: {
+        ownerType: "DRIVER",
+        ownerId: driverId,
+        balance: DRIVER_FEE,
+        cashInHand: order.total,
+        cashHeldSince: new Date(), // بدأ يمسك الكاش الآن
+      },
+      update: {
+        balance: { increment: DRIVER_FEE },
+        cashInHand: { increment: order.total },
+        // إذا كان صفراً وبدأ الآن، نسجل التاريخ
+        ...(wasCashZero && { cashHeldSince: new Date() }),
+      },
     });
-    
+
     await tx.walletTransactionUnified.create({
       data: {
         walletId: driverWallet.id,
         amount: DRIVER_FEE,
         type: "EARNING",
         description: `أجر توصيل الطلب #${order.orderNumber}`,
-        referenceId: String(order.id)
-      }
+        referenceId: String(order.id),
+      },
     });
 
-    // ب. المستودع: استحقاق 7 دراهم (بدون كاش في الحوزة بعد، يأتي عند التحصيل)
-    const warehouseProfit = Math.max(0, Number(order.shippingCost || 0) - DRIVER_FEE);
+    const warehouseProfit = Math.max(
+      0,
+      Number(order.shippingCost || 0) - DRIVER_FEE
+    );
     if (warehouseProfit > 0) {
       const warehouseWallet = await tx.wallet.upsert({
         where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
         create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: warehouseProfit },
-        update: { balance: { increment: warehouseProfit } }
+        update: { balance: { increment: warehouseProfit } },
       });
       await tx.walletTransactionUnified.create({
         data: {
@@ -99,19 +170,19 @@ export const WalletService = {
           amount: warehouseProfit,
           type: "SHIPPING_PROFIT",
           description: `أرباح شحن من الطلب #${order.orderNumber}`,
-          referenceId: String(order.id)
-        }
+          referenceId: String(order.id),
+        },
       });
     }
   },
 
-  // ═══ 3. إضافة رسوم الإرجاع (15 درهم) لمحفظة المستودع ═══
+  // ═══ رسوم الإرجاع ═══
   async processReturnFee(tx: any, returnId: number, orderNumber: string) {
     const RETURN_FEE = 15;
     const warehouseWallet = await tx.wallet.upsert({
       where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
       create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: RETURN_FEE },
-      update: { balance: { increment: RETURN_FEE } }
+      update: { balance: { increment: RETURN_FEE } },
     });
     await tx.walletTransactionUnified.create({
       data: {
@@ -119,8 +190,8 @@ export const WalletService = {
         amount: RETURN_FEE,
         type: "RETURN_FEE",
         description: `رسوم إرجاع من الطلب #${orderNumber}`,
-        referenceId: String(returnId)
-      }
+        referenceId: String(returnId),
+      },
     });
-  }
+  },
 };
