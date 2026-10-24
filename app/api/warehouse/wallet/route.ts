@@ -9,12 +9,10 @@ export async function GET() {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
-    // معرف المستودع الافتراضي (يمكن تعديله لاحقاً ليدعم مستودعات متعددة)
-    const warehouseId = 1; 
-    const ownerType = "WAREHOUSE";
+    const warehouseId = 1;
 
     const wallet = await prisma.wallet.findUnique({
-      where: { ownerType_ownerId: { ownerType: ownerType as any, ownerId: warehouseId } },
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
       include: {
         transactions: {
           orderBy: { createdAt: "desc" },
@@ -26,7 +24,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
-      heldBalance: wallet ? Number(wallet.heldBalance) : 0,
+      cashInHand: wallet ? Number(wallet.cashInHand) : 0,
       transactions: wallet?.transactions || [],
     });
   } catch (error) {
