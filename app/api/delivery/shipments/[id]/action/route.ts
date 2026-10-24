@@ -2,13 +2,17 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { InventoryService } from "@/services/inventory.service";
-import { LoyaltyService } from "@/services/loyalty.service";
-import { ReferralService } from "@/services/referral.service";
-import { AuditService } from "@/services/audit.service";
-import { FulfillmentService } from "@/services/fulfillment.service";
 import { WalletService } from "@/services/wallet.service";
+import { FulfillmentService } from "@/services/fulfillment.service";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
+import { AuditService } from "@/services/audit.service";
+import { InventoryService } from "@/services/inventory.service";
+
+class ShipmentAlreadyProcessedError extends Error {
+  constructor() {
+    super("Shipment already processed");
+  }
+}
 
 async function requireDelivery() {
   const current = await SessionService.getCurrent();
@@ -29,19 +33,24 @@ async function requireDelivery() {
   return { user: current.user, person };
 }
 
-class ShipmentAlreadyProcessedError extends Error {
-  constructor() {
-    super("Shipment already processed");
-  }
-}
-
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("delivered") }),
-  z.object({ action: z.literal("picked_up") }), // <--- إضافة إجراء التحميل
-  z.object({ action: z.literal("postponed"), reason: z.string().trim().min(3).max(500) }),
-  z.object({ action: z.literal("refused"), reason: z.string().trim().min(3).max(500) }),
-  z.object({ action: z.literal("returned"), reason: z.string().trim().min(3).max(500) }),
-]);export async function POST(
+  z.object({ action: z.literal("picked_up") }),
+  z.object({
+    action: z.literal("postponed"),
+    reason: z.string().trim().min(3).max(500),
+  }),
+  z.object({
+    action: z.literal("refused"),
+    reason: z.string().trim().min(3).max(500),
+  }),
+  z.object({
+    action: z.literal("returned"),
+    reason: z.string().trim().min(3).max(500),
+  }),
+]);
+
+export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -67,10 +76,7 @@ const actionSchema = z.discriminatedUnion("action", [
     const parsed = actionSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        {
-          success: false,
-          message: parsed.error.issues[0]?.message || "بيانات غير صحيحة",
-        },
+        { success: false, message: "بيانات غير صحيحة" },
         { status: 400 }
       );
     }
@@ -88,6 +94,9 @@ const actionSchema = z.discriminatedUnion("action", [
                 userId: true,
                 status: true,
                 total: true,
+                subtotal: true,
+                shippingCost: true,
+                sellerId: true,
               },
             },
           },
@@ -109,32 +118,96 @@ const actionSchema = z.discriminatedUnion("action", [
       );
     }
 
-    if (
-      !["ASSIGNED", "IN_TRANSIT", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(
-        shipment.status
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `لا يمكن التصرف بهذه الشحنة — حالتها: ${shipment.status}`,
-        },
-        { status: 400 }
-      );
-    }
-
     const orderIds = Array.from(new Set(shipment.items.map((i) => i.orderId)));
-    const orderMap = new Map(shipment.items.map((i) => [i.orderId, i.order]));
 
     await prisma.$transaction(
       async (tx) => {
+        // ═══════════════════════════════════════════
+        // PICKED_UP — الخروج للتوزيع
+        // ═══════════════════════════════════════════
         if (data.action === "picked_up") {
           const statusUpdated = await tx.shipment.updateMany({
-            where: { id: shipmentId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } },
+            where: {
+              id: shipmentId,
+              status: { in: ["ASSIGNED", "IN_TRANSIT"] },
+            },
             data: { status: "OUT_FOR_DELIVERY" },
           });
-          if (statusUpdated.count === 0) throw new ShipmentAlreadyProcessedError();
-        } else if (data.action === "delivered") {
+          if (statusUpdated.count === 0) {
+            throw new ShipmentAlreadyProcessedError();
+          }
+
+          // تحديث كل FulfillmentItems إلى SHIPPED
+          const fiIds = shipment.items
+            .filter((i) => i.fulfillmentItemId !== null)
+            .map((i) => i.fulfillmentItemId!);
+
+          if (fiIds.length > 0) {
+            const itemsToUpdate = await tx.fulfillmentItem.findMany({
+              where: {
+                id: { in: fiIds },
+                status: { in: ["AVAILABLE_FOR_SHIPMENT", "ALLOCATED"] },
+              },
+              select: { id: true, status: true },
+            });
+
+            for (const fi of itemsToUpdate) {
+              await tx.fulfillmentItem.update({
+                where: { id: fi.id },
+                data: { status: "SHIPPED" },
+              });
+
+              await tx.fulfillmentStatusHistory.create({
+                data: {
+                  fulfillmentItemId: fi.id,
+                  fromStatus: fi.status as FulfillmentStatus,
+                  toStatus: "SHIPPED",
+                  changedById: auth.user.id,
+                  note: `تم التحميل في سيارة السائق (شحنة ${shipment.shipmentNumber})`,
+                },
+              });
+            }
+          }
+
+          // إعادة حساب Assembly Files
+          try {
+            const { AssemblyService } = await import(
+              "@/services/assembly.service"
+            );
+            const userIds = new Set<number>();
+            for (const item of shipment.items) {
+              if (item.order?.userId) userIds.add(item.order.userId);
+            }
+            for (const userId of userIds) {
+              await AssemblyService.recomputeForUser(tx, userId);
+            }
+          } catch (e) {
+            console.error("Assembly recompute failed:", e);
+          }
+
+          // Audit
+          const reqInfo = AuditService.getRequestInfo(request);
+          await AuditService.logInTransaction(tx, {
+            userId: auth.user.id,
+            action: "SHIPMENT_PICKUP",
+            entity: "Shipment",
+            entityId: String(shipmentId),
+            oldData: { status: "ASSIGNED" },
+            newData: {
+              status: "OUT_FOR_DELIVERY",
+              shipmentNumber: shipment.shipmentNumber,
+            },
+            ipAddress: reqInfo.ipAddress,
+            userAgent: reqInfo.userAgent,
+          });
+
+          return;
+        }
+
+        // ═══════════════════════════════════════════
+        // DELIVERED — تسليم كامل
+        // ═══════════════════════════════════════════
+        if (data.action === "delivered") {
           const statusUpdated = await tx.shipment.updateMany({
             where: {
               id: shipmentId,
@@ -149,22 +222,17 @@ const actionSchema = z.discriminatedUnion("action", [
             },
             data: { status: "DELIVERED" },
           });
-
           if (statusUpdated.count === 0) {
             throw new ShipmentAlreadyProcessedError();
           }
 
-          // 1. FulfillmentItems → DELIVERED
           for (const shipmentItem of shipment.items) {
             if (!shipmentItem.fulfillmentItemId) continue;
-
             const fi = await tx.fulfillmentItem.findUnique({
               where: { id: shipmentItem.fulfillmentItemId },
               select: { status: true },
             });
-
-            if (!fi) continue;
-            if (fi.status === "DELIVERED") continue;
+            if (!fi || fi.status === "DELIVERED") continue;
 
             await tx.fulfillmentItem.update({
               where: { id: shipmentItem.fulfillmentItemId },
@@ -182,7 +250,6 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
 
-          // 2. syncOrderFulfillmentStatus لكل orderItem في الشحنة
           const uniqueOrderItemIds = Array.from(
             new Set(shipment.items.map((i) => i.orderItemId))
           );
@@ -190,86 +257,39 @@ const actionSchema = z.discriminatedUnion("action", [
             await FulfillmentService.syncOrderFulfillmentStatus(tx, oiId);
           }
 
-          // 3. sold — عناصر الشحنة فقط
-          const soldByProduct = new Map<number, number>();
-          for (const si of shipment.items) {
-            soldByProduct.set(
-              si.productId,
-              (soldByProduct.get(si.productId) || 0) + si.quantity
-            );
-          }
-          for (const [pid, qty] of soldByProduct) {
-            await tx.product.update({
-              where: { id: pid },
-              data: { sold: { increment: qty } },
-            });
-          }
-
-          // 4. Loyalty + Referral + Notification + Wallet — للطلبات التي أصبحت DELIVERED فقط
           for (const orderId of orderIds) {
             const fresh = await tx.order.findUnique({
               where: { id: orderId },
-              select: { status: true, userId: true, total: true, subtotal: true, shippingCost: true, sellerId: true, orderNumber: true },
+              select: {
+                status: true,
+                userId: true,
+                total: true,
+                subtotal: true,
+                shippingCost: true,
+                sellerId: true,
+                orderNumber: true,
+              },
             });
             if (!fresh) continue;
             if (fresh.status !== "DELIVERED") continue;
 
-            // ═══ إضافة الأرباح للمحفظة (محجوزة لمدة 3 أيام) ═══
             let commissionAmount = 0;
             if (fresh.sellerId) {
               const result = await WalletService.addHeldEarning(
-                tx, 
-                fresh.sellerId, 
-                orderId, 
-                Number(fresh.total), 
-                Number(fresh.subtotal) // نمرر المجموع الفرعي لحساب العمولة بدقة
+                tx,
+                fresh.sellerId,
+                orderId,
+                Number(fresh.total),
+                Number(fresh.subtotal)
               );
               if (result) commissionAmount = result.commissionAmount;
             }
 
-            // ═══ توزيع العمولة والخدمات اللوجستية ═══
             await WalletService.processDeliveryFinancials(
-              tx, 
-              fresh, 
+              tx,
+              fresh,
               auth.person.id
             );
-
-            try {
-              const award = await LoyaltyService.awardForOrder(tx, {
-                userId: fresh.userId,
-                orderId,
-                orderTotal: Number(fresh.total),
-              });
-              if (award.pointsAwarded > 0) {
-                await tx.order.update({
-                  where: { id: orderId },
-                  data: {
-                    loyaltyPointsAwarded: award.pointsAwarded,
-                    loyaltyAwardedAt: new Date(),
-                  },
-                });
-              }
-            } catch (loyaltyErr) {
-              console.error("Loyalty award failed:", loyaltyErr);
-            }
-
-            try {
-              await ReferralService.awardOnFirstOrder(tx, fresh.userId, orderId);
-            } catch (refErr) {
-              console.error("Referral award failed:", refErr);
-            }
-
-            await tx.notification.create({
-              data: {
-                userId: fresh.userId,
-                type: "ORDER_STATUS_CHANGED",
-                title: "تم توصيل طلبك",
-                message: "طلبك تم تسليمه بنجاح. شكراً لثقتك!",
-                link: `/orders/${orderId}`,
-                category: "ORDER",
-                severity: "INFO",
-              },
-            });
           }
 
           await tx.deliveryPerson.update({
@@ -279,6 +299,21 @@ const actionSchema = z.discriminatedUnion("action", [
               successfulDeliveries: { increment: 1 },
             },
           });
+
+          try {
+            const { AssemblyService } = await import(
+              "@/services/assembly.service"
+            );
+            const userIds = new Set<number>();
+            for (const item of shipment.items) {
+              if (item.order?.userId) userIds.add(item.order.userId);
+            }
+            for (const userId of userIds) {
+              await AssemblyService.recomputeForUser(tx, userId);
+            }
+          } catch (e) {
+            console.error("Assembly recompute failed:", e);
+          }
 
           const reqInfo = AuditService.getRequestInfo(request);
           await AuditService.logInTransaction(tx, {
@@ -309,25 +344,9 @@ const actionSchema = z.discriminatedUnion("action", [
             },
             data: { status: "POSTPONED" },
           });
-
           if (statusUpdated.count === 0) {
             throw new ShipmentAlreadyProcessedError();
           }
-
-          const reqInfo = AuditService.getRequestInfo(request);
-          await AuditService.logInTransaction(tx, {
-            userId: auth.user.id,
-            action: "DELIVERY_ACTION",
-            entity: "Shipment",
-            entityId: shipmentId,
-            newData: {
-              action: "postponed",
-              reason: data.reason,
-              shipmentNumber: shipment.shipmentNumber,
-            },
-            ipAddress: reqInfo.ipAddress,
-            userAgent: reqInfo.userAgent,
-          });
 
           const admins = await tx.user.findMany({
             where: {
@@ -350,11 +369,9 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
         } else {
+          // refused / returned
           const isRejected = data.action === "refused";
           const newStatus = isRejected ? "REFUSED" : "RETURNED";
-          const returnReason = isRejected
-            ? "رفض التوصيل — إرجاع للمخزون"
-            : "إرجاع الشحنة — إرجاع للمخزون";
 
           const statusUpdated = await tx.shipment.updateMany({
             where: {
@@ -370,28 +387,22 @@ const actionSchema = z.discriminatedUnion("action", [
             },
             data: { status: newStatus },
           });
-
           if (statusUpdated.count === 0) {
             throw new ShipmentAlreadyProcessedError();
           }
 
-          // 1. FulfillmentItems → RETURNED
           for (const shipmentItem of shipment.items) {
             if (!shipmentItem.fulfillmentItemId) continue;
-
             const fi = await tx.fulfillmentItem.findUnique({
               where: { id: shipmentItem.fulfillmentItemId },
               select: { status: true },
             });
-
-            if (!fi) continue;
-            if (fi.status === "RETURNED") continue;
+            if (!fi || fi.status === "RETURNED") continue;
 
             await tx.fulfillmentItem.update({
               where: { id: shipmentItem.fulfillmentItemId },
               data: { status: "RETURNED" },
             });
-
             await tx.fulfillmentStatusHistory.create({
               data: {
                 fulfillmentItemId: shipmentItem.fulfillmentItemId,
@@ -403,7 +414,6 @@ const actionSchema = z.discriminatedUnion("action", [
             });
           }
 
-          // 2. إرجاع للمخزون — عناصر الشحنة فقط (idempotent)
           for (const si of shipment.items) {
             if (!si.variantId) continue;
             await InventoryService.returnStock(
@@ -411,49 +421,16 @@ const actionSchema = z.discriminatedUnion("action", [
               si.variantId,
               si.quantity,
               shipmentId,
-              returnReason,
+              isRejected ? "رفض التوصيل" : "إرجاع الشحنة",
               "RETURN"
             );
           }
 
-          // 3. syncOrderFulfillmentStatus لكل orderItem في الشحنة
           const uniqueOrderItemIds = Array.from(
             new Set(shipment.items.map((i) => i.orderItemId))
           );
           for (const oiId of uniqueOrderItemIds) {
             await FulfillmentService.syncOrderFulfillmentStatus(tx, oiId);
-          }
-
-          // 4. OrderStatusHistory + Notifications — للطلبات التي أصبحت RETURNED
-          for (const orderId of orderIds) {
-            const fresh = await tx.order.findUnique({
-              where: { id: orderId },
-              select: { status: true, userId: true },
-            });
-            if (!fresh) continue;
-            if (fresh.status !== "RETURNED") continue;
-
-            await tx.orderStatusHistory.create({
-              data: {
-                orderId,
-                fromStatus: fresh.status as any,
-                toStatus: "RETURNED",
-                changedById: auth.user.id,
-                note: `${isRejected ? "رفض" : "إرجاع"} عبر الشحنة ${shipment.shipmentNumber} — ${data.reason}`,
-              },
-            });
-
-            await tx.notification.create({
-              data: {
-                userId: fresh.userId,
-                type: "ORDER_STATUS_CHANGED",
-                title: isRejected ? "تم رفض استلام طلبك" : "تم إرجاع طلبك",
-                message: `طلبك — ${data.reason}`,
-                link: `/orders/${orderId}`,
-                category: "ORDER",
-                severity: "WARNING",
-              },
-            });
           }
 
           await tx.deliveryPerson.update({
@@ -464,59 +441,12 @@ const actionSchema = z.discriminatedUnion("action", [
               returnCount: { increment: 1 },
             },
           });
-
-          const reqInfo = AuditService.getRequestInfo(request);
-          await AuditService.logInTransaction(tx, {
-            userId: auth.user.id,
-            action: "DELIVERY_ACTION",
-            entity: "Shipment",
-            entityId: shipmentId,
-            newData: {
-              action: data.action,
-              reason: data.reason,
-              ordersCount: orderIds.length,
-              shipmentNumber: shipment.shipmentNumber,
-            },
-            ipAddress: reqInfo.ipAddress,
-            userAgent: reqInfo.userAgent,
-          });
-
-          const admins = await tx.user.findMany({
-            where: {
-              role: { in: ["ADMIN", "SUPER_ADMIN"] },
-              deletedAt: null,
-            },
-            select: { id: true },
-          });
-          for (const a of admins) {
-            await tx.notification.create({
-              data: {
-                userId: a.id,
-                type: "ORDER_STATUS_CHANGED",
-                title: isRejected ? "رفض شحنة" : "إرجاع شحنة",
-                message: `السائق ${auth.user.name} — ${shipment.shipmentNumber}: ${data.reason}`,
-                link: `/admin/shipments/${shipmentId}`,
-                category: "ORDER",
-                severity: "WARNING",
-              },
-            });
-          }
         }
       },
       { timeout: 30000 }
     );
 
-    return NextResponse.json({
-      success: true,
-      message:
-        data.action === "delivered"
-          ? "تم تسجيل التسليم"
-          : data.action === "postponed"
-            ? "تم تسجيل التأجيل"
-            : data.action === "refused"
-              ? "تم تسجيل الرفض"
-              : "تم تسجيل الإرجاع",
-    });
+    return NextResponse.json({ success: true, message: "تمت العملية بنجاح" });
   } catch (error) {
     if (error instanceof ShipmentAlreadyProcessedError) {
       return NextResponse.json(

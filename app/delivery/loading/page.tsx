@@ -29,7 +29,8 @@ function LoadingContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderItem[]>([]);
-  const [shipmentStatus, setShipmentStatus] = useState("ASSIGNED");
+  const [shipmentVerified, setShipmentVerified] = useState(false);
+  const [shipmentNumber, setShipmentNumber] = useState("");
 
   const controlsRef = useRef<any>(null);
   const lastScanTimeRef = useRef<number>(0);
@@ -42,13 +43,17 @@ function LoadingContent() {
         const res = await fetch(`/api/delivery/shipments/${shipmentId}`);
         const data = await res.json();
         if (data.success) {
-          setShipmentStatus(data.shipment.status);
+          setShipmentNumber(data.shipment.shipmentNumber);
           const initialOrders = data.shipment.orders.map((o: any) => ({
             orderId: o.orderId,
             orderNumber: o.orderNumber,
             isScanned: data.shipment.status === "OUT_FOR_DELIVERY",
           }));
           setOrders(initialOrders);
+
+          if (data.shipment.status === "OUT_FOR_DELIVERY") {
+            setShipmentVerified(true);
+          }
         }
       } catch (err) {
         console.error(err);
@@ -153,14 +158,39 @@ function LoadingContent() {
     setError("");
 
     try {
-      // ═══ 1. هل هو QR شحنة؟ ═══
+      // ═══════════════════════════════════════════
+      // 1. QR الشحنة → يُعلِّم كل الطلبات كـ "مستلمة"
+      // ═══════════════════════════════════════════
       if (isShipmentToken) {
-        playSound("error");
-        setError("لا تمسح QR الشحنة هنا. امسح QR كل طرد على حدة.");
+        const shipmentRes = await fetch(
+          `/api/delivery/shipments/by-token/${token}`
+        );
+        const shipmentData = await shipmentRes.json();
+
+        if (!shipmentRes.ok || !shipmentData.success) {
+          playSound("error");
+          setError(shipmentData.message || "QR الشحنة غير صحيح");
+          return;
+        }
+
+        if (shipmentData.shipment.id !== Number(shipmentId)) {
+          playSound("error");
+          setError("هذا QR شحنة أخرى، ليست الشحنة المفتوحة حالياً");
+          return;
+        }
+
+        playSound("success");
+        setOrders((prev) =>
+          prev.map((o) => ({ ...o, isScanned: true }))
+        );
+        setShipmentVerified(true);
+        setError("");
         return;
       }
 
-      // ═══ 2. امسح QR الطرد (وضع التحميل) ═══
+      // ═══════════════════════════════════════════
+      // 2. QR طرد فردي → تعليمه فقط
+      // ═══════════════════════════════════════════
       const res = await fetch(`/api/delivery/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -205,7 +235,7 @@ function LoadingContent() {
 
   async function completeLoading() {
     if (!shipmentId) {
-      setError("يرجى مسح QR الشحنة أولاً");
+      setError("الشحنة غير محددة");
       return;
     }
     setLoading(true);
@@ -243,11 +273,29 @@ function LoadingContent() {
           تجهيز الشحنة للخروج
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          امسح QR كل طرد على حدة لتأكيد استلامه.
+          امسح QR الشحنة لتأكيد استلام كل الطرود دفعة واحدة.
         </p>
       </div>
 
       <div className="mx-auto max-w-2xl space-y-4">
+        {/* بطاقة تأكيد الشحنة */}
+        {shipmentVerified && (
+          <div className="rounded-2xl bg-green-50 border-2 border-green-300 p-5">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="h-8 w-8 text-green-600 shrink-0" />
+              <div>
+                <h3 className="font-black text-green-900">
+                  تم التحقق من الشحنة {shipmentNumber}
+                </h3>
+                <p className="text-xs text-green-700 mt-1">
+                  كل الطرود ({totalItems}) جاهزة للتحميل. يمكنك الخروج للتوزيع الآن.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* شريط التقدم */}
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
             <div className="text-sm text-gray-500 font-bold mb-1">تم مسح</div>
@@ -268,6 +316,7 @@ function LoadingContent() {
           </div>
         </div>
 
+        {/* زر المسح */}
         <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
           {!scanning ? (
             <button
@@ -275,7 +324,8 @@ function LoadingContent() {
               disabled={loading || isComplete}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5c00] py-4 text-sm font-bold text-white hover:bg-[#e64a00] disabled:opacity-50"
             >
-              <Scan className="h-5 w-5" /> فتح الكاميرا للمسح
+              <Scan className="h-5 w-5" />
+              {shipmentVerified ? "مسح طرد إضافي (اختياري)" : "مسح QR الشحنة"}
             </button>
           ) : (
             <button
@@ -306,6 +356,7 @@ function LoadingContent() {
           )}
         </div>
 
+        {/* قائمة الطرود */}
         <div className="grid gap-3 sm:grid-cols-2">
           {orders.map((o) => (
             <div
@@ -339,6 +390,7 @@ function LoadingContent() {
           ))}
         </div>
 
+        {/* زر التأكيد */}
         {isComplete && (
           <button
             onClick={completeLoading}
