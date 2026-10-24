@@ -101,41 +101,31 @@ export default function DeliveryWalletPage() {
         </div>
       )}
 
-      {/* ═══ تنبيه بضاعة مرفوضة (قبل 24 ساعة) ═══ */}
+      {/* ═══ تنبيه بضاعة مرفوضة ═══ */}
       {!isBlocked && pendingRefusedCount > 0 && (
         <div className="mb-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
           <div className="flex items-start gap-3">
             <Package className="h-8 w-8 text-amber-600 shrink-0" />
             <div>
               <h3 className="font-black text-amber-900 text-base">
-                📦 لديك {pendingRefusedCount} منتج مرفوض بانتظار الإرجاع
+                📦 لديك {pendingRefusedCount} منتج مرفوض بانتظار الإرجاع للمستودع
               </h3>
-              <p className="mt-1 text-sm text-amber-800">
-                يجب إرجاعها للمستودع خلال 24 ساعة لتجنب إيقاف الحساب.
-              </p>
-              <p className="mt-2 text-xs text-amber-700">
-                ⏰ بعد الإرجاع، سيُرفع الإيقاف تلقائياً.
-              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══ تنبيه كاش (قبل 24 ساعة) ═══ */}
+      {/* ═══ تنبيه كاش ═══ */}
       {!isBlocked && cashInHand > 0 && (
         <div className="mb-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
           <div className="flex items-start gap-3">
             <Banknote className="h-8 w-8 text-amber-600 shrink-0" />
             <div>
               <h3 className="font-black text-amber-900 text-base">
-                💰 لديك كاش في حوزتك يجب تسليمه
+                💰 لديك كاش في حوزتك يجب تسليمه للمستودع
               </h3>
               <p className="mt-1 text-sm text-amber-800">
                 المبلغ: <strong>{cashInHand.toFixed(2)} د.م</strong>
-                {cashHeldHours > 0 && ` (منذ ${cashHeldHours} ساعة)`}
-              </p>
-              <p className="mt-2 text-xs text-amber-700">
-                ⏰ سيتم إيقاف حسابك تلقائياً إذا لم تسلّم المبلغ خلال 24 ساعة.
               </p>
             </div>
           </div>

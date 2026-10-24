@@ -10,6 +10,9 @@ import {
   MapPin,
   Phone,
   ChevronLeft,
+  AlertTriangle,
+  Banknote,
+  Ban,
 } from "lucide-react";
 
 type Shipment = {
@@ -28,16 +31,38 @@ type Shipment = {
   assignedAt: string | null;
 };
 
+type WalletStatus = {
+  cashInHand: number;
+  isBlocked: boolean;
+  blockReason: string | null;
+  pendingRefusedCount: number;
+} | null;
+
 export default function DeliveryDashboard() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [wallet, setWallet] = useState<WalletStatus>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/delivery/shipments?status=ACTIVE");
-        const data = await res.json();
-        if (data.success) setShipments(data.shipments || []);
+        const [shipmentsRes, walletRes] = await Promise.all([
+          fetch("/api/delivery/shipments?status=ACTIVE"),
+          fetch("/api/delivery/wallet"),
+        ]);
+
+        const shipmentsData = await shipmentsRes.json();
+        const walletData = await walletRes.json();
+
+        if (shipmentsData.success) setShipments(shipmentsData.shipments || []);
+        if (walletData.success) {
+          setWallet({
+            cashInHand: walletData.cashInHand || 0,
+            isBlocked: walletData.isBlocked || false,
+            blockReason: walletData.blockReason || null,
+            pendingRefusedCount: walletData.pendingRefusedCount || 0,
+          });
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -66,6 +91,57 @@ export default function DeliveryDashboard() {
           لديك {shipments.length} شحنة نشطة
         </p>
       </div>
+
+      {/* ═══ حظر الحساب ═══ */}
+      {wallet?.isBlocked && (
+        <div className="mb-4 rounded-2xl bg-red-50 border-2 border-red-500 p-5">
+          <div className="flex items-start gap-3">
+            <Ban className="h-8 w-8 text-red-600 shrink-0" />
+            <div>
+              <h3 className="font-black text-red-900 text-lg">
+                🚫 حسابك موقوف مؤقتاً
+              </h3>
+              <p className="mt-1 text-sm text-red-800">{wallet.blockReason}</p>
+              <p className="mt-2 text-xs text-red-700">
+                لا يمكنك استلام شحنات جديدة أو سحب الأموال حتى تسوية الوضع.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ تنبيه بضاعة مرفوضة ═══ */}
+      {!wallet?.isBlocked && (wallet?.pendingRefusedCount || 0) > 0 && (
+        <div className="mb-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
+          <div className="flex items-start gap-3">
+            <Package className="h-8 w-8 text-amber-600 shrink-0" />
+            <div>
+              <h3 className="font-black text-amber-900 text-base">
+                📦 لديك {wallet?.pendingRefusedCount} منتج مرفوض بانتظار الإرجاع
+                للمستودع
+              </h3>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ تنبيه كاش ═══ */}
+      {!wallet?.isBlocked && (wallet?.cashInHand || 0) > 0 && (
+        <div className="mb-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
+          <div className="flex items-start gap-3">
+            <Banknote className="h-8 w-8 text-amber-600 shrink-0" />
+            <div>
+              <h3 className="font-black text-amber-900 text-base">
+                💰 لديك كاش في حوزتك يجب تسليمه للمستودع
+              </h3>
+              <p className="mt-1 text-sm text-amber-800">
+                المبلغ:{" "}
+                <strong>{Number(wallet?.cashInHand || 0).toFixed(2)} د.م</strong>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* أزرار سريعة */}
       <div className="mb-6 grid grid-cols-2 gap-3">
