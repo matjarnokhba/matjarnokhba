@@ -2,30 +2,31 @@ import "dotenv/config";
 import { prisma } from "../lib/prisma";
 
 async function main() {
-  console.log("🚨 بدء تصفير النظام بالكامل...");
+  console.log("🚨 بدء تصفير النظام الشامل (شامل المحافظ والنظام المالي)...");
 
-  // 1. السجلات المالية والمحافظ
+  // 1. الجداول المالية (الأحدث أولاً)
   await prisma.walletTransactionUnified.deleteMany({});
   await prisma.walletTransaction.deleteMany({});
   await prisma.customerWalletTransaction.deleteMany({});
   await prisma.withdrawalRequest.deleteMany({});
   await prisma.cashHandover.deleteMany({});
-  await prisma.driverPayout.deleteMany({});
   await prisma.adminCashHandover.deleteMany({});
+  await prisma.driverPayout.deleteMany({});
+  await prisma.driverLegalNotice.deleteMany({});
   await prisma.wallet.deleteMany({});
   await prisma.costRecord.deleteMany({});
   await prisma.sellerPayout.deleteMany({});
   await prisma.subscriptionLog.deleteMany({});
   
-  // 2. المرتجعات (يجب أن تُحذف قبل FulfillmentItem و OrderItem)
+  // 2. المرتجعات
   await prisma.returnItem.deleteMany({});
   await prisma.returnShipment.deleteMany({});
   await prisma.returnRequest.deleteMany({});
 
-  // 3. استلامات المستودع (يجب حذفها قبل FulfillmentItem)
+  // 3. استلامات المستودع (قبل FulfillmentItem)
   await prisma.warehouseReceipt.deleteMany({});
 
-  // 4. المبيعات في المحل
+  // 4. مبيعات المحل (POS)
   await prisma.storeSaleItem.deleteMany({});
   await prisma.storeSale.deleteMany({});
   
@@ -55,7 +56,7 @@ async function main() {
   await prisma.orderItem.deleteMany({});
   await prisma.order.deleteMany({});
   
-  // 10. المتنوعات (كوبونات، ولاء، إشعارات، إلخ)
+  // 10. المتنوعات
   await prisma.couponUsage.deleteMany({});
   await prisma.loyaltyTransaction.deleteMany({});
   await prisma.loyaltyTierUnlock.deleteMany({});
@@ -67,7 +68,7 @@ async function main() {
   await prisma.auditLog.deleteMany({});
   await prisma.notification.deleteMany({});
 
-  console.log("✅ تم مسح جميع الطلبات، الشحنات، والسجلات.");
+  console.log("✅ تم مسح جميع الطلبات، الشحنات، السجلات المالية، والمحافظ.");
 
   // 11. تصفير العدادات والأرصدة
   await prisma.seller.updateMany({
@@ -113,7 +114,7 @@ async function main() {
     data: { balance: 0, totalEarned: 0, totalRevoked: 0 }
   });
 
-  console.log("🎉 اكتملت عملية التصفير الشاملة بنجاح! النظام الآن نظيف تماماً كأنه جديد.");
+  console.log("🎉 اكتملت عملية التصفير الشاملة بنجاح! النظام الآن نظيف تماماً.");
 }
 
 main()
