@@ -1686,6 +1686,7 @@ model Shipment {
   deliveryZoneId      Int?
   deliveryZone        Zone?                @relation("ShipmentDeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   assemblyItems       AssemblyItem[]
+  cashCollectedAt     DateTime?
 
   @@index([status])
   @@index([deliveryPersonId])
@@ -2296,17 +2297,19 @@ enum WalletOwnerType {
 }
 
 model Wallet {
-  id            Int             @id @default(autoincrement())
-  ownerType     WalletOwnerType
-  ownerId       Int
-  balance       Decimal         @default(0) @db.Decimal(12, 2)
-  heldBalance   Decimal         @default(0) @db.Decimal(12, 2)
-  cashInHand    Decimal         @default(0) @db.Decimal(12, 2)
-  cashHeldSince DateTime?
-  isBlocked     Boolean         @default(false)
-  blockReason   String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                 Int             @id @default(autoincrement())
+  ownerType          WalletOwnerType
+  ownerId            Int
+  balance            Decimal         @default(0) @db.Decimal(12, 2)
+  heldBalance        Decimal         @default(0) @db.Decimal(12, 2)
+  cashInHand         Decimal         @default(0) @db.Decimal(12, 2)
+  cashHeldSince      DateTime?
+  cashOwedToPlatform Decimal         @default(0) @db.Decimal(12, 2)
+  cashOwedToDrivers  Decimal         @default(0) @db.Decimal(12, 2)
+  isBlocked          Boolean         @default(false)
+  blockReason        String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   transactions WalletTransactionUnified[]
 
