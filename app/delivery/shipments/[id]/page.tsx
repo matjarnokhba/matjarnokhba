@@ -52,7 +52,7 @@ type Shipment = {
   orders: OrderGroup[];
 };
 
-type ActionModal = "delivered" | "postponed" | "refused" | "returned" | null;
+type ActionModal = "delivered" | "postponed" | null;
 
 export default function DeliveryShipmentDetailPage() {
   const params = useParams();
@@ -149,10 +149,10 @@ export default function DeliveryShipmentDetailPage() {
     );
   }
 
-  // ═══ منطق الشحنة الجديد ═══
+  // ═══ منطق الشحنة ═══
   const isPendingLoading = ["ASSIGNED", "IN_TRANSIT"].includes(shipment.status);
   const canAct = ["OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status);
-  
+
   const firstOrder = shipment.orders[0];
   const address = firstOrder?.shippingAddressSnapshot || {};
 
@@ -175,14 +175,26 @@ export default function DeliveryShipmentDetailPage() {
               {shipment.shipmentNumber}
             </div>
           </div>
-          <div className={`rounded-full px-4 py-2 text-xs font-bold ${
-            isPendingLoading ? "bg-blue-100 text-blue-700" :
-            canAct ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"
-          }`}>
-            {isPendingLoading ? "بانتظار التحميل" : 
-             canAct ? "قيد التوصيل" : 
-             shipment.status === "DELIVERED" ? "تم التسليم" :
-             shipment.status}
+          <div
+            className={`rounded-full px-4 py-2 text-xs font-bold ${
+              isPendingLoading
+                ? "bg-blue-100 text-blue-700"
+                : canAct
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-700"
+            }`}
+          >
+            {isPendingLoading
+              ? "بانتظار التحميل"
+              : canAct
+                ? "قيد التوصيل"
+                : shipment.status === "DELIVERED"
+                  ? "تم التسليم"
+                  : shipment.status === "PARTIALLY_DELIVERED"
+                    ? "تسليم جزئي"
+                    : shipment.status === "REFUSED"
+                      ? "مرفوض"
+                      : shipment.status}
           </div>
         </div>
       </div>
@@ -314,36 +326,32 @@ export default function DeliveryShipmentDetailPage() {
       {/* أزرار التوصيل (تظهر فقط بعد الخروج من المستودع) */}
       {canAct && (
         <div className="mt-5 space-y-2">
+          {/* زر التسليم الجزئي (الأهم - يقود لصفحة مستقلة) */}
+          <Link
+            href={`/delivery/shipments/${shipment.id}/partial-delivery`}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 py-4 text-sm font-bold text-white shadow-md hover:opacity-90 transition"
+          >
+            <Package className="h-5 w-5" />
+            تسليم جزئي / رفض جزئي
+          </Link>
+
+          {/* زر التسليم الكامل (اختصار سريع) */}
           <button
             onClick={() => setActionModal("delivered")}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 py-4 text-sm font-bold text-white shadow-md"
           >
             <Check className="h-5 w-5" />
-            تم تسليم الشحنة
+            تم تسليم الشحنة كاملة
           </button>
+
+          {/* زر التأجيل */}
           <button
             onClick={() => setActionModal("postponed")}
             className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-500 bg-amber-50 py-3.5 text-sm font-bold text-amber-700"
           >
             <Clock className="h-5 w-5" />
-            تأجيل
+            تأجيل التوصيل
           </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setActionModal("refused")}
-              className="flex items-center justify-center gap-2 rounded-xl border-2 border-red-500 bg-red-50 py-3.5 text-sm font-bold text-red-700"
-            >
-              <XCircle className="h-5 w-5" />
-              رفض العميل
-            </button>
-            <button
-              onClick={() => setActionModal("returned")}
-              className="flex items-center justify-center gap-2 rounded-xl border-2 border-gray-400 bg-gray-50 py-3.5 text-sm font-bold text-gray-700"
-            >
-              <RotateCcw className="h-5 w-5" />
-              إرجاع
-            </button>
-          </div>
         </div>
       )}
 
@@ -364,7 +372,7 @@ export default function DeliveryShipmentDetailPage() {
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                     <Check className="h-8 w-8 text-green-600" />
                   </div>
-                  <h3 className="mt-4 text-lg font-black">تأكيد التسليم</h3>
+                  <h3 className="mt-4 text-lg font-black">تأكيد التسليم الكامل</h3>
                   <p className="mt-2 text-xs text-gray-600">
                     هل تم تسليم الشحنة كاملة واستلام المبلغ (
                     {shipment.totalCOD.toFixed(2)} د.م)؟
@@ -395,13 +403,7 @@ export default function DeliveryShipmentDetailPage() {
             ) : (
               <>
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-black">
-                    {actionModal === "postponed"
-                      ? "تأجيل التوصيل"
-                      : actionModal === "refused"
-                        ? "رفض العميل"
-                        : "إرجاع الشحنة"}
-                  </h3>
+                  <h3 className="text-lg font-black">تأجيل التوصيل</h3>
                   <button
                     onClick={() => setActionModal(null)}
                     className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
@@ -414,7 +416,7 @@ export default function DeliveryShipmentDetailPage() {
                   onChange={(e) => setReason(e.target.value)}
                   rows={4}
                   placeholder="السبب..."
-                  className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-green-500 focus:bg-white"
+                  className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-amber-500 focus:bg-white"
                   autoFocus
                 />
                 {error && (
@@ -422,15 +424,9 @@ export default function DeliveryShipmentDetailPage() {
                 )}
                 <div className="mt-4 flex gap-2">
                   <button
-                    onClick={() => executeAction(actionModal, reason)}
+                    onClick={() => executeAction("postponed", reason)}
                     disabled={submitting || reason.trim().length < 3}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white disabled:opacity-50 ${
-                      actionModal === "postponed"
-                        ? "bg-amber-500"
-                        : actionModal === "refused"
-                          ? "bg-red-500"
-                          : "bg-gray-700"
-                    }`}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
                     {submitting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
