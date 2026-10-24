@@ -2,10 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { AuditService } from "@/services/audit.service";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 
-// ═══════ المهلة الافتراضية للتجهيز ═══════
 const DEFAULT_PREP_DEADLINE_MINUTES = 60;
 
-// ═══════ انتقالات الحالة المسموح بها ═══════
 const ALLOWED_TRANSITIONS: Record<string, FulfillmentStatus[]> = {
   PENDING: ["PREPARING", "CANCELLED"],
   PREPARING: ["READY_FOR_COLLECTION", "CANCELLED"],
@@ -22,7 +20,6 @@ const ALLOWED_TRANSITIONS: Record<string, FulfillmentStatus[]> = {
   RETURNED: [],
 };
 
-// ═══════ الأنواع ═══════
 type CreateForOrderInput = {
   orderId: number;
 };
@@ -35,10 +32,6 @@ type TransitionInput = {
 };
 
 export const FulfillmentService = {
-  // ═══════════════════════════════════════════
-  // إنشاء FulfillmentItems لطلب
-  // (يُستدعى من OrderService بعد إنشاء الطلب)
-  // ═══════════════════════════════════════════
   async createForOrder(tx: any, input: CreateForOrderInput): Promise<number> {
     const order = await tx.order.findUnique({
       where: { id: input.orderId },
@@ -55,18 +48,9 @@ export const FulfillmentService = {
       },
     });
 
-    if (!order) {
-      throw new Error("الطلب غير موجود");
-    }
+    if (!order) throw new Error("الطلب غير موجود");
+    if (order.source === "IN_STORE") return 0;
 
-    // ═══ هل ننشئ FulfillmentItems لهذا الطلب؟ ═══
-    // IN_STORE → لا يحتاج Fulfillment (تسليم فوري)
-    // ONLINE → يحتاج
-    if (order.source === "IN_STORE") {
-      return 0;
-    }
-
-    // ═══ المهلة ═══
     const deadline = new Date(
       order.createdAt.getTime() + DEFAULT_PREP_DEADLINE_MINUTES * 60 * 1000
     );
@@ -74,8 +58,8 @@ export const FulfillmentService = {
     let createdCount = 0;
 
     for (const item of order.items) {
-      // ═══ تحديد sellerId (من OrderItem أو من Product) ═══
-      const sellerId = item.sellerId ?? item.product?.sellerId ?? order.seller?.id;
+      const sellerId =
+        item.sellerId ?? item.product?.sellerId ?? order.seller?.id;
 
       if (!sellerId) {
         throw new Error(
@@ -83,7 +67,6 @@ export const FulfillmentService = {
         );
       }
 
-      // ═══ هل يوجد FulfillmentItem لهذا العنصر؟ ═══
       const existing = await tx.fulfillmentItem.findFirst({
         where: { orderItemId: item.id },
         select: { id: true },
@@ -91,7 +74,6 @@ export const FulfillmentService = {
 
       if (existing) continue;
 
-      // ═══ إنشاء FulfillmentItem ═══
       const fulfillmentItem = await tx.fulfillmentItem.create({
         data: {
           orderItemId: item.id,
@@ -102,7 +84,6 @@ export const FulfillmentService = {
         },
       });
 
-      // ═══ سجل الحالة الأولي ═══
       await tx.fulfillmentStatusHistory.create({
         data: {
           fulfillmentItemId: fulfillmentItem.id,
@@ -119,9 +100,6 @@ export const FulfillmentService = {
     return createdCount;
   },
 
-  // ═══════════════════════════════════════════
-  // جلب FulfillmentItem بـID (مع علاقات)
-  // ═══════════════════════════════════════════
   async getById(fulfillmentItemId: number) {
     return prisma.fulfillmentItem.findUnique({
       where: { id: fulfillmentItemId },
@@ -139,34 +117,21 @@ export const FulfillmentService = {
                 shippingAddressSnapshot: true,
               },
             },
-            product: {
-              select: { id: true, name: true, slug: true },
-            },
+            product: { select: { id: true, name: true, slug: true } },
           },
         },
-        seller: {
-          select: { id: true, storeName: true, slug: true },
-        },
-        history: {
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        },
-        warehouseReceipts: {
-          orderBy: { createdAt: "desc" },
-        },
+        seller: { select: { id: true, storeName: true, slug: true } },
+        history: { orderBy: { createdAt: "desc" }, take: 20 },
+        warehouseReceipts: { orderBy: { createdAt: "desc" } },
       },
     });
   },
 
-  // ═══════════════════════════════════════════
-  // قائمة FulfillmentItems حسب السياق
-  // ═══════════════════════════════════════════
   async listForSeller(
     sellerId: number,
     filters?: { status?: FulfillmentStatus | FulfillmentStatus[] }
   ) {
     const where: any = { sellerId };
-
     if (filters?.status) {
       where.status = Array.isArray(filters.status)
         ? { in: filters.status }
@@ -198,20 +163,13 @@ export const FulfillmentService = {
     status?: FulfillmentStatus | FulfillmentStatus[];
   }) {
     const where: any = {};
-
     if (filters?.status) {
       where.status = Array.isArray(filters.status)
         ? { in: filters.status }
         : filters.status;
     } else {
-      // افتراضي: العناصر التي في المستودع أو جاهزة للشحن
       where.status = {
-        in: [
-          "RECEIVED",
-          "VERIFIED",
-          "AVAILABLE_FOR_SHIPMENT",
-          "ALLOCATED",
-        ],
+        in: ["RECEIVED", "VERIFIED", "AVAILABLE_FOR_SHIPMENT", "ALLOCATED"],
       };
     }
 
@@ -230,22 +188,16 @@ export const FulfillmentService = {
             },
           },
         },
-        seller: {
-          select: { id: true, storeName: true },
-        },
+        seller: { select: { id: true, storeName: true } },
       },
       orderBy: [{ warehouseReceivedAt: "asc" }, { createdAt: "asc" }],
       take: 200,
     });
   },
 
-  // ═══════════════════════════════════════════
-  // قائمة FulfillmentItems القابلة للجمع
-  // ═══════════════════════════════════════════
   async listReadyForCollection(sellerIds?: number[]) {
     const where: any = {
       status: "READY_FOR_COLLECTION",
-      // لم تُضف بعد إلى Collection Assignment مفتوح
       collectionItems: {
         none: {
           assignment: {
@@ -265,21 +217,12 @@ export const FulfillmentService = {
         orderItem: {
           include: {
             order: {
-              select: {
-                id: true,
-                orderNumber: true,
-                createdAt: true,
-              },
+              select: { id: true, orderNumber: true, createdAt: true },
             },
           },
         },
         seller: {
-          select: {
-            id: true,
-            storeName: true,
-            slug: true,
-            city: true,
-          },
+          select: { id: true, storeName: true, slug: true, city: true },
         },
       },
       orderBy: [{ sellerId: "asc" }, { readyAt: "asc" }],
@@ -287,9 +230,6 @@ export const FulfillmentService = {
     });
   },
 
-  // ═══════════════════════════════════════════
-  // Transition — تغيير الحالة (مع Validation)
-  // ═══════════════════════════════════════════
   async transition(input: TransitionInput): Promise<{
     success: boolean;
     fromStatus: FulfillmentStatus;
@@ -326,7 +266,11 @@ export const FulfillmentService = {
     return prisma.$transaction(async (tx) => {
       const item = await tx.fulfillmentItem.findUnique({
         where: { id: input.fulfillmentItemId },
-        select: { status: true, orderItemId: true },
+        select: {
+          status: true,
+          orderItemId: true,
+          orderItem: { select: { order: { select: { userId: true } } } },
+        },
       });
 
       if (!item) throw new Error("عنصر التجهيز غير موجود");
@@ -338,7 +282,6 @@ export const FulfillmentService = {
         );
       }
 
-      // ═══ updateMany مع شرط الحالة (ذرّي) ═══
       const updated = await tx.fulfillmentItem.updateMany({
         where: { id: input.fulfillmentItemId, status: item.status },
         data: updates,
@@ -358,7 +301,19 @@ export const FulfillmentService = {
         },
       });
 
-      await FulfillmentService.syncOrderFulfillmentStatus(tx, item.orderItemId);
+      await FulfillmentService.syncOrderFulfillmentStatus(
+        tx,
+        item.orderItemId
+      );
+
+      // ═══ تحديث AssemblyFile تلقائياً ═══
+      try {
+        const { AssemblyService } = await import("./assembly.service");
+        const userId = (item as any).orderItem.order.userId;
+        await AssemblyService.recomputeForUser(tx, userId);
+      } catch (e) {
+        console.error("Assembly recompute failed:", e);
+      }
 
       return {
         success: true as const,
@@ -368,9 +323,6 @@ export const FulfillmentService = {
     });
   },
 
-  // ═══════════════════════════════════════════
-  // مزامنة Order.fulfillmentStatus بعد تغيير FulfillmentItem
-  // ═══════════════════════════════════════════
   async syncOrderFulfillmentStatus(
     tx: any,
     orderItemId: number
@@ -396,7 +348,6 @@ export const FulfillmentService = {
 
     const allDelivered = statuses.every((s) => s === "DELIVERED");
     const allReturned = statuses.every((s) => s === "RETURNED");
-    const allCancelled = statuses.every((s) => s === "CANCELLED");
     const allFailed = statuses.every((s) =>
       ["RETURNED", "CANCELLED"].includes(s)
     );
@@ -465,9 +416,6 @@ export const FulfillmentService = {
     }
   },
 
-  // ═══════════════════════════════════════════
-  // إحصائيات التاجر (تأخير/جاهز/مُسلّم)
-  // ═══════════════════════════════════════════
   async getSellerStats(sellerId: number) {
     const now = new Date();
 
@@ -482,9 +430,7 @@ export const FulfillmentService = {
       cancelled,
       overdue,
     ] = await Promise.all([
-      prisma.fulfillmentItem.count({
-        where: { sellerId, status: "PENDING" },
-      }),
+      prisma.fulfillmentItem.count({ where: { sellerId, status: "PENDING" } }),
       prisma.fulfillmentItem.count({
         where: { sellerId, status: "PREPARING" },
       }),
@@ -497,7 +443,14 @@ export const FulfillmentService = {
       prisma.fulfillmentItem.count({
         where: {
           sellerId,
-          status: { in: ["IN_TRANSIT_TO_WAREHOUSE", "RECEIVED", "VERIFIED", "AVAILABLE_FOR_SHIPMENT"] },
+          status: {
+            in: [
+              "IN_TRANSIT_TO_WAREHOUSE",
+              "RECEIVED",
+              "VERIFIED",
+              "AVAILABLE_FOR_SHIPMENT",
+            ],
+          },
         },
       }),
       prisma.fulfillmentItem.count({
@@ -532,9 +485,6 @@ export const FulfillmentService = {
     };
   },
 
-  // ═══════════════════════════════════════════
-  // فحص التأخير (يُستخدم من Cron/Admin dashboard)
-  // ═══════════════════════════════════════════
   async findOverdue() {
     const now = new Date();
     return prisma.fulfillmentItem.findMany({
@@ -546,17 +496,11 @@ export const FulfillmentService = {
         orderItem: {
           include: {
             order: {
-              select: {
-                id: true,
-                orderNumber: true,
-                createdAt: true,
-              },
+              select: { id: true, orderNumber: true, createdAt: true },
             },
           },
         },
-        seller: {
-          select: { id: true, storeName: true, userId: true },
-        },
+        seller: { select: { id: true, storeName: true, userId: true } },
       },
       orderBy: { deadline: "asc" },
       take: 200,

@@ -104,7 +104,7 @@ export async function POST(
     }
 
     // ═══════════════════════════════════════════
-    // VERIFY
+    // VERIFY — مع إنشاء AssemblyFile تلقائياً
     // ═══════════════════════════════════════════
     if (data.action === "verify") {
       const notReceived = allItems.filter((i) => i.status !== "RECEIVED");
@@ -117,6 +117,8 @@ export async function POST(
           { status: 400 }
         );
       }
+
+      const { AssemblyService } = await import("@/services/assembly.service");
 
       await prisma.$transaction(async (tx) => {
         const now = new Date();
@@ -151,6 +153,12 @@ export async function POST(
           });
         }
 
+        // ═══ إنشاء/تحديث ملف التجميع للعميل + إعادة الحساب ═══
+        const assembly = await AssemblyService.ensureForUser(tx, order.userId);
+        if (assembly) {
+          await AssemblyService.recompute(tx, assembly.id);
+        }
+
         const reqInfo = AuditService.getRequestInfo(request);
         await AuditService.logInTransaction(tx, {
           userId: auth.user.id,
@@ -161,6 +169,7 @@ export async function POST(
             orderNumber: order.orderNumber,
             itemsCount: allItems.length,
             action: "verify",
+            assemblyId: assembly?.id || null,
           },
           ipAddress: reqInfo.ipAddress,
           userAgent: reqInfo.userAgent,
@@ -175,9 +184,11 @@ export async function POST(
     }
 
     // ═══════════════════════════════════════════
-    // REJECT
+    // REJECT — مع إعادة بناء AssemblyFile
     // ═══════════════════════════════════════════
     if (data.action === "reject") {
+      const { AssemblyService } = await import("@/services/assembly.service");
+
       await prisma.$transaction(async (tx) => {
         const now = new Date();
 
@@ -205,7 +216,9 @@ export async function POST(
 
         // ═══ إرجاع المخزون ═══
         const itemsToReturn = order.items
-          .filter((i): i is typeof i & { variantId: number } => i.variantId !== null)
+          .filter(
+            (i): i is typeof i & { variantId: number } => i.variantId !== null
+          )
           .sort((a, b) => a.variantId - b.variantId);
 
         for (const item of itemsToReturn) {
@@ -234,6 +247,13 @@ export async function POST(
             note: `رفض في المستودع: ${data.reason}`,
           },
         });
+
+        // ═══ إعادة بناء AssemblyFile للعميل ═══
+        try {
+          await AssemblyService.rebuildForUser(tx, order.userId);
+        } catch (e) {
+          console.error("Assembly rebuild failed on reject:", e);
+        }
 
         // ═══ إشعارات: تاجر + عميل + أدمن ═══
         const recipients = await tx.user.findMany({
@@ -306,7 +326,7 @@ export async function POST(
     }
 
     // ═══════════════════════════════════════════
-    // POSTPONE
+    // POSTPONE (لا يغير الحالة — لا يحتاج Assembly update)
     // ═══════════════════════════════════════════
     if (data.action === "postpone") {
       await prisma.$transaction(async (tx) => {

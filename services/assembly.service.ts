@@ -12,15 +12,13 @@ const RECEIVED_STATUSES = [
 const SHIPPED_STATUSES = ["ALLOCATED", "SHIPPED", "DELIVERED"];
 
 export const AssemblyService = {
-  // ═══════ إنشاء Assembly File لعميل (Lazy) ═══════
+  // ═══════ إنشاء/تحديث Assembly File لعميل ═══════
   async ensureForUser(tx: any, userId: number) {
     const existing = await tx.assemblyFile.findUnique({
       where: { userId },
       select: { id: true },
     });
-    if (existing) return existing;
 
-    // ═══ كل عناصر الـfulfillment للعميل (كل طلباته) ═══
     const fulfillmentItems = await tx.fulfillmentItem.findMany({
       where: {
         orderItem: {
@@ -36,9 +34,7 @@ export const AssemblyService = {
         orderItem: {
           select: {
             order: {
-              select: {
-                shippingAddressSnapshot: true,
-              },
+              select: { shippingAddressSnapshot: true },
             },
           },
         },
@@ -47,7 +43,32 @@ export const AssemblyService = {
 
     if (fulfillmentItems.length === 0) return null;
 
-    // ═══ العنوان من أحدث طلب ═══
+    if (existing) {
+      const existingItems = await tx.assemblyItem.findMany({
+        where: { assemblyId: existing.id },
+        select: { fulfillmentItemId: true },
+      });
+      const existingIds = new Set(
+        existingItems.map((i: any) => i.fulfillmentItemId)
+      );
+
+      const missingItems = fulfillmentItems.filter(
+        (fi: any) => !existingIds.has(fi.id)
+      );
+
+      for (const fi of missingItems) {
+        await tx.assemblyItem.create({
+          data: {
+            assemblyId: existing.id,
+            fulfillmentItemId: fi.id,
+            expectedQuantity: fi.quantity,
+          },
+        });
+      }
+
+      return existing;
+    }
+
     const addr = (fulfillmentItems[0]?.orderItem?.order
       ?.shippingAddressSnapshot || {}) as any;
 
@@ -56,7 +77,6 @@ export const AssemblyService = {
       0
     );
 
-    // assemblyCode
     const year = new Date().getFullYear();
     const count = await tx.assemblyFile.count({
       where: { assemblyCode: { startsWith: `ASM-${year}-` } },
@@ -85,6 +105,59 @@ export const AssemblyService = {
     }
 
     return assembly;
+  },
+
+  // ═══════ إعادة حساب كل ملفات المستخدم ═══════
+  async recomputeForUser(tx: any, userId: number) {
+    const files = await tx.assemblyFile.findMany({
+      where: { userId, cancelledAt: null },
+      select: { id: true },
+    });
+
+    for (const file of files) {
+      await this.recompute(tx, file.id);
+    }
+  },
+
+  // ═══════ إعادة بناء كاملة (حذف + إعادة إنشاء) ═══════
+  async rebuildForUser(tx: any, userId: number) {
+    const existing = await tx.assemblyFile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return this.ensureForUser(tx, userId);
+    }
+
+    await tx.assemblyItem.deleteMany({
+      where: { assemblyId: existing.id },
+    });
+
+    const activeItems = await tx.fulfillmentItem.findMany({
+      where: {
+        orderItem: {
+          order: {
+            userId,
+            status: { notIn: ["CANCELLED", "RETURNED"] },
+          },
+        },
+        status: { notIn: ["CANCELLED", "RETURNED"] },
+      },
+      select: { id: true, quantity: true },
+    });
+
+    for (const fi of activeItems) {
+      await tx.assemblyItem.create({
+        data: {
+          assemblyId: existing.id,
+          fulfillmentItemId: fi.id,
+          expectedQuantity: fi.quantity,
+        },
+      });
+    }
+
+    return this.recompute(tx, existing.id);
   },
 
   // ═══════ إعادة الحساب (Idempotent) ═══════
@@ -116,10 +189,7 @@ export const AssemblyService = {
         }
       }
 
-      if (
-        SHIPPED_STATUSES.includes(fiStatus) ||
-        item.includedInShipment
-      ) {
+      if (SHIPPED_STATUSES.includes(fiStatus) || item.includedInShipment) {
         shipped += item.expectedQuantity;
       }
     }
@@ -176,6 +246,7 @@ export const AssemblyService = {
       data: { includedInShipment: true, shipmentId },
     });
   },
+
   // ═══════ فحص اكتمال المسح ═══════
   async checkScanReadiness(tx: any, assemblyId: number) {
     const assembly = await tx.assemblyFile.findUnique({
@@ -209,17 +280,16 @@ export const AssemblyService = {
 
     if (!assembly) return null;
 
-    // ═══ تجميع حسب Order ═══
     const orderMap = new Map<
       number,
       {
         id: number;
         orderNumber: string;
         scanned: boolean;
-        inWarehouse: boolean;   // VERIFIED/RECEIVED (جاهز أو مستلم)
-        inTransit: boolean;     // IN_TRANSIT_TO_WAREHOUSE
-        shipped: boolean;       // ALLOCATED/SHIPPED/DELIVERED
-        rejected: boolean;      // RETURNED/CANCELLED
+        inWarehouse: boolean;
+        inTransit: boolean;
+        shipped: boolean;
+        rejected: boolean;
         itemStatuses: string[];
       }
     >();
@@ -244,13 +314,21 @@ export const AssemblyService = {
       const entry = orderMap.get(o.id)!;
       entry.itemStatuses.push(status);
 
-      if (status === "VERIFIED" || status === "RECEIVED" || status === "AVAILABLE_FOR_SHIPMENT") {
+      if (
+        status === "VERIFIED" ||
+        status === "RECEIVED" ||
+        status === "AVAILABLE_FOR_SHIPMENT"
+      ) {
         entry.inWarehouse = true;
       }
       if (status === "IN_TRANSIT_TO_WAREHOUSE") {
         entry.inTransit = true;
       }
-      if (status === "ALLOCATED" || status === "SHIPPED" || status === "DELIVERED") {
+      if (
+        status === "ALLOCATED" ||
+        status === "SHIPPED" ||
+        status === "DELIVERED"
+      ) {
         entry.shipped = true;
       }
       if (status === "RETURNED" || status === "CANCELLED") {
@@ -260,26 +338,14 @@ export const AssemblyService = {
 
     const orders = Array.from(orderMap.values());
 
-    // ═══ الطلبات التي يجب أن تُمسح (في المستودع ولم تُمسح ولم تُشحَن) ═══
     const mustScan = orders.filter(
       (o) => o.inWarehouse && !o.scanned && !o.shipped && !o.rejected
     );
 
-    // ═══ الطلبات في الطريق ═══
     const inTransit = orders.filter((o) => o.inTransit && !o.shipped);
-
-    // ═══ هل يمكن إنشاء شحنة كاملة؟ ═══
     const canShipFull = mustScan.length === 0 && inTransit.length === 0;
-
-    // ═══ هل يمكن إنشاء شحنة جزئية (تجاهل الطلبات في الطريق)؟ ═══
     const canShipPartial = mustScan.length === 0;
 
-    return {
-      orders,
-      mustScan,
-      inTransit,
-      canShipFull,
-      canShipPartial,
-    };
+    return { orders, mustScan, inTransit, canShipFull, canShipPartial };
   },
 };

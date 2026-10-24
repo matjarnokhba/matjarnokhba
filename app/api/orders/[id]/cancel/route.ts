@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
 
-const CUSTOMER_CANCEL_WINDOW_MS = 60 * 60 * 1000; // 1 ساعة
+const CUSTOMER_CANCEL_WINDOW_MS = 60 * 60 * 1000;
 
 export async function PATCH(
   request: Request,
@@ -27,8 +27,9 @@ export async function PATCH(
       );
     }
 
+    const { AssemblyService } = await import("@/services/assembly.service");
+
     await prisma.$transaction(async (tx) => {
-      // ═══ Lock Order ═══
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -42,13 +43,11 @@ export async function PATCH(
         throw new Error("لا يمكن إلغاء الطلب في هذه المرحلة");
       }
 
-      // ═══ نافذة الإلغاء (ساعة واحدة) ═══
       const elapsed = Date.now() - order.createdAt.getTime();
       if (elapsed > CUSTOMER_CANCEL_WINDOW_MS) {
         throw new Error("انتهت مدة الإلغاء المسموحة");
       }
 
-      // ═══ إرجاع المخزون (COD = Sale عند الإنشاء) ═══
       const alreadyReturned = await tx.inventoryMovement.findFirst({
         where: {
           referenceType: "ORDER",
@@ -78,7 +77,6 @@ export async function PATCH(
         }
       }
 
-      // ═══ تحديث حالة الطلب ═══
       await tx.order.update({
         where: { id: order.id },
         data: { status: "CANCELLED" },
@@ -93,6 +91,12 @@ export async function PATCH(
           note: "إلغاء من قبل العميل",
         },
       });
+
+      try {
+        await AssemblyService.rebuildForUser(tx, order.userId);
+      } catch (e) {
+        console.error("Assembly rebuild failed on cancel:", e);
+      }
 
       await tx.notification.create({
         data: {

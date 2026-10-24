@@ -33,6 +33,7 @@ export const PartialDeliveryService = {
                     shippingCost: true,
                     sellerId: true,
                     status: true,
+                    userId: true,
                   },
                 },
                 orderItem: true,
@@ -45,15 +46,20 @@ export const PartialDeliveryService = {
         if (shipment.deliveryPersonId !== driverId)
           throw new Error("هذه الشحنة ليست مُسندة إليك");
         if (!["OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status)) {
-          throw new Error(`لا يمكن تعديل الشحنة في حالتها الحالية: ${shipment.status}`);
+          throw new Error(
+            `لا يمكن تعديل الشحنة في حالتها الحالية: ${shipment.status}`
+          );
         }
 
-        const allOrderIds = Array.from(new Set(shipment.items.map((i) => i.orderId)));
+        const allOrderIds = Array.from(
+          new Set(shipment.items.map((i) => i.orderId))
+        );
         const acceptedSet = new Set(acceptedOrderIds);
         const refusedSet = new Set(refusedOrders.map((r) => r.orderId));
 
         for (const id of acceptedSet) {
-          if (!allOrderIds.includes(id)) throw new Error(`الطلبية ${id} ليست ضمن هذه الشحنة`);
+          if (!allOrderIds.includes(id))
+            throw new Error(`الطلبية ${id} ليست ضمن هذه الشحنة`);
         }
         for (const r of refusedOrders) {
           if (!allOrderIds.includes(r.orderId))
@@ -71,10 +77,16 @@ export const PartialDeliveryService = {
         const uniqueAcceptedOrders = new Map<number, any>();
         const uniqueRefusedOrders = new Map<number, any>();
         for (const item of shipment.items) {
-          if (acceptedSet.has(item.orderId) && !uniqueAcceptedOrders.has(item.orderId)) {
+          if (
+            acceptedSet.has(item.orderId) &&
+            !uniqueAcceptedOrders.has(item.orderId)
+          ) {
             uniqueAcceptedOrders.set(item.orderId, item.order);
           }
-          if (refusedSet.has(item.orderId) && !uniqueRefusedOrders.has(item.orderId)) {
+          if (
+            refusedSet.has(item.orderId) &&
+            !uniqueRefusedOrders.has(item.orderId)
+          ) {
             uniqueRefusedOrders.set(item.orderId, item.order);
           }
         }
@@ -102,8 +114,8 @@ export const PartialDeliveryService = {
               data: {
                 refusedAt: now,
                 refusedReason:
-                  refusedOrders.find((r) => r.orderId === item.orderId)?.reason ||
-                  "رفض من الزبون",
+                  refusedOrders.find((r) => r.orderId === item.orderId)
+                    ?.reason || "رفض من الزبون",
               },
             });
             if (item.fulfillmentItemId) {
@@ -125,11 +137,18 @@ export const PartialDeliveryService = {
         for (const orderId of uniqueAcceptedOrders.keys()) {
           await tx.order.update({
             where: { id: orderId },
-            data: { status: "DELIVERED", deliveredAt: now, paymentStatus: "PAID" },
+            data: {
+              status: "DELIVERED",
+              deliveredAt: now,
+              paymentStatus: "PAID",
+            },
           });
         }
         for (const orderId of uniqueRefusedOrders.keys()) {
-          await tx.order.update({ where: { id: orderId }, data: { status: "RETURNED" } });
+          await tx.order.update({
+            where: { id: orderId },
+            data: { status: "RETURNED" },
+          });
         }
 
         const newStatus = isFullRefusal
@@ -144,15 +163,19 @@ export const PartialDeliveryService = {
         });
 
         if (!isFullRefusal) {
-          // ═══ السائق: كاش بدون حظر فوري ═══
           const existingWallet = await tx.wallet.findUnique({
-            where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+            where: {
+              ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId },
+            },
             select: { cashInHand: true },
           });
-          const wasCashZero = !existingWallet || Number(existingWallet.cashInHand) === 0;
+          const wasCashZero =
+            !existingWallet || Number(existingWallet.cashInHand) === 0;
 
           const driverWallet = await tx.wallet.upsert({
-            where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId } },
+            where: {
+              ownerType_ownerId: { ownerType: "DRIVER", ownerId: driverId },
+            },
             create: {
               ownerType: "DRIVER",
               ownerId: driverId,
@@ -172,14 +195,23 @@ export const PartialDeliveryService = {
               walletId: driverWallet.id,
               amount: driverFee,
               type: "EARNING",
-              description: `أجر توصيل شحنة #${shipment.shipmentNumber} (تسليم ${isFullDelivery ? "كامل" : "جزئي"})`,
+              description: `أجر توصيل شحنة #${shipment.shipmentNumber}`,
             },
           });
 
           if (warehouseProfit > 0) {
             const whWallet = await tx.wallet.upsert({
-              where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
-              create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: warehouseProfit },
+              where: {
+                ownerType_ownerId: {
+                  ownerType: "WAREHOUSE",
+                  ownerId: WAREHOUSE_ID,
+                },
+              },
+              create: {
+                ownerType: "WAREHOUSE",
+                ownerId: WAREHOUSE_ID,
+                balance: warehouseProfit,
+              },
               update: { balance: { increment: warehouseProfit } },
             });
             await tx.walletTransactionUnified.create({
@@ -195,25 +227,32 @@ export const PartialDeliveryService = {
           const policy = await tx.systemPolicy.findUnique({
             where: { key: "DEFAULT_COMMISSION_RATE" },
           });
-          const defaultRate = typeof policy?.value === "number" ? policy.value : 0.1;
+          const defaultRate =
+            typeof policy?.value === "number" ? policy.value : 0.1;
 
           const sellerSubtotals = new Map<number, number>();
           for (const order of acceptedOrders) {
             if (!order.sellerId) continue;
             const current = sellerSubtotals.get(order.sellerId) || 0;
-            sellerSubtotals.set(order.sellerId, current + Number(order.subtotal));
+            sellerSubtotals.set(
+              order.sellerId,
+              current + Number(order.subtotal)
+            );
           }
 
           let totalCommission = 0;
           for (const [sellerId, subtotal] of sellerSubtotals) {
-            const seller = await tx.seller.findUnique({ where: { id: sellerId } });
+            const seller = await tx.seller.findUnique({
+              where: { id: sellerId },
+            });
             if (!seller) continue;
 
             const rate = seller.commissionRateOverride
               ? Number(seller.commissionRateOverride)
               : defaultRate;
             const commission = Math.round(subtotal * rate * 100) / 100;
-            const netEarning = Math.round((subtotal - commission) * 100) / 100;
+            const netEarning =
+              Math.round((subtotal - commission) * 100) / 100;
             totalCommission += commission;
 
             await tx.seller.update({
@@ -239,8 +278,17 @@ export const PartialDeliveryService = {
 
           if (totalCommission > 0) {
             const platformWallet = await tx.wallet.upsert({
-              where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
-              create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: totalCommission },
+              where: {
+                ownerType_ownerId: {
+                  ownerType: "PLATFORM",
+                  ownerId: PLATFORM_ID,
+                },
+              },
+              create: {
+                ownerType: "PLATFORM",
+                ownerId: PLATFORM_ID,
+                balance: totalCommission,
+              },
               update: { balance: { increment: totalCommission } },
             });
             await tx.walletTransactionUnified.create({
@@ -254,7 +302,23 @@ export const PartialDeliveryService = {
           }
         }
 
-        // ═══ لا نحظر السائق هنا — الحظر يحدث فقط بعد 24 ساعة ═══
+        // ═══ تحديث AssemblyFile لكل عميل متأثر ═══
+        try {
+          const { AssemblyService } = await import("./assembly.service");
+          const affectedUserIds = new Set<number>();
+          for (const order of acceptedOrders) {
+            affectedUserIds.add(order.userId);
+          }
+          for (const order of uniqueRefusedOrders.values()) {
+            affectedUserIds.add(order.userId);
+          }
+          for (const userId of affectedUserIds) {
+            await AssemblyService.rebuildForUser(tx, userId);
+          }
+        } catch (e) {
+          console.error("Assembly rebuild failed:", e);
+        }
+
         await updateDriverBlockStatus(tx, driverId);
 
         return {
@@ -277,22 +341,36 @@ export const PartialDeliveryService = {
           where: { id: shipmentId },
           include: {
             items: {
-              where: { refusedAt: { not: null }, returnedToWarehouseAt: null },
+              where: {
+                refusedAt: { not: null },
+                returnedToWarehouseAt: null,
+              },
               include: {
                 orderItem: true,
-                order: { select: { id: true, sellerId: true, orderNumber: true } },
+                order: {
+                  select: {
+                    id: true,
+                    sellerId: true,
+                    orderNumber: true,
+                    userId: true,
+                  },
+                },
               },
             },
           },
         });
 
         if (!shipment) throw new Error("الشحنة غير موجودة");
-        if (shipment.items.length === 0) throw new Error("لا توجد عناصر مرفوضة لاستلامها");
+        if (shipment.items.length === 0)
+          throw new Error("لا توجد عناصر مرفوضة لاستلامها");
 
-        const { InventoryService } = await import("@/services/inventory.service");
+        const { InventoryService } = await import(
+          "@/services/inventory.service"
+        );
         const now = new Date();
         let returnedCount = 0;
         const affectedOrders = new Set<number>();
+        const affectedUserIds = new Set<number>();
 
         for (const item of shipment.items) {
           await tx.shipmentItem.update({
@@ -332,14 +410,28 @@ export const PartialDeliveryService = {
           }
 
           affectedOrders.add(item.orderId);
+          affectedUserIds.add(item.order.userId);
           returnedCount++;
+        }
+
+        // ═══ تحديث AssemblyFile ═══
+        try {
+          const { AssemblyService } = await import("./assembly.service");
+          for (const userId of affectedUserIds) {
+            await AssemblyService.rebuildForUser(tx, userId);
+          }
+        } catch (e) {
+          console.error("Assembly rebuild failed:", e);
         }
 
         if (shipment.deliveryPersonId) {
           await updateDriverBlockStatus(tx, shipment.deliveryPersonId);
         }
 
-        return { returnedCount, affectedOrderIds: Array.from(affectedOrders) };
+        return {
+          returnedCount,
+          affectedOrderIds: Array.from(affectedOrders),
+        };
       },
       { timeout: 30000 }
     );

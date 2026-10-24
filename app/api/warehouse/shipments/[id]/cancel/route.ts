@@ -45,6 +45,7 @@ export async function POST(
             fulfillmentItem: {
               select: { id: true, status: true },
             },
+            order: { select: { userId: true } },
           },
         },
       },
@@ -69,12 +70,10 @@ export async function POST(
       );
     }
 
-    // ═══ فقط العناصر المرتبطة بـFulfillmentItem ═══
     const validItems = shipment.items.filter(
       (si) => si.fulfillmentItem !== null
     );
 
-    // ═══ تحقق: كل العناصر لا تزال ALLOCATED ═══
     const nonAllocated = validItems.filter(
       (si) => si.fulfillmentItem!.status !== "ALLOCATED"
     );
@@ -89,10 +88,18 @@ export async function POST(
       );
     }
 
+    const { AssemblyService } = await import("@/services/assembly.service");
+
+    // ═══ جمع usersId المتأثرين ═══
+    const affectedUserIds = new Set<number>();
+    for (const si of shipment.items) {
+      affectedUserIds.add(si.order.userId);
+    }
+
     await prisma.$transaction(async (tx) => {
       const now = new Date();
 
-      // ═══ 1. إرجاع كل FulfillmentItems إلى VERIFIED ═══
+      // ═══ 1. إرجاع FulfillmentItems إلى VERIFIED ═══
       for (const si of validItems) {
         await tx.fulfillmentItem.update({
           where: { id: si.fulfillmentItem!.id },
@@ -110,7 +117,7 @@ export async function POST(
         });
       }
 
-      // ═══ 2. حذف ShipmentItems (نُنشئها من جديد إن أُعيد التجميع) ═══
+      // ═══ 2. حذف ShipmentItems ═══
       await tx.shipmentItem.deleteMany({
         where: { shipmentId },
       });
@@ -124,7 +131,16 @@ export async function POST(
         },
       });
 
-      // ═══ 4. Audit ═══
+      // ═══ 4. إعادة بناء AssemblyFiles للعملاء المتأثرين ═══
+      try {
+        for (const userId of affectedUserIds) {
+          await AssemblyService.rebuildForUser(tx, userId);
+        }
+      } catch (e) {
+        console.error("Assembly rebuild failed on shipment cancel:", e);
+      }
+
+      // ═══ 5. Audit ═══
       const reqInfo = AuditService.getRequestInfo(request);
       await AuditService.logInTransaction(tx, {
         userId: auth.user.id,
