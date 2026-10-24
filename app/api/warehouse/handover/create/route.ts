@@ -9,7 +9,7 @@ const schema = z.object({ amount: z.number().positive() });
 export async function POST(request: Request) {
   try {
     const current = await SessionService.getCurrent();
-    if (!current || !["WAREHOUSE_MANAGER"].includes(current.user.role)) {
+    if (!current || current.user.role !== "WAREHOUSE_MANAGER") {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
@@ -17,9 +17,19 @@ export async function POST(request: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
+    // التحقق من أن المبلغ أقل أو يساوي الكاش الموجود في حوزة المستودع
+    const warehouseWallet = await prisma.wallet.findUnique({
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: 1 } }
+    });
+
+    const cashInHand = warehouseWallet ? Number(warehouseWallet.cashInHand) : 0;
+    if (parsed.data.amount > cashInHand) {
+      return NextResponse.json({ success: false, message: `المبلغ المطلوب (${parsed.data.amount}) يتجاوز الكاش الموجود في حوزتك (${cashInHand})` }, { status: 400 });
+    }
+
     const handoverToken = crypto.randomUUID();
 
-    const handover = await prisma.adminCashHandover.create({
+    await prisma.adminCashHandover.create({
       data: {
         warehouseId: current.user.id,
         amount: parsed.data.amount,
@@ -28,8 +38,9 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, qrToken: handoverToken });
+    return NextResponse.json({ success: true, qrToken: handoverToken, amount: parsed.data.amount });
   } catch (error) {
+    console.error("Handover create error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
   }
 }

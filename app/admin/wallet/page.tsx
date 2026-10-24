@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Wallet, ArrowDownLeft, Crown, CreditCard, Users, ShieldCheck, AlertCircle } from "lucide-react";
+import { Loader2, Wallet, ArrowDownLeft, Crown, CreditCard, Users, ShieldCheck, Banknote } from "lucide-react";
 
 type Transaction = {
   id: number;
@@ -14,6 +14,7 @@ type Transaction = {
 export default function AdminWalletPage() {
   const [balance, setBalance] = useState(0);
   const [heldBalance, setHeldBalance] = useState(0);
+  const [cashInHand, setCashInHand] = useState(0);
   const [subRevenue, setSubRevenue] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,7 @@ export default function AdminWalletPage() {
         if (data.success) {
           setBalance(data.balance);
           setHeldBalance(data.heldBalance);
+          setCashInHand(data.cashInHand);
           setSubRevenue(data.subscriptionRevenue);
           setTransactions(data.transactions);
         }
@@ -53,7 +55,7 @@ export default function AdminWalletPage() {
           <Crown className="h-6 w-6 text-amber-500" />
           محفظة المنصة
         </h1>
-        <p className="mt-1 text-sm text-gray-500">أرباحك الصافية + أمانات التجار</p>
+        <p className="mt-1 text-sm text-gray-500">أرباحك الصافية + أمانات التجار + الكاش المستلم</p>
       </div>
 
       {/* ═══ تنبيه محاسبي مهم ═══ */}
@@ -61,18 +63,20 @@ export default function AdminWalletPage() {
         <div className="flex items-start gap-3">
           <ShieldCheck className="h-6 w-6 text-blue-600 shrink-0 mt-0.5" />
           <div>
-            <h3 className="font-black text-blue-900 text-sm">محفظتك مقسمة إلى قسمين</h3>
+            <h3 className="font-black text-blue-900 text-sm">محفظتك مقسمة إلى ثلاثة أقسام</h3>
             <p className="mt-1 text-xs text-blue-800">
               <strong>الأرباح:</strong> أموالك الصافية (عمولات + اشتراكات + رسوم إرجاع).
               <br />
               <strong>أمانات التجار:</strong> أموال التجار بأمانة عندك، تُدفع لهم عند طلب السحب.
+              <br />
+              <strong>كاش في اليد:</strong> مستلم من المستودع، مخصص لدفع مستحقات التجار.
             </p>
           </div>
         </div>
       </div>
 
-      {/* ═══ بطاقات الرصيد ═══ */}
-      <div className="grid gap-4 sm:grid-cols-2 mb-6">
+      {/* ═══ بطاقات الرصيد (3 بطاقات) ═══ */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         {/* أرباح المنصة */}
         <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-6 text-white shadow-lg relative">
           <div className="relative z-10">
@@ -108,6 +112,21 @@ export default function AdminWalletPage() {
           </div>
           <ShieldCheck className="absolute -bottom-4 -left-4 h-32 w-32 text-white/10 rotate-12" />
         </div>
+
+        {/* كاش في اليد */}
+        <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-green-500 to-green-700 p-6 text-white shadow-lg relative">
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <Banknote className="h-5 w-5" />
+              <p className="text-sm font-bold text-green-100">كاش في اليد</p>
+            </div>
+            <div className="mt-1 flex items-end gap-2">
+              <span className="text-4xl font-black">{cashInHand.toFixed(2)}</span>
+              <span className="mb-1 text-lg font-bold opacity-80">د.م</span>
+            </div>
+            <p className="mt-3 text-[11px] text-green-100">مخصص لدفع مستحقات التجار</p>
+          </div>
+        </div>
       </div>
 
       {/* ═══ إيرادات الاشتراكات (تفصيل) ═══ */}
@@ -123,7 +142,7 @@ export default function AdminWalletPage() {
           </div>
           <div className="rounded-lg bg-gray-50 p-3">
             <div className="text-xs text-gray-500 font-bold">عمولات المبيعات</div>
-            <div className="mt-1 text-xl font-black text-gray-900">{(balance - subRevenue).toFixed(2)} د.م</div>
+            <div className="mt-1 text-xl font-black text-gray-900">{Math.max(0, balance - subRevenue).toFixed(2)} د.م</div>
           </div>
         </div>
       </div>
@@ -153,8 +172,8 @@ export default function AdminWalletPage() {
                     </div>
                   </div>
                 </div>
-                <div className="text-sm font-black text-green-600" dir="ltr">
-                  +{Number(tx.amount).toFixed(2)} د.م
+                <div className={`text-sm font-black ${Number(tx.amount) >= 0 ? "text-green-600" : "text-red-600"}`} dir="ltr">
+                  {Number(tx.amount) >= 0 ? "+" : ""}{Number(tx.amount).toFixed(2)} د.م
                 </div>
               </div>
             ))}

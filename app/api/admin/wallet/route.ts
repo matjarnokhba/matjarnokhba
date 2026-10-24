@@ -29,6 +29,7 @@ export async function GET() {
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
       heldBalance: wallet ? Number(wallet.heldBalance) : 0,
+      cashInHand: wallet ? Number(wallet.cashInHand) : 0, // <--- تمت الإضافة
       transactions: wallet?.transactions || [],
       subscriptionRevenue: Number(subRevenue._sum.amount || 0),
     });
