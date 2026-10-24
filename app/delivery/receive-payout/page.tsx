@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
-import { Scan, X, Loader2, AlertCircle, CheckCircle2, Banknote } from "lucide-react";
+import { Scan, X, Loader2, CheckCircle2, Banknote, AlertCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function DeliveryReceivePayoutPage() {
@@ -100,7 +100,9 @@ export default function DeliveryReceivePayoutPage() {
             الطريقة: {successData.method === "CASH" ? "نقداً" : "تحويل بنكي"}
           </div>
           <div className="mt-8 flex flex-col gap-2">
-            <Link href="/delivery/wallet" className="w-full rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white hover:bg-[#e64a00]">الذهاب لمحفظتي</Link>
+            <Link href="/delivery/wallet" className="w-full rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white hover:bg-[#e64a00]">
+              الذهاب لمحفظتي
+            </Link>
           </div>
         </div>
       </div>

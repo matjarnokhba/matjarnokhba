@@ -21,15 +21,29 @@ export async function POST(request: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
-    const { driverId, amount, method } = parsed.data;
+    const driverWallet = await prisma.wallet.findUnique({
+      where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: parsed.data.driverId } }
+    });
+
+    if (!driverWallet) return NextResponse.json({ success: false, message: "محفظة السائق غير موجودة" }, { status: 404 });
+    
+    // منع الدفع إذا كان السائق محظوراً (لم يسلّم الكاش)
+    if (driverWallet.isBlocked) {
+      return NextResponse.json({ success: false, message: "لا يمكن الدفع لهذا السائق لأنه لم يقم بتسليم الكاش للمستودع بعد." }, { status: 400 });
+    }
+
+    if (parsed.data.amount > Number(driverWallet.balance)) {
+      return NextResponse.json({ success: false, message: "المبلغ المطلوب أكبر من رصيد السائق المتاح." }, { status: 400 });
+    }
+
     const payoutToken = crypto.randomUUID();
 
     const payout = await prisma.driverPayout.create({
       data: {
-        driverId,
+        driverId: parsed.data.driverId,
         warehouseId: current.user.id,
-        amount,
-        method,
+        amount: parsed.data.amount,
+        method: parsed.data.method,
         payoutToken,
         status: "PENDING",
       },

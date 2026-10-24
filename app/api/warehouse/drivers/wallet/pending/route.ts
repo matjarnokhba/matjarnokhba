@@ -22,12 +22,15 @@ export async function GET() {
         id: driver.id,
         name: driver.user.name,
         phone: driver.user.phone,
-        balance: wallet ? Number(wallet.balance) : 0
+        balance: wallet ? Number(wallet.balance) : 0,
+        cashInHand: wallet ? Number(wallet.cashInHand) : 0,
+        isBlocked: wallet?.isBlocked || false,
       };
     }));
 
     return NextResponse.json({ success: true, drivers: driversWithBalance });
   } catch (error) {
+    console.error("Pending wallet GET error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
   }
 }
