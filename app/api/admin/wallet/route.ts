@@ -9,7 +9,6 @@ export async function GET() {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
-    // معرف ثابت لمحفظة المنصة (1)
     const platformId = 1;
 
     const wallet = await prisma.wallet.findUnique({
@@ -22,7 +21,6 @@ export async function GET() {
       }
     });
 
-    // إجمالي إيرادات الاشتراكات من جدول سجل الاشتراكات
     const subRevenue = await prisma.subscriptionLog.aggregate({
       _sum: { amount: true }
     });
@@ -30,6 +28,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       balance: wallet ? Number(wallet.balance) : 0,
+      heldBalance: wallet ? Number(wallet.heldBalance) : 0,
       transactions: wallet?.transactions || [],
       subscriptionRevenue: Number(subRevenue._sum.amount || 0),
     });
