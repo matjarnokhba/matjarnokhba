@@ -37,6 +37,9 @@ type OrderItem = {
   quantity: number;
   unitPrice: string;
   total: string;
+  refusedAt: string | null;
+  refusedReason: string | null;
+  returnedToWarehouseAt: string | null;
 };
 
 type AddressSnapshot = {
@@ -118,6 +121,12 @@ const STATUS_INFO: Record<
     color: "text-green-700",
     bg: "bg-green-50",
     icon: CheckCircle2,
+  },
+  PARTIALLY_DELIVERED: {
+    label: "تسليم جزئي",
+    color: "text-amber-700",
+    bg: "bg-amber-50",
+    icon: AlertTriangle,
   },
   CANCELLED: {
     label: "ملغى",
@@ -219,6 +228,7 @@ export default function OrderDetailPage() {
       loadOrder();
       loadReturns();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   // جلب المراجعات
@@ -335,11 +345,19 @@ export default function OrderDetailPage() {
   const statusInfo = STATUS_INFO[order.status] || STATUS_INFO.NEW;
   const StatusIcon = statusInfo.icon;
 
-  const isTrackingActive = ["NEW", "PROCESSING", "SHIPPED", "DELIVERED"].includes(
-    order.status
-  );
+  const isPartialDelivery = order.status === "PARTIALLY_DELIVERED";
 
-  const currentStepIndex = STATUS_FLOW.findIndex((s) => s.key === order.status);
+  const isTrackingActive = [
+    "NEW",
+    "PROCESSING",
+    "SHIPPED",
+    "DELIVERED",
+    "PARTIALLY_DELIVERED",
+  ].includes(order.status);
+
+  const currentStepIndex = isPartialDelivery
+    ? STATUS_FLOW.length - 1
+    : STATUS_FLOW.findIndex((s) => s.key === order.status);
 
   const address = order.shippingAddressSnapshot;
 
@@ -347,7 +365,9 @@ export default function OrderDetailPage() {
   const hasActiveReturn = returns.some(
     (r) => r.status === "PENDING" || r.status === "APPROVED"
   );
-  const canRequestReturn = order.status === "DELIVERED" && !hasActiveReturn;
+  const canRequestReturn =
+    (order.status === "DELIVERED" || order.status === "PARTIALLY_DELIVERED") &&
+    !hasActiveReturn;
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f7f6f2] text-[#161616]">
@@ -503,6 +523,81 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* ═══ ملخص الرفض الجزئي ═══ */}
+        {isPartialDelivery &&
+          (() => {
+            const refusedItems = order.items.filter((i) => i.refusedAt);
+            const acceptedItems = order.items.filter((i) => !i.refusedAt);
+            const refusedTotal = refusedItems.reduce(
+              (s, i) => s + Number(i.total),
+              0
+            );
+            const acceptedTotal = acceptedItems.reduce(
+              (s, i) => s + Number(i.total),
+              0
+            );
+
+            return (
+              <div className="mt-4 rounded-2xl bg-amber-50 border-2 border-amber-300 p-5 shadow-sm">
+                <h2 className="mb-4 flex items-center gap-2 text-base font-black text-amber-900">
+                  <AlertTriangle className="h-5 w-5" />
+                  تفاصيل التسليم الجزئي
+                </h2>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg bg-green-100 p-3 border border-green-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-700" />
+                      <span className="text-sm font-bold text-green-800">
+                        المنتجات المسلّمة
+                      </span>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs text-green-700">
+                        {acceptedItems.length} منتج
+                      </div>
+                      <div className="font-black text-green-800">
+                        {acceptedTotal.toFixed(2)} {CURRENCY}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-red-100 p-3 border border-red-200">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-5 w-5 text-red-700" />
+                      <span className="text-sm font-bold text-red-800">
+                        المنتجات المرفوضة
+                      </span>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs text-red-700">
+                        {refusedItems.length} منتج
+                      </div>
+                      <div className="font-black text-red-800 line-through">
+                        {refusedTotal.toFixed(2)} {CURRENCY}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-white p-3 border border-amber-300 mt-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-gray-700">
+                        المبلغ المدفوع فعلياً (مع الشحن)
+                      </span>
+                      <span className="text-lg font-black text-amber-900">
+                        {Number(order.total).toFixed(2)} {CURRENCY}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      (المبلغ المدفوع = المنتجات المسلّمة + الشحن الكامل، تم
+                      إرجاع ثمن المنتجات المرفوضة)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
         {/* ═══ المنتجات ═══ */}
         <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-base font-black">
@@ -514,11 +609,14 @@ export default function OrderDetailPage() {
             {order.items.map((item) => {
               const isReviewed = reviewedItems.includes(item.id);
               const canReview = order.status === "DELIVERED";
+              const isRefused = !!item.refusedAt;
 
               return (
                 <div
                   key={item.id}
-                  className="border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+                  className={`border-b border-gray-100 pb-3 last:border-0 last:pb-0 ${
+                    isRefused ? "bg-red-50/50 -mx-2 px-2 rounded-lg py-2" : ""
+                  }`}
                 >
                   <div className="flex gap-3">
                     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
@@ -526,7 +624,9 @@ export default function OrderDetailPage() {
                         <img
                           src={item.imageUrl}
                           alt={item.productName}
-                          className="h-full w-full object-cover"
+                          className={`h-full w-full object-cover ${
+                            isRefused ? "opacity-50" : ""
+                          }`}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-gray-400">
@@ -547,10 +647,29 @@ export default function OrderDetailPage() {
                       <div className="mt-1 text-xs text-[#6b7280]">
                         الكمية: {item.quantity}
                       </div>
+
+                      {isRefused ? (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700">
+                          <XCircle className="h-3 w-3" />
+                          مرفوض: {item.refusedReason || "رفض الزبون"}
+                        </div>
+                      ) : order.status === "PARTIALLY_DELIVERED" ||
+                        order.status === "DELIVERED" ? (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700">
+                          <CheckCircle2 className="h-3 w-3" />
+                          تم التسليم
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="shrink-0 text-left">
-                      <div className="text-sm font-black text-[#ff5c00]">
+                      <div
+                        className={`text-sm font-black ${
+                          isRefused
+                            ? "text-gray-400 line-through"
+                            : "text-[#ff5c00]"
+                        }`}
+                      >
                         {item.total} {CURRENCY}
                       </div>
                       {item.quantity > 1 && (
@@ -561,7 +680,7 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
 
-                  {canReview && (
+                  {canReview && !isRefused && (
                     <div className="mt-2 pl-19">
                       {isReviewed ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700">
