@@ -246,6 +246,7 @@ export const SellerReturnService = {
     });
 
     return {
+      batchId: batch.id,
       batchNumber: batch.batchNumber,
       storeName: batch.seller.storeName,
       totalQuantity: batch.totalQuantity,
@@ -363,6 +364,7 @@ export const SellerReturnService = {
       orderBy: { createdAt: "desc" },
     });
   },
+
   // ═══════ دفعات نشطة (للمستودع) ═══════
   async getActiveBatches() {
     return prisma.sellerReturnBatch.findMany({
@@ -427,6 +429,62 @@ export const SellerReturnService = {
       });
 
       return { token: newToken, status: batch.status, message: null };
+    }
+  },
+
+  // ═══════ تفاصيل دفعة (للجامع) ═══════
+  async getBatchForCollector(batchId: number, collectorUserId: number) {
+    const batch = await prisma.sellerReturnBatch.findUnique({
+      where: { id: batchId },
+      include: {
+        seller: { select: { storeName: true, city: true } },
+        items: {
+          include: {
+            shipmentItem: {
+              select: {
+                refusedQuantity: true,
+                refusedReason: true,
+                order: { select: { orderNumber: true } },
+                orderItem: {
+                  select: {
+                    productName: true,
+                    variantName: true,
+                    imageUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!batch) throw new Error("الدفعة غير موجودة");
+    if (batch.collectorId !== collectorUserId) {
+      throw new Error("هذه الدفعة ليست لك");
+    }
+    if (!["PICKED_UP", "CONFIRMED"].includes(batch.status)) {
+      throw new Error("هذه الدفعة لم تُستلم بعد من المستودع");
+    }
+
+    return batch;
+  },
+
+  // ═══════ QR دفعة (للجامع لعرضها على التاجر) ═══════
+  async getRawTokenForCollector(batchId: number, collectorUserId: number) {
+    const batch = await prisma.sellerReturnBatch.findUnique({
+      where: { id: batchId },
+      select: { qrTokenEnc: true, status: true, collectorId: true },
+    });
+
+    if (!batch || batch.collectorId !== collectorUserId) return null;
+    if (batch.status !== "PICKED_UP") return null;
+
+    try {
+      return ShipmentQRService.decryptToken(batch.qrTokenEnc);
+    } catch (e) {
+      console.error("Decrypt collector batch QR failed:", e);
+      return null;
     }
   },
 };

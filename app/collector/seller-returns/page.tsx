@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 import {
@@ -14,6 +15,8 @@ import {
   Package,
   Clock,
   RefreshCw,
+  ArrowRight,
+  QrCode,
 } from "lucide-react";
 
 type HistoryBatch = {
@@ -28,10 +31,12 @@ type HistoryBatch = {
 };
 
 export default function CollectorSellerReturnsPage() {
+  const router = useRouter();
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [successData, setSuccessData] = useState<{
+    batchId: number;
     batchNumber: string;
     storeName: string;
     totalQuantity: number;
@@ -136,6 +141,7 @@ export default function CollectorSellerReturnsPage() {
       }
       await stopScanner();
       setSuccessData({
+        batchId: data.batchId,
         batchNumber: data.batchNumber,
         storeName: data.storeName,
         totalQuantity: data.totalQuantity,
@@ -155,14 +161,10 @@ export default function CollectorSellerReturnsPage() {
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100 mb-4">
             <CheckCircle2 className="h-10 w-10 text-green-600" />
           </div>
-          <h1 className="text-2xl font-black text-gray-900">
-            تم استلام الدفعة
-          </h1>
+          <h1 className="text-2xl font-black text-gray-900">تم استلام الدفعة</h1>
           <div className="mt-6 space-y-2">
             <div className="rounded-lg bg-gray-50 p-3 flex justify-between items-center">
-              <span className="text-sm font-bold text-gray-600">
-                رقم الدفعة:
-              </span>
+              <span className="text-sm font-bold text-gray-600">رقم الدفعة:</span>
               <span className="font-mono font-black text-green-600">
                 {successData.batchNumber}
               </span>
@@ -182,15 +184,27 @@ export default function CollectorSellerReturnsPage() {
               </span>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setSuccessData(null);
-              setError("");
-            }}
-            className="mt-8 w-full rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white hover:bg-[#e64a00]"
-          >
-            استلام دفعة أخرى
-          </button>
+
+          <div className="mt-8 space-y-2">
+            <button
+              onClick={() =>
+                router.push(`/collector/seller-returns/${successData.batchId}`)
+              }
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 py-3 text-sm font-bold text-white hover:bg-purple-700"
+            >
+              <QrCode className="h-4 w-4" />
+              عرض QR للتسليم للتاجر
+            </button>
+            <button
+              onClick={() => {
+                setSuccessData(null);
+                setError("");
+              }}
+              className="w-full rounded-lg border-2 border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+            >
+              استلام دفعة أخرى
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -285,9 +299,12 @@ export default function CollectorSellerReturnsPage() {
               {history.map((batch) => {
                 const isConfirmed = batch.status === "CONFIRMED";
                 return (
-                  <div
+                  <button
                     key={batch.id}
-                    className="flex items-center justify-between p-4 hover:bg-gray-50 transition"
+                    onClick={() =>
+                      router.push(`/collector/seller-returns/${batch.id}`)
+                    }
+                    className="w-full text-right flex items-center justify-between p-4 hover:bg-purple-50 transition"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -312,22 +329,25 @@ export default function CollectorSellerReturnsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div
-                        className={`text-[10px] font-bold ${
-                          isConfirmed ? "text-green-600" : "text-blue-600"
-                        }`}
-                      >
-                        {isConfirmed ? "✅ سلّمت للتاجر" : "🚚 في الطريق للتاجر"}
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <div
+                          className={`text-[10px] font-bold ${
+                            isConfirmed ? "text-green-600" : "text-blue-600"
+                          }`}
+                        >
+                          {isConfirmed ? "✅ سلّمت للتاجر" : "🚚 في الطريق"}
+                        </div>
+                        <div className="text-[10px] text-gray-400 flex items-center gap-1 justify-end mt-0.5">
+                          <Clock className="h-2.5 w-2.5" />
+                          {batch.pickedUpAt
+                            ? new Date(batch.pickedUpAt).toLocaleDateString("ar-MA")
+                            : "—"}
+                        </div>
                       </div>
-                      <div className="text-[10px] text-gray-400 flex items-center gap-1 justify-end mt-0.5">
-                        <Clock className="h-2.5 w-2.5" />
-                        {new Date(batch.pickedUpAt || "").toLocaleDateString(
-                          "ar-MA"
-                        )}
-                      </div>
+                      <ArrowRight className="h-4 w-4 text-gray-300 shrink-0" />
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
