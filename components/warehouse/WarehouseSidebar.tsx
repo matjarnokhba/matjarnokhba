@@ -18,6 +18,7 @@ import {
   Banknote,
   PackageX,
   Store,
+  Calendar,
 } from "lucide-react";
 
 type Props = {
@@ -88,6 +89,7 @@ const NAV_ITEMS = [
     icon: Banknote,
     exact: false,
   },
+  { href: "/warehouse/drivers-schedule", label: "جدول السائقين", icon: Calendar, exact: false },
   { href: "/warehouse/history", label: "السجل", icon: History, exact: false },
 ];
 
