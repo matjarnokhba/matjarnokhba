@@ -17,6 +17,7 @@ import {
   Wallet,
   Banknote,
   PackageX,
+  Store,
 } from "lucide-react";
 
 type Props = {
@@ -61,6 +62,12 @@ const NAV_ITEMS = [
     href: "/warehouse/returns-in-transit",
     label: "مرتجعات في الطريق",
     icon: PackageX,
+    exact: false,
+  },
+  {
+    href: "/warehouse/seller-returns",
+    label: "مرتجعات للتجار",
+    icon: Store,
     exact: false,
   },
   {

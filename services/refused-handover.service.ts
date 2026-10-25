@@ -90,6 +90,24 @@ export const RefusedHandoverService = {
 
   // ═══════ إنشاء دفعة استلام (QR) ═══════
   async createHandoverBatch(driverId: number, warehouseUserId: number) {
+    // 1. إلغاء أي دفعات PENDING سابقة
+    const existingBatches = await prisma.refusedHandoverBatch.findMany({
+      where: { driverId, status: "PENDING" },
+      select: { id: true },
+    });
+
+    if (existingBatches.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.refusedHandoverItem.deleteMany({
+          where: { batchId: { in: existingBatches.map((b) => b.id) } },
+        });
+        await tx.refusedHandoverBatch.updateMany({
+          where: { id: { in: existingBatches.map((b) => b.id) } },
+          data: { status: "CANCELLED" },
+        });
+      });
+    }
+
     const pendingItems = await prisma.shipmentItem.findMany({
       where: {
         refusedQuantity: { gt: 0 },
@@ -104,6 +122,15 @@ export const RefusedHandoverService = {
 
     if (pendingItems.length === 0) {
       throw new Error("لا توجد منتجات مرفوضة معلّقة لهذا السائق");
+    }
+
+    // فحص: هل السائق موجود ونشط؟
+    const driver = await prisma.deliveryPerson.findUnique({
+      where: { id: driverId },
+      select: { userId: true, status: true, deletedAt: true },
+    });
+    if (!driver || driver.deletedAt || driver.status !== "ACTIVE") {
+      throw new Error("السائق غير نشط أو محذوف");
     }
 
     const rawToken = ShipmentQRService.generateToken();
@@ -121,32 +148,58 @@ export const RefusedHandoverService = {
       0
     );
 
-    const batch = await prisma.refusedHandoverBatch.create({
-      data: {
-        batchCode,
-        driverId,
-        warehouseId: warehouseUserId,
-        status: "PENDING",
-        qrTokenHash: hash,
-        qrTokenEnc: encrypted,
-        totalQuantity,
-        itemsCount: pendingItems.length,
-        items: {
-          create: pendingItems.map((i) => ({
-            shipmentItemId: i.id,
-            quantity: i.refusedQuantity,
-          })),
+    try {
+      const batch = await prisma.refusedHandoverBatch.create({
+        data: {
+          batchCode,
+          driverId,
+          warehouseId: warehouseUserId,
+          status: "PENDING",
+          qrTokenHash: hash,
+          qrTokenEnc: encrypted,
+          totalQuantity,
+          itemsCount: pendingItems.length,
+          items: {
+            create: pendingItems.map((i) => ({
+              shipmentItemId: i.id,
+              quantity: i.refusedQuantity,
+            })),
+          },
         },
-      },
-    });
+      });
 
-    return {
-      batchId: batch.id,
-      batchCode: batch.batchCode,
-      qrToken: rawToken,
-      totalQuantity: batch.totalQuantity,
-      itemsCount: batch.itemsCount,
-    };
+      // إشعار السائق
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: driver.userId,
+            type: "ORDER_STATUS_CHANGED",
+            title: "📦 يجب تسليم المرتجعات",
+            message: `المستودع جاهز لاستلام ${totalQuantity} منتج مرفوض منك. امسح QR في صفحة "تسليم مرتجعات".`,
+            link: "/delivery/refused-handover",
+            category: "ORDER",
+            severity: "INFO",
+          },
+        });
+      } catch (notifErr) {
+        console.error("Notification failed:", notifErr);
+      }
+
+      return {
+        batchId: batch.id,
+        batchCode: batch.batchCode,
+        qrToken: rawToken,
+        totalQuantity: batch.totalQuantity,
+        itemsCount: batch.itemsCount,
+      };
+    } catch (e: any) {
+      if (e.code === "P2002") {
+        throw new Error(
+          "تم إنشاء دفعة جديدة للتو. يرجى تحديث الصفحة والمحاولة."
+        );
+      }
+      throw e;
+    }
   },
 
   // ═══════ السائق يمسح QR للتأكيد ═══════
@@ -160,8 +213,9 @@ export const RefusedHandoverService = {
         items: {
           include: {
             shipmentItem: {
-              include: {
-                order: { select: { id: true, orderNumber: true, sellerId: true } },
+              select: {
+                id: true,
+                returnedToWarehouseAt: true,
               },
             },
           },
@@ -175,24 +229,40 @@ export const RefusedHandoverService = {
     if (batch.driver.userId !== driverUserId)
       throw new Error("هذه الدفعة ليست لك");
 
+    // ═══ فحص أمان: لا تعالج عناصر مُعلَّمة مسبقاً ═══
+    const alreadyReturned = batch.items.filter(
+      (i) => i.shipmentItem.returnedToWarehouseAt !== null
+    );
+    if (alreadyReturned.length > 0) {
+      throw new Error(
+        "بعض العناصر تم تسليمها مسبقاً. يرجى التواصل مع المستودع."
+      );
+    }
+
     await prisma.$transaction(async (tx) => {
       const now = new Date();
 
-      // 1. تحديث كل ShipmentItem → returnedToWarehouseAt
+      // ═══ تحديث كل ShipmentItem (بشرط أمان) ═══
       for (const item of batch.items) {
-        await tx.shipmentItem.update({
-          where: { id: item.shipmentItemId },
+        const updated = await tx.shipmentItem.updateMany({
+          where: {
+            id: item.shipmentItemId,
+            returnedToWarehouseAt: null, // ← شرط أمان
+          },
           data: { returnedToWarehouseAt: now },
         });
+        if (updated.count === 0) {
+          throw new Error("تم تعديل أحد العناصر من عملية أخرى. أعد المحاولة.");
+        }
       }
 
-      // 2. حالة الدفعة → COMPLETED
+      // ═══ حالة الدفعة → COMPLETED ═══
       await tx.refusedHandoverBatch.update({
         where: { id: batch.id },
         data: { status: "COMPLETED", completedAt: now },
       });
 
-      // 3. تحديث حظر السائق
+      // ═══ تحديث حظر السائق ═══
       await updateDriverBlockStatus(tx, batch.driverId);
     });
 

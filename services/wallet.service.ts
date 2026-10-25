@@ -20,6 +20,7 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
 
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+  // بضاعة مرفوضة منذ أكثر من 24 ساعة
   const pendingRefusedOver24h = await tx.shipmentItem.count({
     where: {
       shipment: { deliveryPersonId: driverId },
@@ -28,7 +29,19 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
     },
   });
 
-  const shouldBlock = (hasCash && isHeldOver24h) || pendingRefusedOver24h > 0;
+  // دفعات PENDING قديمة (> 7 أيام) — تذكير
+  const staleHandoverBatches = await tx.refusedHandoverBatch.count({
+    where: {
+      driverId,
+      status: "PENDING",
+      createdAt: { lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    },
+  });
+
+  const shouldBlock =
+    (hasCash && isHeldOver24h) ||
+    pendingRefusedOver24h > 0 ||
+    staleHandoverBatches > 0;
 
   let reason: string | null = null;
   if (shouldBlock) {
@@ -37,6 +50,9 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
     }
     if (pendingRefusedOver24h > 0) {
       reason = "بضاعة مرفوضة منذ أكثر من 24 ساعة لم تُرجع للمستودع";
+    }
+    if (staleHandoverBatches > 0) {
+      reason = "دفعة مرتجعات معلّقة منذ أكثر من 7 أيام";
     }
   }
 

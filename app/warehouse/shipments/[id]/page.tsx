@@ -254,7 +254,7 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {/* ═══ تنبيه المرتجعات ═══ */}
+      {/* ═══ تنبيه المرتجعات (توجه للصفحة الرسمية) ═══ */}
       {hasRefusedItemsToReceive && (
         <div className="mt-4 rounded-2xl bg-amber-50 border-2 border-amber-500 p-5">
           <div className="flex items-start gap-3">
@@ -264,16 +264,16 @@ export default function ShipmentDetailPage() {
                 ⚠️ يوجد {totalRefusedQty} منتج مرفوض بانتظار الاستلام
               </h3>
               <p className="mt-1 text-sm text-amber-800">
-                السائق أرجع هذه المنتجات، وتحتاج لتأكيد استلامها في المستودع لكي
-                تعود للمخزون.
+                السائق يحمل هذه المنتجات. لاستلامها رسمياً (مع إثبات QR)، استخدم
+                صفحة "مرتجعات في الطريق".
               </p>
-              <button
-                onClick={() => setShowReceiveRefusedModal(true)}
+              <Link
+                href="/warehouse/returns-in-transit"
                 className="mt-3 w-full rounded-lg bg-amber-600 py-3 text-sm font-bold text-white hover:bg-amber-700 flex items-center justify-center gap-2"
               >
                 <RotateCcw className="h-4 w-4" />
-                استلام المرتجعات الآن
-              </button>
+                اذهب لصفحة المرتجعات
+              </Link>
             </div>
           </div>
         </div>

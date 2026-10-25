@@ -60,6 +60,7 @@ const NAV_ITEMS = [
   { href: "/admin/returns", label: "الإرجاع", icon: RotateCcw, exact: false },
   { href: "/admin/coupons", label: "الكوبونات", icon: Ticket, exact: false },
   { href: "/admin/users", label: "المستخدمون", icon: Users, exact: false },
+  { href: "/admin/returns-monitor", label: "مراقبة المرتجعات", icon: RotateCcw, exact: false },
 ];
 
 export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) {

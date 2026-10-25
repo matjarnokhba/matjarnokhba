@@ -77,6 +77,24 @@ export const SellerReturnService = {
 
   // ═══════ إنشاء دفعة إرجاع للتاجر ═══════
   async createBatch(sellerId: number, warehouseUserId: number) {
+    // إلغاء دفعات PENDING سابقة
+    const existingBatches = await prisma.sellerReturnBatch.findMany({
+      where: { sellerId, status: "PENDING" },
+      select: { id: true },
+    });
+
+    if (existingBatches.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.sellerReturnItem.deleteMany({
+          where: { batchId: { in: existingBatches.map((b) => b.id) } },
+        });
+        await tx.sellerReturnBatch.updateMany({
+          where: { id: { in: existingBatches.map((b) => b.id) } },
+          data: { status: "CANCELLED" },
+        });
+      });
+    }
+
     const pendingItems = await prisma.shipmentItem.findMany({
       where: {
         refusedQuantity: { gt: 0 },
@@ -89,6 +107,12 @@ export const SellerReturnService = {
     if (pendingItems.length === 0) {
       throw new Error("لا توجد مرتجعات معلّقة لهذا التاجر");
     }
+
+    const seller = await prisma.seller.findUnique({
+      where: { id: sellerId },
+      select: { userId: true },
+    });
+    if (!seller) throw new Error("التاجر غير موجود");
 
     const rawToken = ShipmentQRService.generateToken();
     const hash = ShipmentQRService.hashToken(rawToken);
@@ -105,32 +129,58 @@ export const SellerReturnService = {
       0
     );
 
-    const batch = await prisma.sellerReturnBatch.create({
-      data: {
-        batchNumber,
-        sellerId,
-        warehouseId: warehouseUserId,
-        status: "PENDING",
-        qrTokenHash: hash,
-        qrTokenEnc: encrypted,
-        totalQuantity,
-        itemsCount: pendingItems.length,
-        items: {
-          create: pendingItems.map((i) => ({
-            shipmentItemId: i.id,
-            quantity: i.refusedQuantity,
-          })),
+    try {
+      const batch = await prisma.sellerReturnBatch.create({
+        data: {
+          batchNumber,
+          sellerId,
+          warehouseId: warehouseUserId,
+          status: "PENDING",
+          qrTokenHash: hash,
+          qrTokenEnc: encrypted,
+          totalQuantity,
+          itemsCount: pendingItems.length,
+          items: {
+            create: pendingItems.map((i) => ({
+              shipmentItemId: i.id,
+              quantity: i.refusedQuantity,
+            })),
+          },
         },
-      },
-    });
+      });
 
-    return {
-      batchId: batch.id,
-      batchNumber: batch.batchNumber,
-      qrToken: rawToken,
-      totalQuantity: batch.totalQuantity,
-      itemsCount: batch.itemsCount,
-    };
+      // إشعار التاجر
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: seller.userId,
+            type: "ORDER_STATUS_CHANGED",
+            title: "📦 مرتجعات قادمة إليك",
+            message: `المستودع جهّز ${totalQuantity} منتج مرتجع لك. سيتم تسليمها عبر جامع الطرود.`,
+            link: "/seller/returns-batches",
+            category: "ORDER",
+            severity: "INFO",
+          },
+        });
+      } catch (e) {
+        console.error("Notification failed:", e);
+      }
+
+      return {
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        qrToken: rawToken,
+        totalQuantity: batch.totalQuantity,
+        itemsCount: batch.itemsCount,
+      };
+    } catch (e: any) {
+      if (e.code === "P2002") {
+        throw new Error(
+          "تم إنشاء دفعة جديدة للتو. يرجى تحديث الصفحة والمحاولة."
+        );
+      }
+      throw e;
+    }
   },
 
   // ═══════ الجامع يستلم من المستودع ═══════
@@ -139,21 +189,23 @@ export const SellerReturnService = {
 
     const batch = await prisma.sellerReturnBatch.findUnique({
       where: { qrTokenHash: hash },
-      include: { seller: { select: { storeName: true } } },
+      include: {
+        seller: { select: { storeName: true, userId: true } },
+      },
     });
 
     if (!batch) throw new Error("رمز QR غير صالح");
     if (batch.status !== "PENDING")
       throw new Error("هذه الدفعة تمت معالجتها بالفعل");
 
-    // جلب سجل الجامع
     const collector = await prisma.user.findUnique({
       where: { id: collectorUserId },
-      select: { id: true, role: true },
+      select: { id: true, role: true, deletedAt: true },
     });
 
     if (
       !collector ||
+      collector.deletedAt ||
       !["COLLECTOR", "WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(
         collector.role
       )
@@ -161,13 +213,36 @@ export const SellerReturnService = {
       throw new Error("غير مصرح لك باستلام الدفعات");
     }
 
-    await prisma.sellerReturnBatch.update({
-      where: { id: batch.id },
-      data: {
-        status: "PICKED_UP",
-        pickedUpAt: new Date(),
-        collectorId: collectorUserId,
-      },
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.sellerReturnBatch.updateMany({
+        where: { id: batch.id, status: "PENDING" },
+        data: {
+          status: "PICKED_UP",
+          pickedUpAt: new Date(),
+          collectorId: collectorUserId,
+        },
+      });
+
+      if (updated.count === 0) {
+        throw new Error("تم تعديل الدفعة من عملية أخرى");
+      }
+
+      // إشعار التاجر
+      try {
+        await tx.notification.create({
+          data: {
+            userId: batch.seller.userId,
+            type: "ORDER_STATUS_CHANGED",
+            title: "🚚 مرتجعاتك في الطريق",
+            message: `دفعة ${batch.batchNumber} (${batch.totalQuantity} منتج) استلمها الجامع وهي في الطريق إليك.`,
+            link: "/seller/returns-batches",
+            category: "ORDER",
+            severity: "INFO",
+          },
+        });
+      } catch (e) {
+        console.error("Notification failed:", e);
+      }
     });
 
     return {
