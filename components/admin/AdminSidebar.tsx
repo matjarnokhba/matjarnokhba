@@ -65,6 +65,7 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "المستخدمون", icon: Users, exact: false },
   { href: "/admin/returns-monitor", label: "مراقبة المرتجعات", icon: RotateCcw, exact: false },
   { href: "/admin/legal-notices", label: "الإنذارات القانونية", icon: AlertTriangle, exact: false },
+  { href: "/admin/monitor", label: "لوحة المراقبة", icon: LayoutDashboard, exact: false },
 ];
 
 export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) {
