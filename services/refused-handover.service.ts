@@ -293,14 +293,40 @@ export const RefusedHandoverService = {
   async getRawTokenForBatch(batchId: number) {
     const batch = await prisma.refusedHandoverBatch.findUnique({
       where: { id: batchId },
-      select: { qrTokenEnc: true, status: true },
+      select: { qrTokenEnc: true, status: true, batchCode: true },
     });
-    if (!batch || batch.status !== "PENDING") return null;
+
+    if (!batch) {
+      console.error(`[Handover QR] Batch ${batchId} not found`);
+      return null;
+    }
+    if (batch.status !== "PENDING") {
+      console.error(`[Handover QR] Batch ${batch.batchCode} status is ${batch.status}`);
+      return null;
+    }
+
     try {
       return ShipmentQRService.decryptToken(batch.qrTokenEnc);
     } catch (e) {
-      console.error("Failed to decrypt handover token:", e);
-      return null;
+      console.error(
+        `[Handover QR] Decryption failed for batch ${batch.batchCode}, regenerating...`,
+        e
+      );
+
+      // Fallback: regenerate token
+      const newToken = ShipmentQRService.generateToken();
+      const newHash = ShipmentQRService.hashToken(newToken);
+      const newEnc = ShipmentQRService.encryptToken(newToken);
+
+      await prisma.refusedHandoverBatch.update({
+        where: { id: batchId },
+        data: {
+          qrTokenHash: newHash,
+          qrTokenEnc: newEnc,
+        },
+      });
+
+      return newToken;
     }
   },
 };

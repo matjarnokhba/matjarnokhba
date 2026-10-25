@@ -392,14 +392,40 @@ export const SellerReturnService = {
   async getRawTokenForBatch(batchId: number) {
     const batch = await prisma.sellerReturnBatch.findUnique({
       where: { id: batchId },
-      select: { qrTokenEnc: true, status: true },
+      select: { qrTokenEnc: true, status: true, batchNumber: true },
     });
-    if (!batch || batch.status !== "PENDING") return null;
+
+    if (!batch) {
+      console.error(`[Seller Return QR] Batch ${batchId} not found`);
+      return null;
+    }
+    if (batch.status !== "PENDING") {
+      console.error(`[Seller Return QR] Batch ${batch.batchNumber} status is ${batch.status}`);
+      return null;
+    }
+
     try {
       return ShipmentQRService.decryptToken(batch.qrTokenEnc);
     } catch (e) {
-      console.error("Failed to decrypt batch token:", e);
-      return null;
+      console.error(
+        `[Seller Return QR] Decryption failed for batch ${batch.batchNumber}, regenerating...`,
+        e
+      );
+
+      // Fallback: regenerate token
+      const newToken = ShipmentQRService.generateToken();
+      const newHash = ShipmentQRService.hashToken(newToken);
+      const newEnc = ShipmentQRService.encryptToken(newToken);
+
+      await prisma.sellerReturnBatch.update({
+        where: { id: batchId },
+        data: {
+          qrTokenHash: newHash,
+          qrTokenEnc: newEnc,
+        },
+      });
+
+      return newToken;
     }
   },
 };
