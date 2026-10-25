@@ -20,7 +20,6 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
 
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // بضاعة مرفوضة منذ أكثر من 24 ساعة
   const pendingRefusedOver24h = await tx.shipmentItem.count({
     where: {
       shipment: { deliveryPersonId: driverId },
@@ -29,7 +28,6 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
     },
   });
 
-  // دفعات PENDING قديمة (> 7 أيام) — تذكير
   const staleHandoverBatches = await tx.refusedHandoverBatch.count({
     where: {
       driverId,
@@ -61,6 +59,14 @@ export async function updateDriverBlockStatus(tx: any, driverId: number) {
       where: { id: wallet.id },
       data: { isBlocked: shouldBlock, blockReason: reason },
     });
+  }
+
+  // ═══ مزامنة الإنذار القانوني تلقائياً ═══
+  try {
+    const { LegalNoticeService } = await import("./legal-notice.service");
+    await LegalNoticeService.syncForDriver(tx, driverId);
+  } catch (e) {
+    console.error("Legal notice sync failed:", e);
   }
 }
 
