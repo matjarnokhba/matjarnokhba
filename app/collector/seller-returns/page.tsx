@@ -299,7 +299,7 @@ export default function CollectorSellerReturnsPage() {
                       >
                         {isConfirmed ? (
                           <CheckCircle2 className="h-5 w-5" />
-                        ) : ما (
+                        ) : (
                           <Truck className="h-5 w-5" />
                         )}
                       </div>
