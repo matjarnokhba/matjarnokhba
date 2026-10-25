@@ -31,23 +31,27 @@ export async function POST(request: Request) {
     const sellerId = current.user.seller.id;
 
     const result = await prisma.$transaction(async (tx) => {
-      const seller = await tx.seller.findUnique({
-        where: { id: sellerId },
-        select: { walletBalance: true }
+      // ✅ ذري: خصم مشروط بالرصيد الكافي — يمنع السحب المتزامن الزائد
+      const claimed = await tx.seller.updateMany({
+        where: {
+          id: sellerId,
+          walletBalance: { gte: amount },
+        },
+        data: { walletBalance: { decrement: amount } },
       });
 
-      if (!seller || Number(seller.walletBalance) < amount) {
+      if (claimed.count === 0) {
         throw new Error("رصيدك المتاح لا يكفي لطلب السحب");
       }
 
-      const beforeBal = Number(seller.walletBalance);
-      const afterBal = beforeBal - amount;
-
-      // خصم المبلغ من الرصيد المتاح فوراً لحجزه
-      await tx.seller.update({
+      // قراءة الرصيد الفعلي بعد الخصم للسجل المحاسبي
+      const seller = await tx.seller.findUnique({
         where: { id: sellerId },
-        data: { walletBalance: { decrement: amount } }
+        select: { walletBalance: true },
       });
+
+      const afterBal = Number(seller!.walletBalance);
+      const beforeBal = afterBal + amount;
 
       // تسجيل الحركة
       await tx.walletTransaction.create({
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
           balanceBefore: beforeBal,
           balanceAfter: afterBal,
           description: "طلب سحب - قيد المراجعة (يُحول كل يوم سبت)",
-        }
+        },
       });
 
       // إنشاء طلب السحب
@@ -68,7 +72,7 @@ export async function POST(request: Request) {
           amount,
           bankDetails,
           status: "PENDING",
-        }
+        },
       });
 
       return req;

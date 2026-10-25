@@ -239,32 +239,32 @@ export const RefusedHandoverService = {
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      const now = new Date();
+    await prisma.$transaction(
+      async (tx) => {
+        const now = new Date();
 
-      // ═══ تحديث كل ShipmentItem (بشرط أمان) ═══
-      for (const item of batch.items) {
-        const updated = await tx.shipmentItem.updateMany({
-          where: {
-            id: item.shipmentItemId,
-            returnedToWarehouseAt: null, // ← شرط أمان
-          },
-          data: { returnedToWarehouseAt: now },
-        });
-        if (updated.count === 0) {
-          throw new Error("تم تعديل أحد العناصر من عملية أخرى. أعد المحاولة.");
+        for (const item of batch.items) {
+          const updated = await tx.shipmentItem.updateMany({
+            where: {
+              id: item.shipmentItemId,
+              returnedToWarehouseAt: null,
+            },
+            data: { returnedToWarehouseAt: now },
+          });
+          if (updated.count === 0) {
+            throw new Error("تم تعديل أحد العناصر من عملية أخرى. أعد المحاولة.");
+          }
         }
-      }
 
-      // ═══ حالة الدفعة → COMPLETED ═══
-      await tx.refusedHandoverBatch.update({
-        where: { id: batch.id },
-        data: { status: "COMPLETED", completedAt: now },
-      });
+        await tx.refusedHandoverBatch.update({
+          where: { id: batch.id },
+          data: { status: "COMPLETED", completedAt: now },
+        });
 
-      // ═══ تحديث حظر السائق ═══
-      await updateDriverBlockStatus(tx, batch.driverId);
-    });
+        await updateDriverBlockStatus(tx, batch.driverId);
+      },
+      { timeout: 30000 }
+    );
 
     return {
       batchCode: batch.batchCode,

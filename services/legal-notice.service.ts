@@ -112,17 +112,17 @@ export const LegalNoticeService = {
       select: { id: true },
     });
 
-    for (const admin of admins) {
-      await tx.notification.create({
-        data: {
-          userId: admin.id,
-          type: "ORDER_STATUS_CHANGED",
+    if (admins.length > 0) {
+      await tx.notification.createMany({
+        data: admins.map((a: { id: number }) => ({
+          userId: a.id,
+          type: "ORDER_STATUS_CHANGED" as const,
           title: "🚨 إنذار قانوني جديد",
           message: `السائق ${driver?.user.name || driverId}: ${reason.trim()} - مهلة 15 يوم.`,
           link: `/admin/legal-notices/${notice.id}`,
-          category: "ORDER",
-          severity: "WARNING",
-        },
+          category: "ORDER" as const,
+          severity: "WARNING" as const,
+        })),
       });
     }
 
@@ -167,17 +167,17 @@ export const LegalNoticeService = {
         select: { id: true },
       });
 
-      for (const admin of admins) {
-        await prisma.notification.create({
-          data: {
-            userId: admin.id,
-            type: "ORDER_STATUS_CHANGED",
+      if (admins.length > 0) {
+        await prisma.notification.createMany({
+          data: admins.map((a: { id: number }) => ({
+            userId: a.id,
+            type: "ORDER_STATUS_CHANGED" as const,
             title: "🚨 سائق متأخر - جاهز للقانوني",
             message: `السائق ${notice.driver.user.name}: انتهت مهلته. المبلغ: ${notice.amountOwed} د.م.`,
             link: `/admin/legal-notices/${notice.id}`,
-            category: "ORDER",
-            severity: "WARNING",
-          },
+            category: "ORDER" as const,
+            severity: "WARNING" as const,
+          })),
         });
       }
 

@@ -35,6 +35,7 @@ export const AuthService = {
 
     // 5. توليد رمز تأكيد البريد
     const emailVerificationToken = crypto.randomBytes(32).toString("hex");
+const emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // 6. أنشئ المستخدم
     const user = await prisma.user.create({
@@ -46,6 +47,7 @@ export const AuthService = {
         role: "CUSTOMER",
         referralCode,
         emailVerificationToken,
+        emailVerificationExpiresAt,
       },
       select: {
         id: true,

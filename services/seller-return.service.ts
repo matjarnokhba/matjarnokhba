@@ -280,53 +280,54 @@ export const SellerReturnService = {
     const { InventoryService } = await import("@/services/inventory.service");
     const now = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      // 1. إرجاع المخزون للتاجر
-      for (const item of batch.items) {
-        if (item.shipmentItem.variantId) {
-          await InventoryService.returnStock(
-            tx,
-            item.shipmentItem.variantId,
-            item.quantity,
-            batch.id,
-            `تأكيد استلام مرتجع - دفعة ${batch.batchNumber}`,
-            "RETURN"
-          );
+    await prisma.$transaction(
+      async (tx) => {
+        for (const item of batch.items) {
+          if (item.shipmentItem.variantId) {
+            await InventoryService.returnStock(
+              tx,
+              item.shipmentItem.variantId,
+              item.quantity,
+              batch.id,
+              `تأكيد استلام مرتجع - دفعة ${batch.batchNumber}`,
+              "RETURN"
+            );
+          }
         }
-      }
 
-      // 2. تحديث حالة الدفعة
-      await tx.sellerReturnBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: "CONFIRMED",
-          confirmedAt: now,
-          ...(batch.status === "PENDING" && { pickedUpAt: now }),
-        },
-      });
-
-      // 3. إشعار المستودع
-      const admins = await tx.user.findMany({
-        where: {
-          role: { in: ["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      for (const a of admins) {
-        await tx.notification.create({
+        await tx.sellerReturnBatch.update({
+          where: { id: batch.id },
           data: {
-            userId: a.id,
-            type: "ORDER_STATUS_CHANGED",
-            title: "✅ التاجر استلم المرتجعات",
-            message: `التاجر استلم الدفعة ${batch.batchNumber} (${batch.totalQuantity} منتج)`,
-            link: `/warehouse/seller-returns`,
-            category: "ORDER",
-            severity: "INFO",
+            status: "CONFIRMED",
+            confirmedAt: now,
+            ...(batch.status === "PENDING" && { pickedUpAt: now }),
           },
         });
-      }
-    });
+
+        const admins = await tx.user.findMany({
+          where: {
+            role: { in: ["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+
+        if (admins.length > 0) {
+          await tx.notification.createMany({
+            data: admins.map((a) => ({
+              userId: a.id,
+              type: "ORDER_STATUS_CHANGED" as const,
+              title: "✅ التاجر استلم المرتجعات",
+              message: `التاجر استلم الدفعة ${batch.batchNumber} (${batch.totalQuantity} منتج)`,
+              link: `/warehouse/seller-returns`,
+              category: "ORDER" as const,
+              severity: "INFO" as const,
+            })),
+          });
+        }
+      },
+      { timeout: 30000 }
+    );
 
     return {
       batchNumber: batch.batchNumber,

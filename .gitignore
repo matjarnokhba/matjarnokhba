@@ -43,3 +43,7 @@ next-env.d.ts
 # Prisma
 /app/generated/prisma
 /prisma/migrations/dev.db
+# Migration backups (temporary, not needed in repo)
+migrations-history-backup.json
+prisma/migrations.old/
+prisma/migrations.backup/

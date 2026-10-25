@@ -338,6 +338,7 @@ model User {
   googleId               String?   @unique
   emailVerified          Boolean   @default(false)
   emailVerificationToken String?   @unique
+  emailVerificationExpiresAt DateTime?
   name                   String
   phone                  String?
   role                   UserRole  @default(CUSTOMER)
