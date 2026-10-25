@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 import {
@@ -10,7 +10,22 @@ import {
   CheckCircle2,
   AlertCircle,
   Store,
+  Truck,
+  Package,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
+
+type HistoryBatch = {
+  id: number;
+  batchNumber: string;
+  status: string;
+  totalQuantity: number;
+  itemsCount: number;
+  pickedUpAt: string | null;
+  confirmedAt: string | null;
+  seller: { storeName: string };
+};
 
 export default function CollectorSellerReturnsPage() {
   const [scanning, setScanning] = useState(false);
@@ -22,9 +37,28 @@ export default function CollectorSellerReturnsPage() {
     totalQuantity: number;
   } | null>(null);
 
+  const [history, setHistory] = useState<HistoryBatch[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
   const controlsRef = useRef<any>(null);
   const lastScanTimeRef = useRef<number>(0);
   const scannerDivId = "qr-reader";
+
+  async function loadHistory() {
+    try {
+      const res = await fetch("/api/collector/seller-returns/history");
+      const data = await res.json();
+      if (data.success) setHistory(data.batches);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
   async function startScanner() {
     setError("");
@@ -106,6 +140,7 @@ export default function CollectorSellerReturnsPage() {
         storeName: data.storeName,
         totalQuantity: data.totalQuantity,
       });
+      await loadHistory();
     } catch {
       setError("فشل الاتصال");
     } finally {
@@ -166,14 +201,15 @@ export default function CollectorSellerReturnsPage() {
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
           <Store className="h-6 w-6 text-purple-600" />
-          استلام مرتجعات التاجر من المستودع
+          مرتجعات التجار
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          امسح رمز QR الذي يعرضه أمين المستودع لاستلام دفعة المرتجعات.
+          استلام دفعات المرتجعات من المستودع لتوصيلها للتجار.
         </p>
       </div>
 
-      <div className="mx-auto max-w-lg space-y-4">
+      <div className="mx-auto max-w-3xl space-y-6">
+        {/* ═══ الماسح ═══ */}
         <div className="rounded-xl bg-white p-5 shadow-sm">
           {!scanning ? (
             <button
@@ -181,7 +217,7 @@ export default function CollectorSellerReturnsPage() {
               disabled={loading}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-3.5 text-sm font-bold text-white hover:bg-purple-700 disabled:opacity-50"
             >
-              <Scan className="h-5 w-5" /> فتح الكاميرا للمسح
+              <Scan className="h-5 w-5" /> امسح QR دفعة مرتجعات
             </button>
           ) : (
             <button
@@ -210,6 +246,90 @@ export default function CollectorSellerReturnsPage() {
             <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
               <AlertCircle className="h-5 w-5" />
               {error}
+            </div>
+          )}
+        </div>
+
+        {/* ═══ سجل الدفعات ═══ */}
+        <div className="rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between">
+            <h2 className="text-base font-black flex items-center gap-2">
+              <Package className="h-4 w-4 text-purple-600" />
+              سجل الدفعات ({history.length})
+            </h2>
+            <button
+              onClick={loadHistory}
+              className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1 text-[11px] font-bold hover:bg-gray-200"
+            >
+              <RefreshCw className="h-3 w-3" />
+              تحديث
+            </button>
+          </div>
+
+          {historyLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="animate-spin h-6 w-6 text-purple-600" />
+            </div>
+          ) : history.length === 0 ? (
+            <div className="py-12 text-center">
+              <Package className="mx-auto h-10 w-10 text-gray-300 mb-2" />
+              <p className="text-sm font-bold text-gray-500">
+                لم تستلم أي دفعات بعد
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                ستظهر هنا الدفعات التي تستلمها من المستودع.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {history.map((batch) => {
+                const isConfirmed = batch.status === "CONFIRMED";
+                return (
+                  <div
+                    key={batch.id}
+                    className="flex items-center justify-between p-4 hover:bg-gray-50 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                          isConfirmed
+                            ? "bg-green-100 text-green-600"
+                            : "bg-blue-100 text-blue-600"
+                        }`}
+                      >
+                        {isConfirmed ? (
+                          <CheckCircle2 className="h-5 w-5" />
+                        ) : ما (
+                          <Truck className="h-5 w-5" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-mono text-sm font-black text-gray-900">
+                          {batch.batchNumber}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {batch.seller.storeName} · {batch.totalQuantity} منتج
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div
+                        className={`text-[10px] font-bold ${
+                          isConfirmed ? "text-green-600" : "text-blue-600"
+                        }`}
+                      >
+                        {isConfirmed ? "✅ سلّمت للتاجر" : "🚚 في الطريق للتاجر"}
+                      </div>
+                      <div className="text-[10px] text-gray-400 flex items-center gap-1 justify-end mt-0.5">
+                        <Clock className="h-2.5 w-2.5" />
+                        {new Date(batch.pickedUpAt || "").toLocaleDateString(
+                          "ar-MA"
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -363,4 +363,43 @@ export const SellerReturnService = {
       orderBy: { createdAt: "desc" },
     });
   },
+  // ═══════ دفعات نشطة (للمستودع) ═══════
+  async getActiveBatches() {
+    return prisma.sellerReturnBatch.findMany({
+      where: { status: { in: ["PENDING", "PICKED_UP"] } },
+      include: {
+        seller: { select: { id: true, storeName: true, city: true } },
+        items: {
+          include: {
+            shipmentItem: {
+              select: {
+                id: true,
+                refusedQuantity: true,
+                orderItem: {
+                  select: { productName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  },
+
+  // ═══════ استرجاع QR للطباعة مجدداً ═══════
+  async getRawTokenForBatch(batchId: number) {
+    const batch = await prisma.sellerReturnBatch.findUnique({
+      where: { id: batchId },
+      select: { qrTokenEnc: true, status: true },
+    });
+    if (!batch || batch.status !== "PENDING") return null;
+    try {
+      return ShipmentQRService.decryptToken(batch.qrTokenEnc);
+    } catch (e) {
+      console.error("Failed to decrypt batch token:", e);
+      return null;
+    }
+  },
 };

@@ -272,4 +272,35 @@ export const RefusedHandoverService = {
       itemsCount: batch.itemsCount,
     };
   },
+  // ═══════ دفعات نشطة (للمستودع) ═══════
+  async getActiveBatches() {
+    return prisma.refusedHandoverBatch.findMany({
+      where: { status: "PENDING" },
+      include: {
+        driver: {
+          select: {
+            id: true,
+            user: { select: { name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  },
+
+  // ═══════ استرجاع QR للطباعة مجدداً ═══════
+  async getRawTokenForBatch(batchId: number) {
+    const batch = await prisma.refusedHandoverBatch.findUnique({
+      where: { id: batchId },
+      select: { qrTokenEnc: true, status: true },
+    });
+    if (!batch || batch.status !== "PENDING") return null;
+    try {
+      return ShipmentQRService.decryptToken(batch.qrTokenEnc);
+    } catch (e) {
+      console.error("Failed to decrypt handover token:", e);
+      return null;
+    }
+  },
 };
