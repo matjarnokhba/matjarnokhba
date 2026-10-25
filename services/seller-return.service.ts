@@ -396,36 +396,37 @@ export const SellerReturnService = {
     });
 
     if (!batch) {
-      console.error(`[Seller Return QR] Batch ${batchId} not found`);
-      return null;
+      return { token: null, status: "NOT_FOUND", message: "الدفعة غير موجودة" };
     }
-    if (batch.status !== "PENDING") {
-      console.error(`[Seller Return QR] Batch ${batch.batchNumber} status is ${batch.status}`);
-      return null;
+
+    // ✅ السماح بـ PENDING و PICKED_UP (التاجر يحتاج المسح في الحالتين)
+    if (!["PENDING", "PICKED_UP"].includes(batch.status)) {
+      return {
+        token: null,
+        status: batch.status,
+        message: `الدفعة حالتها "${batch.status}" — لا يمكن عرض QR`,
+      };
     }
 
     try {
-      return ShipmentQRService.decryptToken(batch.qrTokenEnc);
+      const token = ShipmentQRService.decryptToken(batch.qrTokenEnc);
+      return { token, status: batch.status, message: null };
     } catch (e) {
       console.error(
-        `[Seller Return QR] Decryption failed for batch ${batch.batchNumber}, regenerating...`,
+        `[Seller Return QR] Decryption failed for ${batch.batchNumber}, regenerating...`,
         e
       );
 
-      // Fallback: regenerate token
       const newToken = ShipmentQRService.generateToken();
       const newHash = ShipmentQRService.hashToken(newToken);
       const newEnc = ShipmentQRService.encryptToken(newToken);
 
       await prisma.sellerReturnBatch.update({
         where: { id: batchId },
-        data: {
-          qrTokenHash: newHash,
-          qrTokenEnc: newEnc,
-        },
+        data: { qrTokenHash: newHash, qrTokenEnc: newEnc },
       });
 
-      return newToken;
+      return { token: newToken, status: batch.status, message: null };
     }
   },
 };

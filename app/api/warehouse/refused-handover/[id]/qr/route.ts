@@ -27,15 +27,20 @@ export async function GET(
       );
     }
 
-    const token = await RefusedHandoverService.getRawTokenForBatch(batchId);
-    if (!token) {
+    const result = await RefusedHandoverService.getRawTokenForBatch(batchId);
+
+    if (!result.token) {
       return NextResponse.json(
-        { success: false, message: "الدفعة غير متاحة أو تمت معالجتها" },
+        {
+          success: false,
+          message: result.message,
+          status: result.status,
+        },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ success: true, qrToken: token });
+    return NextResponse.json({ success: true, qrToken: result.token });
   } catch (error) {
     console.error("Get handover QR error:", error);
     return NextResponse.json(

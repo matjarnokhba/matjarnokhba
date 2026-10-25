@@ -297,36 +297,36 @@ export const RefusedHandoverService = {
     });
 
     if (!batch) {
-      console.error(`[Handover QR] Batch ${batchId} not found`);
-      return null;
+      return { token: null, status: "NOT_FOUND", message: "الدفعة غير موجودة" };
     }
+
     if (batch.status !== "PENDING") {
-      console.error(`[Handover QR] Batch ${batch.batchCode} status is ${batch.status}`);
-      return null;
+      return {
+        token: null,
+        status: batch.status,
+        message: `الدفعة حالتها "${batch.status}" — لا يمكن عرض QR`,
+      };
     }
 
     try {
-      return ShipmentQRService.decryptToken(batch.qrTokenEnc);
+      const token = ShipmentQRService.decryptToken(batch.qrTokenEnc);
+      return { token, status: batch.status, message: null };
     } catch (e) {
       console.error(
-        `[Handover QR] Decryption failed for batch ${batch.batchCode}, regenerating...`,
+        `[Handover QR] Decryption failed for ${batch.batchCode}, regenerating...`,
         e
       );
 
-      // Fallback: regenerate token
       const newToken = ShipmentQRService.generateToken();
       const newHash = ShipmentQRService.hashToken(newToken);
       const newEnc = ShipmentQRService.encryptToken(newToken);
 
       await prisma.refusedHandoverBatch.update({
         where: { id: batchId },
-        data: {
-          qrTokenHash: newHash,
-          qrTokenEnc: newEnc,
-        },
+        data: { qrTokenHash: newHash, qrTokenEnc: newEnc },
       });
 
-      return newToken;
+      return { token: newToken, status: batch.status, message: null };
     }
   },
 };
