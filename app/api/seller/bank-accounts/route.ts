@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { SessionService } from "@/services/session.service";
 import { BankAccountService } from "@/services/bank-account.service";
-
-async function requireSeller() {
-  const current = await SessionService.getCurrent();
-  if (!current) return { error: "غير مصرح", status: 401 };
-  if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  return { user: current.user, seller: current.user.seller };
-}
+import { requireSellerOwner } from "@/lib/seller-guards";
 
 const createSchema = z.object({
   bankName: z.string().trim().min(2).max(80),
@@ -22,15 +15,10 @@ const createSchema = z.object({
 
 export async function GET() {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
-    const accounts = await BankAccountService.list(auth.seller.id);
+    const accounts = await BankAccountService.list(guard.current.user.seller!.id);
     return NextResponse.json({ success: true, accounts });
   } catch (error) {
     console.error("Bank accounts GET error:", error);
@@ -43,17 +31,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const parsed = createSchema.safeParse(body);
-
     if (!parsed.success) {
       return NextResponse.json(
         {
@@ -65,17 +47,14 @@ export async function POST(request: Request) {
     }
 
     const account = await BankAccountService.create(
-      auth.seller.id,
+      guard.current.user.seller!.id,
       parsed.data
     );
 
-    return NextResponse.json({ success: true, account }, { status: 201 });
+    return NextResponse.json({ success: true, account });
   } catch (error) {
-    console.error("Bank account POST error:", error);
-    const message = error instanceof Error ? error.message : "حدث خطأ";
-    return NextResponse.json(
-      { success: false, message },
-      { status: 400 }
-    );
+    console.error("Bank accounts POST error:", error);
+    const msg = error instanceof Error ? error.message : "حدث خطأ";
+    return NextResponse.json({ success: false, message: msg }, { status: 400 });
   }
 }

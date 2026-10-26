@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
-
-async function requireSeller() {
-  const current = await SessionService.getCurrent();
-  if (!current) return { error: "غير مصرح", status: 401 };
-  if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  return { user: current.user, seller: current.user.seller };
-}
+import { requireSeller, requireSellerOwner } from "@/lib/seller-guards";
 
 const updateSchema = z.object({
   storeName: z
@@ -23,19 +16,14 @@ const updateSchema = z.object({
   region: z.string().trim().max(80).optional().nullable(),
 });
 
-// ═══ GET — قراءة ملف المتجر ═══
+// GET — visible to owner and staff
 export async function GET() {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSeller();
+    if (!guard.ok) return guard.response;
 
     const seller = await prisma.seller.findUnique({
-      where: { id: auth.seller.id },
+      where: { id: guard.current.user.seller!.id },
       select: {
         id: true,
         storeName: true,
@@ -44,24 +32,10 @@ export async function GET() {
         logo: true,
         city: true,
         region: true,
-        status: true,
         isVerified: true,
-        createdAt: true,
-        _count: {
-          select: {
-            products: { where: { deletedAt: null } },
-            orders: true,
-          },
-        },
+        status: true,
       },
     });
-
-    if (!seller) {
-      return NextResponse.json(
-        { success: false, message: "المتجر غير موجود" },
-        { status: 404 }
-      );
-    }
 
     return NextResponse.json({ success: true, seller });
   } catch (error) {
@@ -73,20 +47,14 @@ export async function GET() {
   }
 }
 
-// ═══ PATCH — تعديل ملف المتجر ═══
+// PATCH — owner only
 export async function PATCH(request: Request) {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const parsed = updateSchema.safeParse(body);
-
     if (!parsed.success) {
       return NextResponse.json(
         {
@@ -98,14 +66,12 @@ export async function PATCH(request: Request) {
     }
 
     const data = parsed.data;
+    const sellerId = guard.current.user.seller!.id;
 
-    // ⚠️ ملاحظة: slug لا يُعدَّل — لأنه يؤثر على كل روابط المنتجات
     const updated = await prisma.seller.update({
-      where: { id: auth.seller.id },
+      where: { id: sellerId },
       data: {
-        ...(data.storeName !== undefined && {
-          storeName: data.storeName.trim(),
-        }),
+        ...(data.storeName !== undefined && { storeName: data.storeName }),
         ...(data.description !== undefined && {
           description: data.description || null,
         }),
@@ -113,20 +79,18 @@ export async function PATCH(request: Request) {
         ...(data.city !== undefined && { city: data.city || null }),
         ...(data.region !== undefined && { region: data.region || null }),
       },
-    });
-
-    return NextResponse.json({
-      success: true,
-      seller: {
-        id: updated.id,
-        storeName: updated.storeName,
-        slug: updated.slug,
-        description: updated.description,
-        logo: updated.logo,
-        city: updated.city,
-        region: updated.region,
+      select: {
+        id: true,
+        storeName: true,
+        slug: true,
+        description: true,
+        logo: true,
+        city: true,
+        region: true,
       },
     });
+
+    return NextResponse.json({ success: true, seller: updated });
   } catch (error) {
     console.error("Seller profile PATCH error:", error);
     return NextResponse.json(

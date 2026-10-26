@@ -22,13 +22,17 @@ export default async function SellerLayout({
     redirect("/");
   }
 
-  if (!user.seller) {
+  // Admins don't have their own seller - if they access /seller, redirect to admin
+  const isAdminViewing =
+    user.role === "ADMIN" || user.role === "SUPER_ADMIN";
+
+  if (!user.seller && !isAdminViewing) {
     redirect("/seller-onboarding");
   }
 
   if (
-    user.seller.status === "SUSPENDED" ||
-    user.seller.status === "CLOSED"
+    user.seller &&
+    (user.seller.status === "SUSPENDED" || user.seller.status === "CLOSED")
   ) {
     return (
       <div
@@ -42,6 +46,26 @@ export default async function SellerLayout({
           </h1>
           <p className="mt-2 text-sm text-gray-500">
             يرجى التواصل مع الدعم لمعرفة السبب.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Admins visiting /seller should not break the layout if no seller
+  if (!user.seller) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center bg-gray-50 p-6"
+        dir="rtl"
+      >
+        <div className="max-w-md text-center">
+          <div className="text-6xl">🏪</div>
+          <h1 className="mt-4 text-2xl font-black text-gray-900">
+            لا يوجد متجر مرتبط بحسابك
+          </h1>
+          <p className="mt-2 text-sm text-gray-500">
+            هذه الصفحة للتجار فقط.
           </p>
         </div>
       </div>
@@ -81,6 +105,8 @@ export default async function SellerLayout({
         storeName={user.seller.storeName}
         storeSlug={user.seller.slug}
         isVerified={user.seller.isVerified}
+        isSellerOwner={user.isSellerOwner}
+        staffPermissions={user.staffPermissions}
       />
       <RoleTopBar
         endpointUrl="/api/seller/topbar"

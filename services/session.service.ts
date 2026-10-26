@@ -6,18 +6,24 @@ import {
   SESSION_DURATION_MS,
 } from "@/lib/validations/auth";
 
-// ═══════ توليد توكن عشوائي آمن ═══════
 function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// ═══════ تشفير التوكن (SHA-256) ═══════
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+const SELLER_SELECT = {
+  id: true,
+  storeName: true,
+  slug: true,
+  status: true,
+  isVerified: true,
+  logo: true,
+} as const;
+
 export const SessionService = {
-  // ═══════ إنشاء جلسة جديدة ═══════
   async create(userId: number, userAgent?: string, ipAddress?: string) {
     const token = generateToken();
     const tokenHash = hashToken(token);
@@ -46,7 +52,6 @@ export const SessionService = {
     return session;
   },
 
-  // ═══════ التحقق من الجلسة الحالية ═══════
   async getCurrent() {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -65,16 +70,14 @@ export const SessionService = {
             phone: true,
             role: true,
             deletedAt: true,
-            emailVerified: true, // <--- تم إضافة هذا السطر هنا
-            // ═══ معلومات البائع (للـMulti-Vendor) ═══
-            seller: {
+            emailVerified: true,
+            seller: { select: SELLER_SELECT },
+            staffOf: {
+              where: { deletedAt: null, isActive: true },
               select: {
                 id: true,
-                storeName: true,
-                slug: true,
-                status: true,
-                isVerified: true,
-                logo: true,
+                seller: { select: SELLER_SELECT },
+                permissions: { select: { permissionKey: true } },
               },
             },
           },
@@ -87,13 +90,38 @@ export const SessionService = {
     if (session.expiresAt < new Date()) return null;
     if (session.user.deletedAt) return null;
 
+    const { staffOf, ...userBase } = session.user;
+    const isSellerOwner = !!userBase.seller;
+    const staffId = staffOf?.id ?? null;
+    const staffPermissions =
+      staffOf?.permissions.map((p) => p.permissionKey) ?? [];
+    const effectiveSeller = userBase.seller ?? staffOf?.seller ?? null;
+
+    // Guard: SELLER with neither active seller nor active staff = disabled staff
+    if (userBase.role === "SELLER" && !effectiveSeller) {
+      const anyStaff = await prisma.sellerStaff.findUnique({
+        where: { userId: userBase.id },
+        select: { id: true },
+      });
+      if (anyStaff) {
+        // Disabled/deleted staff -> force logout
+        return null;
+      }
+      // Else: onboarding case (new seller without a store yet)
+    }
+
     return {
       session,
-      user: session.user,
+      user: {
+        ...userBase,
+        seller: effectiveSeller,
+        isSellerOwner,
+        staffId,
+        staffPermissions,
+      },
     };
   },
 
-  // ═══════ إلغاء الجلسة الحالية ═══════
   async destroy() {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;

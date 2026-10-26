@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -22,37 +22,52 @@ import {
   RotateCcw,
   BadgeCheck,
   PackageX,
+  Users,
 } from "lucide-react";
 
 type SellerSidebarProps = {
   storeName: string;
   storeSlug: string;
   isVerified: boolean;
+  isSellerOwner?: boolean;
+  staffPermissions?: string[];
 };
 
-const NAV_ITEMS = [
-  { href: "/seller", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
-  { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false },
-  { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false },
-  { href: "/seller/scanner", label: "ماسح المنتجات", icon: ScanLine, exact: false },
-  { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false },
-  { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false },
-  { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false },
-  { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
-  { href: "/seller/returns-batches", label: "مرتجعات من المستودع", icon: PackageX, exact: false },
-  { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
-  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false },
-  { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false },
-  { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false },
-  { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false },
-  { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false },
-  { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: any;
+  exact: boolean;
+  ownerOnly?: boolean;
+  permission?: string;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/seller", label: "لوحة عامة", icon: LayoutDashboard, exact: true },
+  { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false, permission: "VIEW_NOTIFICATIONS" },
+  { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false, permission: "VIEW_FULFILLMENTS" },
+  { href: "/seller/scanner", label: "ماسح المنتجات", icon: ScanLine, exact: false, permission: "USE_SCANNER" },
+  { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permission: "VIEW_PRODUCTS" },
+  { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
+  { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },
+  { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false, permission: "VIEW_RETURNS" },
+  { href: "/seller/returns-batches", label: "مرتجعات من المستودع", icon: PackageX, exact: false, permission: "VIEW_BATCHES" },
+  { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false, permission: "VIEW_REVIEWS" },
+  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false, permission: "VIEW_PERFORMANCE" },
+  { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false, ownerOnly: true },
+  { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false, permission: "VIEW_WALLET" },
+  { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false, ownerOnly: true },
+  { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false, ownerOnly: true },
+  { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false, ownerOnly: true },
+  { href: "/seller/staff", label: "الموظفون", icon: Users, exact: false, ownerOnly: true },
 ];
 
 export default function SellerSidebar({
   storeName,
   storeSlug,
   isVerified,
+  isSellerOwner = true,
+  staffPermissions = [],
 }: SellerSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -78,6 +93,15 @@ export default function SellerSidebar({
     if (exact) return pathname === href;
     return pathname.startsWith(href);
   }
+
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (isSellerOwner) return true;
+    if (item.ownerOnly) return false;
+    if (item.permission && !staffPermissions.includes(item.permission)) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -135,7 +159,7 @@ export default function SellerSidebar({
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-24">
-          {NAV_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href, item.exact);
 

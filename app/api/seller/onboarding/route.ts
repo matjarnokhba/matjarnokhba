@@ -26,8 +26,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // ═══ إذا عنده Seller بالفعل ═══
-    if (current.user.seller) {
+    // ═══ الموظف لا يمكنه إنشاء متجر ═══
+    if (current.user.staffId) {
+      return NextResponse.json(
+        { success: false, message: "أنت موظف — لا يمكنك إنشاء متجر" },
+        { status: 403 }
+      );
+    }
+
+    // ═══ إذا عنده Seller بالفعل (مالك) ═══
+    if (current.user.isSellerOwner) {
       return NextResponse.json(
         { success: false, message: "لديك متجر بالفعل" },
         { status: 400 }

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
+import { requireSellerOwner } from "@/lib/seller-guards";
 
 const schema = z.object({
   amount: z.number().positive(),
@@ -16,22 +16,23 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current || !current.user.seller) {
-      return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 401 });
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
+    const current = guard.current;
 
     const body = await request.json();
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "بيانات غير صحيحة" },
+        { status: 400 }
+      );
     }
 
     const { amount, bankDetails } = parsed.data;
-    const sellerId = current.user.seller.id;
+    const sellerId = current.user.seller!.id;
 
     const result = await prisma.$transaction(async (tx) => {
-      // ✅ ذري: خصم مشروط بالرصيد الكافي — يمنع السحب المتزامن الزائد
       const claimed = await tx.seller.updateMany({
         where: {
           id: sellerId,
@@ -44,7 +45,6 @@ export async function POST(request: Request) {
         throw new Error("رصيدك المتاح لا يكفي لطلب السحب");
       }
 
-      // قراءة الرصيد الفعلي بعد الخصم للسجل المحاسبي
       const seller = await tx.seller.findUnique({
         where: { id: sellerId },
         select: { walletBalance: true },
@@ -53,7 +53,6 @@ export async function POST(request: Request) {
       const afterBal = Number(seller!.walletBalance);
       const beforeBal = afterBal + amount;
 
-      // تسجيل الحركة
       await tx.walletTransaction.create({
         data: {
           sellerId,
@@ -65,7 +64,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // إنشاء طلب السحب
       const req = await tx.withdrawalRequest.create({
         data: {
           sellerId,
@@ -79,7 +77,6 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ success: true, request: result });
-
   } catch (error) {
     console.error("Withdrawal POST error:", error);
     const msg = error instanceof Error ? error.message : "حدث خطأ";

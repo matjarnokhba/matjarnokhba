@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { SessionService } from "@/services/session.service";
 import { BankAccountService } from "@/services/bank-account.service";
-
-async function requireSeller() {
-  const current = await SessionService.getCurrent();
-  if (!current) return { error: "غير مصرح", status: 401 };
-  if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  return { user: current.user, seller: current.user.seller };
-}
+import { requireSellerOwner } from "@/lib/seller-guards";
 
 const actionSchema = z.object({
   action: z.enum(["set_default", "deactivate"]),
@@ -19,13 +12,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
     const { id } = await params;
     const accountId = parseInt(id);
@@ -46,10 +34,12 @@ export async function PATCH(
       );
     }
 
+    const sellerId = guard.current.user.seller!.id;
+
     if (parsed.data.action === "set_default") {
-      await BankAccountService.setDefault(auth.seller.id, accountId);
+      await BankAccountService.setDefault(sellerId, accountId);
     } else {
-      await BankAccountService.deactivate(auth.seller.id, accountId);
+      await BankAccountService.deactivate(sellerId, accountId);
     }
 
     return NextResponse.json({ success: true });
@@ -68,13 +58,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireSeller();
-    if ("error" in auth) {
-      return NextResponse.json(
-        { success: false, message: auth.error },
-        { status: auth.status }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
     const { id } = await params;
     const accountId = parseInt(id);
@@ -85,7 +70,7 @@ export async function DELETE(
       );
     }
 
-    await BankAccountService.remove(auth.seller.id, accountId);
+    await BankAccountService.remove(guard.current.user.seller!.id, accountId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

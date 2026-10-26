@@ -371,6 +371,8 @@ model User {
   collectionZones    Zone[]            @relation("UserCollectionZone")
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
+  staffOf         SellerStaff?    @relation("StaffUser")
+  staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -526,6 +528,7 @@ model Seller {
   withdrawalRequests   WithdrawalRequest[]
   subscriptionLogs     SubscriptionLog[]
   sellerReturnBatches  SellerReturnBatch[]
+  staff                SellerStaff[]
 
   @@index([status])
   @@index([deletedAt])
@@ -2495,4 +2498,40 @@ model SellerReturnItem {
   shipmentItem ShipmentItem      @relation(fields: [shipmentItemId], references: [id], onDelete: Cascade)
 
   @@index([batchId])
+}
+
+// ============================================
+// SELLER STAFF
+// ============================================
+
+model SellerStaff {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @unique
+  sellerId    Int
+  isActive    Boolean   @default(true)
+  createdById Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  user        User                   @relation("StaffUser", fields: [userId], references: [id], onDelete: Cascade)
+  seller      Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdBy   User                   @relation("StaffCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  permissions SellerStaffPermission[]
+
+  @@index([sellerId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model SellerStaffPermission {
+  id            Int      @id @default(autoincrement())
+  staffId       Int
+  permissionKey String
+  createdAt     DateTime @default(now())
+
+  staff SellerStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, permissionKey])
+  @@index([staffId])
 }

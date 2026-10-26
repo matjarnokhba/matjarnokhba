@@ -1,25 +1,14 @@
 import { NextResponse } from "next/server";
-import { SessionService } from "@/services/session.service";
 import { DocumentService } from "@/services/document.service";
+import { requireSellerOwner } from "@/lib/seller-guards";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current) {
-      return NextResponse.json(
-        { success: false, message: "غير مصرح" },
-        { status: 401 }
-      );
-    }
-    if (!current.user.seller) {
-      return NextResponse.json(
-        { success: false, message: "ليس لديك متجر" },
-        { status: 403 }
-      );
-    }
+    const guard = await requireSellerOwner();
+    if (!guard.ok) return guard.response;
 
     const { id } = await params;
     const docId = parseInt(id);
@@ -30,11 +19,11 @@ export async function DELETE(
       );
     }
 
-    await DocumentService.remove(current.user.seller.id, docId);
+    await DocumentService.remove(guard.current.user.seller!.id, docId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Seller document DELETE error:", error);
-    const message = error instanceof Error ? error.message : "حدث خطأ";
+    const message = error instanceof Error ? error.message : "خطأ";
     return NextResponse.json(
       { success: false, message },
       { status: 400 }

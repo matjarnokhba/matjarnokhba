@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import {
@@ -10,7 +10,6 @@ import {
   Loader2,
   TrendingUp,
   X,
-  CreditCard,
 } from "lucide-react";
 
 type WalletData = {
@@ -41,8 +40,8 @@ export default function SellerWalletPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(true);
 
-  // Modal State
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("bank");
@@ -65,6 +64,7 @@ export default function SellerWalletPage() {
         });
         setTransactions(json.transactions);
         setWithdrawals(json.withdrawals);
+        setIsOwner(json.isSellerOwner === true);
       }
     } catch (err) {
       console.error(err);
@@ -105,7 +105,7 @@ export default function SellerWalletPage() {
 
       setShowModal(false);
       setAmount("");
-      loadWallet(); // تحديث البيانات
+      loadWallet();
     } catch {
       setError("حدث خطأ في الاتصال");
     } finally {
@@ -135,16 +135,17 @@ export default function SellerWalletPage() {
             إدارة أرباحك وطلبات السحب
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#e64a00]"
-        >
-          <ArrowDownToLine className="h-4 w-4" />
-          طلب سحب
-        </button>
+        {isOwner && (
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#e64a00]"
+          >
+            <ArrowDownToLine className="h-4 w-4" />
+            طلب سحب
+          </button>
+        )}
       </div>
 
-      {/* Cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-2xl bg-gradient-to-br from-green-500 to-green-600 p-5 text-white shadow-md">
           <div className="text-xs font-bold text-green-100">الرصيد المتاح</div>
@@ -178,27 +179,36 @@ export default function SellerWalletPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Transactions */}
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-sm font-black text-gray-900 flex items-center gap-2">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-black text-gray-900">
               <TrendingUp className="h-4 w-4 text-[#ff5c00]" />
               سجل الحركات المالية
             </h2>
             {transactions.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">لا توجد حركات مالية بعد</div>
+              <div className="py-8 text-center text-sm text-gray-500">
+                لا توجد حركات مالية بعد
+              </div>
             ) : (
               <div className="divide-y divide-gray-100">
                 {transactions.map((tx) => (
                   <div key={tx.id} className="flex items-center justify-between py-3">
                     <div>
-                      <div className="text-sm font-bold text-gray-900">{tx.description}</div>
+                      <div className="text-sm font-bold text-gray-900">
+                        {tx.description}
+                      </div>
                       <div className="mt-0.5 text-[10px] text-gray-500">
                         {new Date(tx.createdAt).toLocaleString("ar-MA")}
                       </div>
                     </div>
-                    <div className={`text-sm font-black ${Number(tx.amount) > 0 ? "text-green-600" : "text-red-600"}`} dir="ltr">
-                      {Number(tx.amount) > 0 ? "+" : ""}{Number(tx.amount).toFixed(2)} د.م
+                    <div
+                      className={`text-sm font-black ${
+                        Number(tx.amount) > 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                      dir="ltr"
+                    >
+                      {Number(tx.amount) > 0 ? "+" : ""}
+                      {Number(tx.amount).toFixed(2)} د.م
                     </div>
                   </div>
                 ))}
@@ -207,24 +217,39 @@ export default function SellerWalletPage() {
           </div>
         </div>
 
-        {/* Withdrawals */}
         <div className="space-y-4">
           <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-sm font-black text-gray-900 flex items-center gap-2">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-black text-gray-900">
               <Clock className="h-4 w-4 text-[#ff5c00]" />
               طلبات السحب
             </h2>
             {withdrawals.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">لا توجد طلبات سحب</div>
+              <div className="py-8 text-center text-sm text-gray-500">
+                لا توجد طلبات سحب
+              </div>
             ) : (
               <div className="space-y-3">
                 {withdrawals.map((w) => (
                   <div key={w.id} className="rounded-xl border border-gray-100 p-3">
                     <div className="flex items-center justify-between">
-                      <div className="font-black text-gray-900">{Number(w.amount).toFixed(2)} د.م</div>
-                      {w.status === "PENDING" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">قيد المراجعة</span>}
-                      {w.status === "PAID" && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">تم التحويل</span>}
-                      {w.status === "REJECTED" && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">مرفوض</span>}
+                      <div className="font-black text-gray-900">
+                        {Number(w.amount).toFixed(2)} د.م
+                      </div>
+                      {w.status === "PENDING" && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                          قيد المراجعة
+                        </span>
+                      )}
+                      {w.status === "PAID" && (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                          تم التحويل
+                        </span>
+                      )}
+                      {w.status === "REJECTED" && (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                          مرفوض
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 text-[10px] text-gray-500">
                       {new Date(w.requestedAt).toLocaleDateString("ar-MA")}
@@ -242,25 +267,32 @@ export default function SellerWalletPage() {
         </div>
       </div>
 
-      {/* Withdraw Modal */}
-      {showModal && (
+      {isOwner && showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black">طلب سحب أرباح</h2>
-              <button onClick={() => setShowModal(false)} className="rounded-full p-1 hover:bg-gray-100">
+              <button
+                onClick={() => setShowModal(false)}
+                className="rounded-full p-1 hover:bg-gray-100"
+              >
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
 
-            <div className="mb-4 rounded-lg bg-blue-50 p-3 text-xs text-blue-800 flex items-start gap-2">
+            <div className="mb-4 flex items-start gap-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>يتم تحويل المبالغ كل يوم <strong>سبت</strong>. الرصيد المتاح للسحب: <strong>{data.walletBalance.toFixed(2)} د.م</strong></p>
+              <p>
+                يتم تحويل المبالغ كل يوم <strong>سبت</strong>. الرصيد المتاح للسحب:{" "}
+                <strong>{data.walletBalance.toFixed(2)} د.م</strong>
+              </p>
             </div>
 
             <form onSubmit={handleWithdraw} className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">المبلغ المطلوب (د.م)</label>
+                <label className="mb-1 block text-xs font-bold text-gray-700">
+                  المبلغ المطلوب (د.م)
+                </label>
                 <input
                   type="number"
                   required
@@ -274,7 +306,9 @@ export default function SellerWalletPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">طريقة الاستلام</label>
+                <label className="mb-1 block text-xs font-bold text-gray-700">
+                  طريقة الاستلام
+                </label>
                 <select
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
@@ -287,7 +321,9 @@ export default function SellerWalletPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-bold text-gray-700">الاسم الكامل</label>
+                <label className="mb-1 block text-xs font-bold text-gray-700">
+                  الاسم الكامل
+                </label>
                 <input
                   type="text"
                   required
@@ -299,7 +335,9 @@ export default function SellerWalletPage() {
 
               {method === "bank" && (
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-gray-700">اسم البنك</label>
+                  <label className="mb-1 block text-xs font-bold text-gray-700">
+                    اسم البنك
+                  </label>
                   <input
                     type="text"
                     required
@@ -324,14 +362,22 @@ export default function SellerWalletPage() {
                 />
               </div>
 
-              {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+              {error && (
+                <div className="rounded bg-red-50 p-2 text-xs text-red-600">
+                  {error}
+                </div>
+              )}
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
                 تأكيد طلب السحب
               </button>
             </form>
