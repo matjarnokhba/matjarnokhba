@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -14,7 +14,6 @@ import {
   FileText,
   User,
   LogOut,
-  Menu,
   X,
   Store,
   Bell,
@@ -42,7 +41,7 @@ const NAV_ITEMS = [
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false },
   { href: "/seller/returns-batches", label: "مرتجعات من المستودع", icon: PackageX, exact: false },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false },
-  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact:false },
+  { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false },
   { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false },
   { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false },
   { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false },
@@ -58,6 +57,12 @@ export default function SellerSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setMobileOpen(true);
+    window.addEventListener("openSidebar", handler);
+    return () => window.removeEventListener("openSidebar", handler);
+  }, []);
 
   async function handleLogout() {
     try {
@@ -76,14 +81,6 @@ export default function SellerSidebar({
 
   return (
     <>
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
-        aria-label="القائمة"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"

@@ -36,11 +36,39 @@ export const ReturnShipmentService = {
 
     const ret = await tx.returnRequest.findUnique({
       where: { id: returnId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        order: { select: { shippingAddressSnapshot: true } },
+      },
     });
     if (!ret) throw new Error("ReturnRequest غير موجود");
     if (ret.status !== "APPROVED") {
       throw new Error("يجب الموافقة على الإرجاع أولاً");
+    }
+
+    // ═══ إسناد تلقائي لسائق الاستلام حسب مدينة الزبون ═══
+    const addressSnapshot = ret.order?.shippingAddressSnapshot as { city?: string } | null;
+    const customerCity = (addressSnapshot?.city || "").trim();
+    let pickupDriverId: number | null = null;
+    let pickupAssignedAt: Date | null = null;
+    if (customerCity) {
+      const driver = await tx.deliveryPerson.findFirst({
+        where: {
+          status: "ACTIVE",
+          deletedAt: null,
+          OR: [
+            { city: customerCity },
+            { cities: { has: customerCity } },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (driver) {
+        pickupDriverId = driver.id;
+        pickupAssignedAt = new Date();
+      }
     }
 
     // ═══ returnNumber ═══
@@ -73,6 +101,10 @@ export const ReturnShipmentService = {
         deliveryTokenHash: deliveryHash,
         deliveryTokenEncrypted: deliveryEnc,
         deliveryTokenPreview: deliveryPreview,
+        ...(pickupDriverId && {
+          pickupDriverId,
+          pickupAssignedAt,
+        }),
       },
     });
 

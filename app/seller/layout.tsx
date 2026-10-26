@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { SessionService } from "@/services/session.service";
 import SellerSidebar from "@/components/seller/SellerSidebar";
+import RoleTopBar from "@/components/layout/RoleTopBar";
 
 export default async function SellerLayout({
   children,
@@ -47,17 +48,47 @@ export default async function SellerLayout({
     );
   }
 
+  const topbarItems = [
+    {
+      countKey: "ordersNew",
+      label: "طلبات جديدة",
+      href: "/seller/orders",
+      icon: "orders" as const,
+    },
+    {
+      countKey: "fulfillmentsPending",
+      label: "تجهيزات قيد الانتظار",
+      href: "/seller/fulfillments",
+      icon: "fulfillments" as const,
+    },
+    {
+      countKey: "returnsToConfirm",
+      label: "مرتجعات بانتظار التأكيد",
+      href: "/seller/returns",
+      icon: "returns" as const,
+    },
+    {
+      countKey: "batchesToConfirm",
+      label: "دفعات من المستودع",
+      href: "/seller/returns-batches",
+      icon: "batches" as const,
+    },
+  ];
+
   return (
-    <div
-      className="min-h-screen w-full overflow-x-hidden bg-gray-50"
-      dir="rtl"
-    >
+    <div className="min-h-screen w-full overflow-x-hidden bg-gray-50" dir="rtl">
       <SellerSidebar
         storeName={user.seller.storeName}
         storeSlug={user.seller.slug}
         isVerified={user.seller.isVerified}
       />
-      <main className="min-w-0 overflow-x-hidden lg:mr-64">
+      <RoleTopBar
+        endpointUrl="/api/seller/topbar"
+        readAllUrl="/api/seller/notifications/read-all"
+        allNotifsHref="/seller/notifications"
+        items={topbarItems}
+      />
+      <main className="min-w-0 overflow-x-hidden pt-14 lg:mr-64">
         {children}
       </main>
     </div>

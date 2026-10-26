@@ -303,6 +303,9 @@ export default function SellerReturnsPage() {
                   </div>
                 )}
 
+                {/* Timeline */}
+                <ReturnTimeline status={r.status} />
+
                 {/* Actions */}
                 {canConfirm && r.deliveryRawToken && (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -339,6 +342,67 @@ export default function SellerReturnsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReturnTimeline({ status }: { status: string }) {
+  const stages = [
+    { key: "PENDING_PICKUP", label: "بانتظار الاستلام من العميل" },
+    { key: "PICKED_UP", label: "تم الاستلام من العميل" },
+    { key: "IN_TRANSIT_TO_WAREHOUSE", label: "في الطريق للمستودع" },
+    { key: "RECEIVED_AT_WAREHOUSE", label: "وصل المستودع" },
+    { key: "INSPECTED", label: "تم الفحص" },
+    { key: "IN_TRANSIT_TO_SELLER", label: "في الطريق إليك" },
+    { key: "COMPLETED", label: "تم الاستلام بنجاح" },
+  ];
+
+  const isRejected = status === "DELIVERED_TO_SELLER";
+  const currentIndex = stages.findIndex((s) => s.key === status);
+  const lastDoneIndex = isRejected ? stages.length - 2 : currentIndex - 1;
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <div className="mb-2 text-[11px] font-bold text-gray-600">
+        مراحل الإرجاع:
+      </div>
+      <div className="space-y-1.5">
+        {stages.map((s, idx) => {
+          const isDone = idx <= lastDoneIndex;
+          const isCurrent = !isRejected && idx === currentIndex;
+
+          return (
+            <div
+              key={s.key}
+              className={`flex items-center gap-2 text-[11px] ${
+                isDone
+                  ? "text-green-700"
+                  : isCurrent
+                    ? "font-bold text-orange-700"
+                    : "text-gray-400"
+              }`}
+            >
+              <div
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+                  isDone
+                    ? "bg-green-600 text-white"
+                    : isCurrent
+                      ? "bg-orange-500 text-white"
+                      : "bg-gray-200 text-gray-500"
+                }`}
+              >
+                {isDone ? "✓" : idx + 1}
+              </div>
+              <span>{s.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      {isRejected && (
+        <div className="mt-2 rounded-lg bg-red-50 p-2 text-[11px] font-bold text-red-700">
+          ✕ رفضت الاستلام — بانتظار الإدارة
         </div>
       )}
     </div>

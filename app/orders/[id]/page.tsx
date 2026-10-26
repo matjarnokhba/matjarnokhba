@@ -336,9 +336,18 @@ export default function OrderDetailPage() {
   const hasActiveReturn = returns.some(
     (r) => r.status === "PENDING" || r.status === "APPROVED"
   );
-  const canRequestReturn =
+  const canShowReturnButton =
     (order.status === "DELIVERED" || order.status === "PARTIALLY_DELIVERED") &&
     !hasActiveReturn;
+  const deliveredEntry = order.statusHistory.find(
+    (h) => h.toStatus === "DELIVERED" || h.toStatus === "PARTIALLY_DELIVERED"
+  );
+  const returnDeadline = deliveredEntry
+    ? new Date(new Date(deliveredEntry.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000)
+    : null;
+  const isWithinWarranty = returnDeadline ? Date.now() <= returnDeadline.getTime() : true;
+  const canRequestReturn = canShowReturnButton && isWithinWarranty;
+  const isReturnExpired = canShowReturnButton && !isWithinWarranty;
 
   const totalAcceptedQty = order.items.reduce(
     (s, i) => s + i.acceptedQuantity,
@@ -620,18 +629,27 @@ export default function OrderDetailPage() {
             })}
           </div>
 
-          {canRequestReturn && (
+          {canShowReturnButton && (
             <div className="mt-4 border-t border-gray-100 pt-4">
-              <button
-                onClick={() => setShowReturnModal(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
-              >
-                <RotateCcw className="h-4 w-4" />
-                طلب إرجاع منتجات
-              </button>
-              <p className="mt-2 text-center text-[10px] text-gray-400">
-                يمكنك الإرجاع خلال 7 أيام من استلام الطلب
-              </p>
+              {isReturnExpired ? (
+                <div className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-gray-200 bg-gray-50 py-3 text-sm font-bold text-gray-400">
+                  <AlertTriangle className="h-4 w-4" />
+                  تجاوزت فترة الضمان (7 أيام)
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowReturnModal(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    طلب إرجاع منتجات
+                  </button>
+                  <p className="mt-2 text-center text-[10px] text-gray-400">
+                    يمكنك الإرجاع خلال 7 أيام من استلام الطلب
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

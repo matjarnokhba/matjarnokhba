@@ -1,9 +1,6 @@
 "use client";
-import {
-  // ...existing
-  AlertTriangle,
-} from "lucide-react";
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -13,7 +10,6 @@ import {
   Users,
   Store,
   LogOut,
-  Menu,
   X,
   Star,
   Ticket,
@@ -31,6 +27,7 @@ import {
   Settings,
   Wallet,
   Banknote,
+  AlertTriangle,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -54,8 +51,8 @@ const NAV_ITEMS = [
   { href: "/admin/fulfillments", label: "متابعة التجهيز", icon: PackageCheck, exact: false },
   { href: "/admin/collections", label: "جمع المنتجات", icon: Truck, exact: false },
   { href: "/admin/warehouse", label: "المستودع", icon: Warehouse, exact: false },
-  { href: "/admin/shipments", label: "الشحنات", icon: Truck, exact: false},
-  { href: "/admin/delivery-persons", label: "أصحاب التوصيل", icon: Truck,exact: false },
+  { href: "/admin/shipments", label: "الشحنات", icon: Truck, exact: false },
+  { href: "/admin/delivery-persons", label: "أصحاب التوصيل", icon: Truck, exact: false },
   { href: "/admin/settings/shipping", label: "إعدادات المتجر", icon: Settings, exact: false },
   { href: "/admin/wallet", label: "محفظة المنصة", icon: Wallet, exact: false },
   { href: "/admin/withdrawals", label: "طلبات السحب", icon: Wallet, exact: false },
@@ -72,6 +69,12 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setMobileOpen(true);
+    window.addEventListener("openSidebar", handler);
+    return () => window.removeEventListener("openSidebar", handler);
+  }, []);
 
   async function handleLogout() {
     try {
@@ -90,14 +93,6 @@ export default function AdminSidebar({ userName, userRole }: AdminSidebarProps) 
 
   return (
     <>
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed right-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md lg:hidden"
-        aria-label="القائمة"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
