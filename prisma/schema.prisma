@@ -325,6 +325,31 @@ enum DistrictType {
 }
 
 // ============================================
+// CATALOG v2 — Product Type & Units
+// ============================================
+
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+  SERVICE
+}
+
+enum ProductUnit {
+  PIECE
+  PAIR
+  SET
+  PACK
+  BOX
+  KG
+  GRAM
+  LITER
+  ML
+  METER
+  M2
+  M3
+}
+
+// ============================================
 // GROUP 1 — IDENTITY
 // User, Address, Session, Seller
 // ============================================
@@ -558,6 +583,10 @@ model Category {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
+  // ═══ Catalog v2 ═══
+  level   Int     @default(1)
+  isLeaf  Boolean @default(false)
+
   parent     Category?           @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children   Category[]          @relation("CategoryHierarchy")
   products   Product[]
@@ -590,6 +619,23 @@ model Product {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   deletedAt    DateTime?
+
+  // ═══ Catalog v2 ═══
+  productType        ProductType  @default(PHYSICAL)
+  originCountry      String?
+  videoUrl           String?
+  salePrice          Decimal?     @db.Decimal(10, 2)
+  minOrderQty        Int          @default(1)
+  maxOrderQty        Int?
+  weightGrams        Int?
+  lengthCm           Decimal?     @db.Decimal(6, 2)
+  widthCm            Decimal?     @db.Decimal(6, 2)
+  heightCm           Decimal?     @db.Decimal(6, 2)
+  unit               ProductUnit  @default(PIECE)
+  requiresColdChain  Boolean      @default(false)
+  requiresLicense    Boolean      @default(false)
+  licenseNote        String?
+  specifications     ProductSpecification[]
 
   seller     Seller           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
   category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -1468,6 +1514,9 @@ model CategoryAttribute {
 
   category Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   values   CategoryAttributeValue[]
+  productSpecs ProductSpecification[]
+  isSpecification Boolean @default(false)
+  helpText String?
 
   @@unique([categoryId, slug])
   @@index([categoryId])
@@ -2536,4 +2585,25 @@ model SellerStaffPermission {
 
   @@unique([staffId, permissionKey])
   @@index([staffId])
+}
+
+// ============================================
+// CATALOG v2 — Product Specifications
+// ============================================
+
+model ProductSpecification {
+  id           Int      @id @default(autoincrement())
+  productId    Int
+  attributeId  Int
+  value        String
+  numericValue Decimal? @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attribute CategoryAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, attributeId])
+  @@index([productId])
+  @@index([attributeId])
+  @@index([numericValue])
 }
