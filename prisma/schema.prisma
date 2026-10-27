@@ -583,6 +583,8 @@ model Product {
   sold         Int           @default(0)
   freeShipping Boolean       @default(false)
   status       ProductStatus @default(DRAFT)
+  pendingOwnerApproval Boolean @default(false)
+  createdByStaffId     Int?
   isFeatured   Boolean       @default(false)
   isNew        Boolean       @default(false)
   createdAt    DateTime      @default(now())

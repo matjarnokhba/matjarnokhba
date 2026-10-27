@@ -97,6 +97,12 @@ export default async function SellerLayout({
       href: "/seller/returns-batches",
       icon: "batches" as const,
     },
+    {
+      countKey: "productsPendingOwnerApproval",
+      label: "منتجات بانتظار الموافقة",
+      href: "/seller/products/approvals",
+      icon: "products" as const,
+    },
   ];
 
   return (

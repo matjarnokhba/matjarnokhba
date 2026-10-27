@@ -1,27 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { requireStaffPermission } from "@/lib/seller-guards";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current) {
-      return NextResponse.json(
-        { success: false, message: "غير مصرح" },
-        { status: 401 }
-      );
-    }
-    if (!current.user.seller) {
-      return NextResponse.json(
-        { success: false, message: "ليس لديك متجر" },
-        { status: 403 }
-      );
-    }
+    const _sGuard = await requireStaffPermission("SELL_ON_POS");
+    if (!_sGuard.ok) return _sGuard.response;
+    const current = _sGuard.current;
 
-    const sellerId = current.user.seller.id;
+    const sellerId = current.user.seller!.id;
     const { code } = await params;
 
     // ═══ استخراج رقم المنتج إذا كان الكود قصيراً (يبدأ بـ NOKHBA-) ═══

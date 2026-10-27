@@ -21,6 +21,7 @@ export async function GET() {
       fulfillmentsPending,
       returnsToConfirm,
       batchesToConfirm,
+      productsPendingOwnerApproval,
       unreadList,
     ] = await Promise.all([
       prisma.notification.count({ where: { userId, isRead: false } }),
@@ -36,6 +37,9 @@ export async function GET() {
       }),
       prisma.sellerReturnBatch.count({
         where: { sellerId, status: "PICKED_UP" },
+      }),
+      prisma.product.count({
+        where: { sellerId, pendingOwnerApproval: true, deletedAt: null },
       }),
       prisma.notification.findMany({
         where: { userId, isRead: false },
@@ -59,6 +63,7 @@ export async function GET() {
         fulfillmentsPending,
         returnsToConfirm,
         batchesToConfirm,
+        productsPendingOwnerApproval,
       },
       notificationsList: unreadList,
     });

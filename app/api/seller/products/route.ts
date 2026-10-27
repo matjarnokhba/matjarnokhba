@@ -234,9 +234,14 @@ export async function POST(request: Request) {
     // ═══ إنشاء المنتج ═══
     const product = await prisma.$transaction(
       async (tx) => {
+        const _pCur = await SessionService.getCurrent();
+        const _pIsStaff = _pCur ? !_pCur.user.isSellerOwner : false;
+        const _pStaffId = _pCur?.user.staffId ?? null;
         const p = await tx.product.create({
           data: {
             sellerId: auth.seller.id,
+            pendingOwnerApproval: _pIsStaff,
+            createdByStaffId: _pIsStaff ? _pStaffId : null,
             categoryId: data.categoryId,
             name: data.name,
             slug: cleanSlug,

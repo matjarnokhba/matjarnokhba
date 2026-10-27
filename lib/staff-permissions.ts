@@ -1,4 +1,4 @@
-export const STAFF_PERMISSIONS = {
+﻿export const STAFF_PERMISSIONS = {
   VIEW_PRODUCTS: "VIEW_PRODUCTS",
   MANAGE_PRODUCTS: "MANAGE_PRODUCTS",
   VIEW_ORDERS: "VIEW_ORDERS",
@@ -13,6 +13,7 @@ export const STAFF_PERMISSIONS = {
   VIEW_NOTIFICATIONS: "VIEW_NOTIFICATIONS",
   VIEW_WALLET: "VIEW_WALLET",
   USE_SCANNER: "USE_SCANNER",
+  SELL_ON_POS: "SELL_ON_POS",
   VIEW_QR: "VIEW_QR",
   VIEW_PERFORMANCE: "VIEW_PERFORMANCE",
 } as const;
@@ -49,6 +50,7 @@ export const PERMISSION_LABELS: Record<
   VIEW_NOTIFICATIONS: { label: "عرض الإشعارات", group: "إشعارات" },
   VIEW_WALLET: { label: "عرض المحفظة", group: "محفظة", sensitive: true },
   USE_SCANNER: { label: "استخدام الماسح", group: "أدوات" },
+  SELL_ON_POS: { label: "البيع عبر نقطة البيع (POS)", group: "أدوات", sensitive: true },
   VIEW_QR: { label: "عرض QR", group: "أدوات" },
   VIEW_PERFORMANCE: { label: "عرض الأداء", group: "أداء" },
 };

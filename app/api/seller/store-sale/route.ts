@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { requireStaffPermission } from "@/lib/seller-guards";
 import { InventoryService } from "@/services/inventory.service";
 
 const schema = z.object({
@@ -19,12 +20,11 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current || !current.user.seller) {
-      return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 401 });
-    }
+    const _sGuard = await requireStaffPermission("SELL_ON_POS");
+    if (!_sGuard.ok) return _sGuard.response;
+    const current = _sGuard.current;
 
-    const sellerId = current.user.seller.id;
+    const sellerId = current.user.seller!.id;
     
     // ═══ التحقق من صلاحية الاشتراك ═══
     const seller = await prisma.seller.findUnique({

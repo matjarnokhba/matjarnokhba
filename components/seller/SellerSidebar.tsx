@@ -23,6 +23,7 @@ import {
   BadgeCheck,
   PackageX,
   Users,
+  AlertTriangle,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -46,7 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller", label: "لوحة عامة", icon: LayoutDashboard, exact: true },
   { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false, permission: "VIEW_NOTIFICATIONS" },
   { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false, permission: "VIEW_FULFILLMENTS" },
-  { href: "/seller/scanner", label: "ماسح المنتجات", icon: ScanLine, exact: false, permission: "USE_SCANNER" },
+  { href: "/seller/scanner", label: "نقطة البيع (POS)", icon: ScanLine, exact: false, permission: "SELL_ON_POS" },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permission: "VIEW_PRODUCTS" },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false, ownerOnly: true },
   { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false, ownerOnly: true },
   { href: "/seller/staff", label: "الموظفون", icon: Users, exact: false, ownerOnly: true },
+  { href: "/seller/products/approvals", label: "منتجات بانتظار الموافقة", icon: AlertTriangle, exact: false, ownerOnly: true },
 ];
 
 export default function SellerSidebar({
