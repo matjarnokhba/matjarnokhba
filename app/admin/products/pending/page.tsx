@@ -90,6 +90,18 @@ export default function AdminPendingProductsPage() {
   const [reviewProduct, setReviewProduct] = useState<PendingProduct | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [reviewAction, setReviewAction] = useState<"approve" | "reject">("approve");
+  const [reviewHistory, setReviewHistory] = useState<
+    Array<{
+      id: number;
+      changedFields: string[];
+      oldValues: Record<string, unknown>;
+      newValues: Record<string, unknown>;
+      requiresReapproval: boolean;
+      reason: string | null;
+      createdAt: string;
+    }>
+  >([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -112,6 +124,24 @@ export default function AdminPendingProductsPage() {
     setReviewProduct(p);
     setReviewAction(action);
     setReviewNote("");
+    setReviewHistory([]);
+    loadHistory(p.id);
+  }
+
+  async function loadHistory(productId: number) {
+    setLoadingHistory(true);
+    setReviewHistory([]);
+    try {
+      const res = await fetch(
+        `/api/admin/products/${productId}/history?skip=0&take=10`
+      );
+      const data = await res.json();
+      if (data.success) setReviewHistory(data.logs || []);
+    } catch {
+      // silent
+    } finally {
+      setLoadingHistory(false);
+    }
   }
 
   async function submitReview() {
@@ -499,6 +529,88 @@ export default function AdminPendingProductsPage() {
                   شحن مجاني
                 </div>
               )}
+
+              {/* ═══ Edit History ═══ */}
+              <div className="rounded-lg border border-gray-200 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 text-xs font-black text-gray-700">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    سجل التعديلات ({reviewHistory.length})
+                  </h3>
+                  {reviewHistory.length > 0 && (
+                    <Link
+                      href={`/admin/products/${reviewProduct.id}/history`}
+                      target="_blank"
+                      className="text-[10px] font-bold text-blue-600 hover:underline"
+                    >
+                      عرض الكل ←
+                    </Link>
+                  )}
+                </div>
+
+                {loadingHistory ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#ff5c00]" />
+                  </div>
+                ) : reviewHistory.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 p-3 text-center text-[11px] text-gray-500">
+                    لا توجد تعديلات مسجلة — هذا منتج جديد
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {reviewHistory.slice(0, 5).map((log) => (
+                      <div
+                        key={log.id}
+                        className={`rounded-lg p-2 text-[11px] ring-1 ${
+                          log.requiresReapproval
+                            ? "bg-amber-50 ring-amber-200"
+                            : "bg-gray-50 ring-gray-200"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] text-gray-500">
+                            {new Date(log.createdAt).toLocaleDateString("ar-MA", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          {log.requiresReapproval && (
+                            <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+                              طلب مراجعة
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {log.changedFields.map((f, i) => (
+                            <span
+                              key={i}
+                              className="rounded bg-white px-1.5 py-0.5 text-[9px] font-bold text-gray-700 ring-1 ring-gray-200"
+                            >
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                        {log.reason && (
+                          <div className="mt-1 text-[10px] text-gray-500">
+                            {log.reason}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {reviewHistory.length > 5 && (
+                      <Link
+                        href={`/admin/products/${reviewProduct.id}/history`}
+                        target="_blank"
+                        className="block rounded-lg bg-blue-50 p-2 text-center text-[10px] font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        عرض {reviewHistory.length - 5} تعديل إضافي
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Actions */}
