@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, FolderTree, Check, Loader2, AlertCircle } from "lucide-react";
+import { ChevronLeft, FolderTree, Check, Loader2, AlertCircle, Lock } from "lucide-react";
 import type { Category } from "./types";
 
 type Props = {
@@ -9,9 +9,16 @@ type Props = {
   loading: boolean;
   selectedId: number | null;
   onSelect: (category: Category) => void;
+  readOnly?: boolean;
 };
 
-export default function StepCategory({ categories, loading, selectedId, onSelect }: Props) {
+export default function StepCategory({
+  categories,
+  loading,
+  selectedId,
+  onSelect,
+  readOnly = false,
+}: Props) {
   const [pickedParentId, setPickedParentId] = useState<number | null>(null);
 
   const parents = useMemo(
@@ -20,14 +27,10 @@ export default function StepCategory({ categories, loading, selectedId, onSelect
   );
 
   const children = useMemo(
-    () =>
-      pickedParentId
-        ? categories.filter((c) => c.parentId === pickedParentId)
-        : [],
+    () => (pickedParentId ? categories.filter((c) => c.parentId === pickedParentId) : []),
     [categories, pickedParentId]
   );
 
-  // If a category is already selected, find its parent
   useEffect(() => {
     if (selectedId && !pickedParentId) {
       const sel = categories.find((c) => c.id === selectedId);
@@ -43,6 +46,29 @@ export default function StepCategory({ categories, loading, selectedId, onSelect
     );
   }
 
+  if (readOnly) {
+    const current = categories.find((c) => c.id === selectedId);
+    const parent = current?.parentId
+      ? categories.find((c) => c.id === current.parentId)
+      : null;
+    return (
+      <div className="space-y-4" dir="rtl">
+        <div className="rounded-xl bg-orange-50 p-4 flex items-start gap-2">
+          <Lock className="mt-0.5 h-4 w-4 text-orange-600 shrink-0" />
+          <div>
+            <div className="text-xs text-gray-500">الفئة الحالية</div>
+            <div className="mt-1 text-sm font-black text-gray-900">
+              {parent ? `${parent.name} → ${current?.name}` : current?.name}
+            </div>
+            <div className="mt-2 text-[11px] text-gray-600">
+              لا يمكن تغيير الفئة بعد إنشاء المنتج. لإنشاء منتج في فئة أخرى، احذف هذا وأنشئ منتجًا جديدًا.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4" dir="rtl">
       <div className="rounded-xl bg-blue-50 p-3 text-xs text-blue-800 flex items-start gap-2">
@@ -50,7 +76,6 @@ export default function StepCategory({ categories, loading, selectedId, onSelect
         <p>اختر الفئة الرئيسية ثم الفئة الفرعية. هذا يحدد الحقول والخيارات التي ستظهر لك في الخطوة التالية.</p>
       </div>
 
-      {/* Parents */}
       <div>
         <h3 className="mb-2 flex items-center gap-2 text-sm font-black text-gray-900">
           <FolderTree className="h-4 w-4 text-[#ff5c00]" />
@@ -86,7 +111,6 @@ export default function StepCategory({ categories, loading, selectedId, onSelect
         </div>
       </div>
 
-      {/* Children */}
       {pickedParentId && (
         <div>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-black text-gray-900">
@@ -113,13 +137,9 @@ export default function StepCategory({ categories, loading, selectedId, onSelect
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-gray-900 truncate">
-                        {c.name}
-                      </div>
+                      <div className="text-xs font-bold text-gray-900 truncate">{c.name}</div>
                     </div>
-                    {isSelected && (
-                      <Check className="h-4 w-4 shrink-0 text-green-600" />
-                    )}
+                    {isSelected && <Check className="h-4 w-4 shrink-0 text-green-600" />}
                   </button>
                 );
               })}

@@ -9,19 +9,39 @@ import StepBasicInfo from "./StepBasicInfo";
 import StepPriceStock from "./StepPriceStock";
 import StepReview from "./StepReview";
 import { INITIAL_FORM, generateSlug } from "./types";
-import type {
-  Attribute,
-  Category,
-  ProductFormData,
-  WizardStep,
-} from "./types";
+import type { Attribute, Category, ProductFormData, WizardStep } from "./types";
 
-export default function ProductWizard() {
+type Props = {
+  mode?: "create" | "edit";
+  role?: "seller" | "admin";
+  productId?: number;
+  initialData?: Partial<ProductFormData>;
+  apiUrl?: string;
+  returnUrl?: string;
+  hasVariants?: boolean;
+};
+
+export default function ProductWizard({
+  mode = "create",
+  role = "seller",
+  productId,
+  initialData,
+  apiUrl = "/api/seller/products",
+  returnUrl = "/seller/products",
+  hasVariants = false,
+}: Props) {
   const router = useRouter();
-  const [step, setStep] = useState<WizardStep>(1);
-  const [completed, setCompleted] = useState<WizardStep[]>([]);
+  const isEdit = mode === "edit";
 
-  const [form, setForm] = useState<ProductFormData>(INITIAL_FORM);
+  const [step, setStep] = useState<WizardStep>(isEdit ? 2 : 1);
+  const [completed, setCompleted] = useState<WizardStep[]>(
+    isEdit ? [1, 2, 3] : []
+  );
+
+  const [form, setForm] = useState<ProductFormData>({
+    ...INITIAL_FORM,
+    ...initialData,
+  });
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [attributes, setAttributes] = useState<Attribute[]>([]);
@@ -56,14 +76,15 @@ export default function ProductWizard() {
         const data = await res.json();
         if (data.success) {
           setAttributes(data.attributes);
-          // reset selections
-          setForm((f) => ({ ...f, selectedValues: {}, variantData: {} }));
+          if (!isEdit) {
+            setForm((f) => ({ ...f, selectedValues: {}, variantData: {} }));
+          }
         }
       } finally {
         setLoadingAttrs(false);
       }
     })();
-  }, [form.categoryId]);
+  }, [form.categoryId, isEdit]);
 
   function update<K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) {
     setForm((prev) => {
@@ -76,8 +97,8 @@ export default function ProductWizard() {
   }
 
   function selectCategory(cat: Category) {
+    if (isEdit) return; // locked in edit mode
     if (cat.id < 1) {
-      // parent clicked - clear selection
       update("categoryId", null);
       update("categoryName", "");
       update("categorySlug", "");
@@ -95,11 +116,12 @@ export default function ProductWizard() {
     }
     if (s === 2) {
       if (!form.name.trim() || form.name.trim().length < 2) return "اسم المنتج مطلوب";
-      if (!form.slug.trim()) return "الرابط (slug) مطلوب";
+      if (!isEdit && !form.slug.trim()) return "الرابط (slug) مطلوب";
       if (form.imageUrls.length === 0) return "أضف صورة واحدة على الأقل";
       return null;
     }
     if (s === 3) {
+      if (isEdit && hasVariants) return null; // price/stock locked
       if (!form.price || Number(form.price) <= 0) return "السعر مطلوب";
       return null;
     }
@@ -135,36 +157,60 @@ export default function ProductWizard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/seller/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
+      const basePayload: Record<string, unknown> = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        brand: form.brand.trim() || null,
+        badge: form.badge.trim() || null,
+        categoryId: form.categoryId,
+        freeShipping: form.freeShipping,
+        imageUrls: form.imageUrls,
+        originCountry: form.originCountry.trim() || null,
+        videoUrl: form.videoUrl.trim() || null,
+        minOrderQty: form.minOrderQty ? Number(form.minOrderQty) : 1,
+        maxOrderQty: form.maxOrderQty ? Number(form.maxOrderQty) : null,
+      };
+
+      let payload: Record<string, unknown>;
+      let url: string;
+      let method: "POST" | "PATCH";
+
+      if (isEdit) {
+        payload = { ...basePayload };
+        if (!hasVariants) {
+          payload.price = Number(form.price);
+          payload.oldPrice = form.oldPrice ? Number(form.oldPrice) : null;
+          payload.stock = Number(form.stock) || 0;
+          payload.barcode = form.barcode.trim() || null;
+        }
+        url = `${apiUrl}/${productId}`;
+        method = "PATCH";
+      } else {
+        payload = {
+          ...basePayload,
           slug: form.slug.trim(),
-          description: form.description.trim() || null,
-          brand: form.brand.trim() || null,
-          badge: form.badge.trim() || null,
-          categoryId: form.categoryId,
           price: Number(form.price),
           oldPrice: form.oldPrice ? Number(form.oldPrice) : null,
           stock: Number(form.stock) || 0,
-          freeShipping: form.freeShipping,
-          imageUrls: form.imageUrls,
           barcode: form.barcode.trim() || null,
           selectedValues: form.selectedValues,
           variantData: form.variantData,
-          originCountry: form.originCountry.trim() || null,
-          videoUrl: form.videoUrl.trim() || null,
-          minOrderQty: form.minOrderQty ? Number(form.minOrderQty) : 1,
-          maxOrderQty: form.maxOrderQty ? Number(form.maxOrderQty) : null,
-        }),
+        };
+        url = apiUrl;
+        method = "POST";
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setError(data.message || "فشل حفظ المنتج");
         return;
       }
-      router.push("/seller/products");
+      router.push(returnUrl);
       router.refresh();
     } catch {
       setError("فشل الاتصال بالخادم");
@@ -189,6 +235,7 @@ export default function ProductWizard() {
             loading={loadingCats}
             selectedId={form.categoryId}
             onSelect={selectCategory}
+            readOnly={isEdit}
           />
         )}
 
@@ -197,6 +244,7 @@ export default function ProductWizard() {
             form={form}
             update={update}
             categoryName={category?.name || form.categoryName}
+            isEdit={isEdit}
           />
         )}
 
@@ -206,6 +254,8 @@ export default function ProductWizard() {
             update={update}
             attributes={attributes}
             loading={loadingAttrs}
+            hideVariantAxes={isEdit && hasVariants}
+            lockPriceStock={isEdit && hasVariants}
           />
         )}
 
@@ -252,7 +302,7 @@ export default function ProductWizard() {
               className="flex items-center gap-2 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-green-700 disabled:opacity-50"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              حفظ المنتج
+              {isEdit ? "حفظ التعديلات" : "حفظ المنتج"}
             </button>
           )}
         </div>

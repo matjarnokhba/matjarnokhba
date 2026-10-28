@@ -9,9 +9,10 @@ type Props = {
   form: ProductFormData;
   update: <K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) => void;
   categoryName: string;
+  isEdit?: boolean;
 };
 
-export default function StepBasicInfo({ form, update, categoryName }: Props) {
+export default function StepBasicInfo({ form, update, categoryName, isEdit = false }: Props) {
   return (
     <div className="space-y-4" dir="rtl">
       <div className="rounded-lg bg-orange-50 px-3 py-2 text-xs font-bold text-orange-800">

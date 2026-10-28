@@ -14,14 +14,18 @@ export async function GET(
         { status: 401 }
       );
     }
-    if (!current.user.seller) {
+
+    const isAdmin =
+      current.user.role === "ADMIN" || current.user.role === "SUPER_ADMIN";
+
+    if (!current.user.seller && !isAdmin) {
       return NextResponse.json(
         { success: false, message: "ليس لديك متجر" },
         { status: 403 }
       );
     }
 
-    const sellerId = current.user.seller.id;
+    const sellerId = current.user.seller?.id ?? null;
     const { id } = await params;
     const categoryId = parseInt(id);
 
@@ -32,10 +36,13 @@ export async function GET(
         values: {
           where: {
             isActive: true,
-            OR: [
-              { sellerId: null, status: "APPROVED" },
-              { sellerId },
-            ],
+            OR:
+              sellerId !== null
+                ? [
+                    { sellerId: null, status: "APPROVED" },
+                    { sellerId },
+                  ]
+                : [{ sellerId: null, status: "APPROVED" }],
           },
           orderBy: { order: "asc" },
         },
@@ -58,7 +65,7 @@ export async function GET(
           slug: v.slug,
           colorHex: v.colorHex,
           status: v.status,
-          isOwn: v.sellerId === sellerId,
+          isOwn: sellerId !== null && v.sellerId === sellerId,
         })),
       })),
     });

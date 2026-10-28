@@ -12,7 +12,10 @@ export async function GET() {
       );
     }
 
-    if (!current.user.seller) {
+    const isAdmin =
+      current.user.role === "ADMIN" || current.user.role === "SUPER_ADMIN";
+
+    if (!current.user.seller && !isAdmin) {
       return NextResponse.json(
         { success: false, message: "ليس لديك متجر" },
         { status: 403 }
