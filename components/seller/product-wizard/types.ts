@@ -32,6 +32,7 @@ export type ExistingVariant = {
   id: number;
   price: number;
   stock: number;
+  reservedQuantity: number;
   barcode: string;
   isDefault: boolean;
   options: {
@@ -62,6 +63,7 @@ export type ProductFormData = {
   price: string;
   oldPrice: string;
   stock: string;
+  reservedQuantity: number;
   barcode: string;
   freeShipping: boolean;
   minOrderQty: string;
@@ -70,6 +72,7 @@ export type ProductFormData = {
   selectedValues: Record<number, number[]>;
   variantData: Record<string, { price: number; stock: number }>;
   existingVariants?: ExistingVariant[];
+  expectedUpdatedAt?: string;
 };
 
 export const INITIAL_FORM: ProductFormData = {
@@ -87,6 +90,7 @@ export const INITIAL_FORM: ProductFormData = {
   price: "",
   oldPrice: "",
   stock: "0",
+  reservedQuantity: 0,
   barcode: "",
   freeShipping: false,
   minOrderQty: "1",

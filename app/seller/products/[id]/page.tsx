@@ -27,8 +27,10 @@ type ProductData = {
   minOrderQty: number;
   maxOrderQty: number | null;
   hasVariants: boolean;
+  status: string;
   variants: ExistingVariant[];
   selectedValues: Record<number, number[]>;
+  updatedAt: string;
 };
 
 export default function EditSellerProductPage() {
@@ -69,7 +71,9 @@ export default function EditSellerProductPage() {
       <div className="p-4 pt-16 lg:p-8 lg:pt-8">
         <div className="mx-auto max-w-md rounded-xl bg-red-50 p-6 text-center">
           <AlertCircle className="mx-auto h-10 w-10 text-red-600" />
-          <p className="mt-3 text-sm font-bold text-red-700">{error || "المنتج غير موجود"}</p>
+          <p className="mt-3 text-sm font-bold text-red-700">
+            {error || "المنتج غير موجود"}
+          </p>
           <Link
             href="/seller/products"
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-sm font-bold text-white hover:bg-[#e64a00]"
@@ -81,6 +85,9 @@ export default function EditSellerProductPage() {
       </div>
     );
   }
+
+  const defaultVariant =
+    data.variants.find((v) => v.isDefault) || data.variants[0];
 
   return (
     <div className="w-full max-w-full overflow-x-hidden px-3 pb-8 pt-16 sm:px-4 lg:px-8 lg:pt-8">
@@ -104,6 +111,7 @@ export default function EditSellerProductPage() {
         apiUrl="/api/seller/products"
         returnUrl="/seller/products"
         hasVariants={data.hasVariants}
+        productStatus={data.status}
         initialData={{
           categoryId: data.categoryId,
           categoryName: data.categoryName,
@@ -116,16 +124,18 @@ export default function EditSellerProductPage() {
           originCountry: data.originCountry || "",
           videoUrl: data.videoUrl || "",
           imageUrls: data.imageUrls,
-          price: data.price.toString(),
+          price: defaultVariant ? defaultVariant.price.toString() : "0",
           oldPrice: data.oldPrice ? data.oldPrice.toString() : "",
-          stock: data.stock.toString(),
-          barcode: data.barcode || "",
+          stock: defaultVariant ? defaultVariant.stock.toString() : "0",
+          reservedQuantity: defaultVariant?.reservedQuantity || 0,
+          barcode: defaultVariant?.barcode || data.barcode || "",
           freeShipping: data.freeShipping,
           minOrderQty: data.minOrderQty.toString(),
           maxOrderQty: data.maxOrderQty ? data.maxOrderQty.toString() : "",
           selectedValues: data.selectedValues || {},
           variantData: {},
           existingVariants: data.variants || [],
+          expectedUpdatedAt: data.updatedAt,
         }}
       />
     </div>

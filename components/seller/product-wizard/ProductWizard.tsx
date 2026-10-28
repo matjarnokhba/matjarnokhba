@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, ArrowRight, ArrowLeft, AlertCircle } from "lucide-react";
+import { Loader2, Save, ArrowRight, ArrowLeft, AlertCircle, CheckCircle2, AlertTriangle } from "lucide-react";
 import WizardStepper from "./WizardStepper";
 import StepCategory from "./StepCategory";
 import StepBasicInfo from "./StepBasicInfo";
@@ -19,6 +19,7 @@ type Props = {
   apiUrl?: string;
   returnUrl?: string;
   hasVariants?: boolean;
+  productStatus?: string;
 };
 
 export default function ProductWizard({
@@ -29,6 +30,7 @@ export default function ProductWizard({
   apiUrl = "/api/seller/products",
   returnUrl = "/seller/products",
   hasVariants = false,
+  productStatus,
 }: Props) {
   const router = useRouter();
   const isEdit = mode === "edit";
@@ -48,6 +50,8 @@ export default function ProductWizard({
   const [loadingAttrs, setLoadingAttrs] = useState(false);
 
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -119,15 +123,28 @@ export default function ProductWizard({
       return null;
     }
     if (s === 3) {
-      // Edit mode with variants: validate each variant
+      // Edit + variants: check each variant
       if (isEdit && hasVariants && form.existingVariants) {
-        for (const v of form.existingVariants) {
-          if (!v.price || v.price <= 0) return "كل متغير يجب أن يكون له سعر";
-          if (v.stock < 0) return "المخزون لا يمكن أن يكون سالبًا";
+        for (let i = 0; i < form.existingVariants.length; i++) {
+          const v = form.existingVariants[i];
+          if (!v.price || v.price <= 0) {
+            return `المتغير #${i + 1}: السعر مطلوب`;
+          }
+          if (v.stock < 0) {
+            return `المتغير #${i + 1}: المخزون لا يمكن أن يكون سالبًا`;
+          }
+          if (v.stock < v.reservedQuantity) {
+            return `المتغير #${i + 1}: لا يمكن تخفيض المخزون تحت الكمية المحجوزة (${v.reservedQuantity})`;
+          }
         }
         return null;
       }
+
+      // Base pricing
       if (!form.price || Number(form.price) <= 0) return "السعر مطلوب";
+      if (isEdit && form.reservedQuantity > 0 && Number(form.stock) < form.reservedQuantity) {
+        return `لا يمكن تخفيض المخزون إلى ${form.stock}. هناك ${form.reservedQuantity} قطعة محجوزة لطلبات حالية.`;
+      }
       return null;
     }
     return null;
@@ -135,6 +152,7 @@ export default function ProductWizard({
 
   function nextStep() {
     setError("");
+    setErrorCode(null);
     const err = validateStep(step);
     if (err) { setError(err); return; }
     setCompleted((c) => Array.from(new Set([...c, step])));
@@ -143,18 +161,22 @@ export default function ProductWizard({
 
   function prevStep() {
     setError("");
+    setErrorCode(null);
     if (step > 1) setStep((step - 1) as WizardStep);
   }
 
   function goToStep(s: WizardStep) {
     if (s < step || completed.includes(s)) {
       setError("");
+      setErrorCode(null);
       setStep(s);
     }
   }
 
   async function submit() {
     setError("");
+    setErrorCode(null);
+    setSuccessMsg("");
     for (const s of [1, 2, 3] as WizardStep[]) {
       const err = validateStep(s);
       if (err) { setStep(s); setError(err); return; }
@@ -182,6 +204,9 @@ export default function ProductWizard({
 
       if (isEdit) {
         payload = { ...basePayload };
+        if (form.expectedUpdatedAt) {
+          payload.expectedUpdatedAt = form.expectedUpdatedAt;
+        }
         if (hasVariants && form.existingVariants) {
           payload.variants = form.existingVariants.map((v) => ({
             id: v.id,
@@ -218,10 +243,34 @@ export default function ProductWizard({
         body: JSON.stringify(payload),
       });
       const data = await res.json();
+
+      // Handle 409 stale version
+      if (res.status === 409 || data.code === "STALE_VERSION") {
+        setError(
+          "⚠️ المنتج تم تعديله في مكان آخر. أعد تحميل الصفحة لرؤية آخر تغييرات ثم أعد المحاولة."
+        );
+        setErrorCode("STALE_VERSION");
+        return;
+      }
+
       if (!res.ok || !data.success) {
         setError(data.message || "فشل حفظ المنتج");
         return;
       }
+
+      // Success with re-approval
+      if (isEdit && data.product?.requiresReapproval) {
+        setSuccessMsg(
+          "✅ تم الحفظ. لأنك عدّلت حقلًا حساسًا على منتج منشور، أعيد إلى \"قيد المراجعة\"."
+        );
+        setTimeout(() => {
+          router.push(returnUrl);
+          router.refresh();
+        }, 2000);
+        return;
+      }
+
+      // Normal success
       router.push(returnUrl);
       router.refresh();
     } catch {
@@ -267,6 +316,7 @@ export default function ProductWizard({
             attributes={attributes}
             loading={loadingAttrs}
             isEdit={isEdit}
+            productStatus={productStatus}
           />
         )}
 
@@ -279,9 +329,22 @@ export default function ProductWizard({
         )}
 
         {error && (
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            className={`mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
+              errorCode === "STALE_VERSION"
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{successMsg}</span>
           </div>
         )}
 

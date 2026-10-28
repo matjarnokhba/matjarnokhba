@@ -23,14 +23,18 @@ export default async function EditAdminProductPage({
       variants: {
         orderBy: { id: "asc" },
         include: {
-          inventory: { select: { quantity: true } },
+          inventory: {
+            select: { quantity: true, reservedQuantity: true },
+          },
           optionValues: {
             select: {
               optionValue: {
                 select: {
                   id: true,
                   value: true,
-                  option: { select: { id: true, name: true, categoryAttributeId: true } },
+                  option: {
+                    select: { id: true, name: true, categoryAttributeId: true },
+                  },
                 },
               },
             },
@@ -50,6 +54,7 @@ export default async function EditAdminProductPage({
     id: v.id,
     price: Number(v.price),
     stock: v.inventory?.quantity || 0,
+    reservedQuantity: v.inventory?.reservedQuantity || 0,
     barcode: v.barcode || "",
     isDefault: v.isDefault,
     options: v.optionValues.map((ov) => ({
@@ -82,6 +87,7 @@ export default async function EditAdminProductPage({
         apiUrl="/api/admin/products"
         returnUrl="/admin/products"
         hasVariants={hasVariants}
+        productStatus={product.status}
         initialData={{
           categoryId: product.categoryId,
           categoryName: product.category?.name || "",
@@ -99,6 +105,7 @@ export default async function EditAdminProductPage({
             ? Number(defaultVariant.discountPrice).toString()
             : "",
           stock: defaultVariant?.inventory?.quantity?.toString() || "0",
+          reservedQuantity: defaultVariant?.inventory?.reservedQuantity || 0,
           barcode: defaultVariant?.barcode || "",
           freeShipping: product.freeShipping,
           minOrderQty: product.minOrderQty.toString(),
@@ -106,6 +113,7 @@ export default async function EditAdminProductPage({
           selectedValues: {},
           variantData: {},
           existingVariants: variantsData,
+          expectedUpdatedAt: product.updatedAt.toISOString(),
         }}
       />
     </div>

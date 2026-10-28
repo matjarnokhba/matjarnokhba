@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Barcode, Loader2, Info, Layers } from "lucide-react";
+import { Barcode, Loader2, Info, Layers, AlertTriangle, Lock } from "lucide-react";
 import type { Attribute, ExistingVariant, ProductFormData } from "./types";
 
 type Props = {
@@ -10,6 +10,7 @@ type Props = {
   attributes: Attribute[];
   loading: boolean;
   isEdit?: boolean;
+  productStatus?: string;
 };
 
 type ComboRow = {
@@ -56,6 +57,7 @@ export default function StepPriceStock({
   attributes,
   loading,
   isEdit = false,
+  productStatus,
 }: Props) {
   const [editVariants, setEditVariants] = useState<ExistingVariant[]>(
     form.existingVariants || []
@@ -73,9 +75,22 @@ export default function StepPriceStock({
   const hasExistingVariants = isEdit && editVariants.length > 1;
 
   const combos = useMemo(
-    () => (hasExistingVariants ? [] : buildCombinations(variantAttrs, form.selectedValues)),
+    () =>
+      hasExistingVariants
+        ? []
+        : buildCombinations(variantAttrs, form.selectedValues),
     [variantAttrs, form.selectedValues, hasExistingVariants]
   );
+
+  // Validation: variant stock < reserved
+  const invalidVariants = editVariants.filter(
+    (v) => v.stock < v.reservedQuantity
+  );
+  const hasInvalidVariant = invalidVariants.length > 0;
+
+  // Validation: base stock < reserved (no variants case)
+  const baseInvalid =
+    !hasExistingVariants && form.reservedQuantity > 0 && Number(form.stock) < form.reservedQuantity;
 
   function toggleValue(attrId: number, valueId: number) {
     const current = form.selectedValues[attrId] || [];
@@ -93,11 +108,13 @@ export default function StepPriceStock({
     });
   }
 
-  function updateExistingVariant(id: number, field: "price" | "stock" | "barcode", value: number | string) {
+  function updateExistingVariant(
+    id: number,
+    field: "price" | "stock" | "barcode",
+    value: number | string
+  ) {
     setEditVariants((prev) => {
-      const next = prev.map((v) =>
-        v.id === id ? { ...v, [field]: value } : v
-      );
+      const next = prev.map((v) => (v.id === id ? { ...v, [field]: value } : v));
       update("existingVariants", next);
       return next;
     });
@@ -105,7 +122,20 @@ export default function StepPriceStock({
 
   return (
     <div className="space-y-4" dir="rtl">
-      {/* ═══ Edit mode with variants ═══ */}
+      {/* Status warning for ACTIVE product edit */}
+      {isEdit && productStatus === "ACTIVE" && (
+        <div className="rounded-xl bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-bold">المنتج منشور حاليًا</div>
+            <div className="mt-0.5 text-[11px]">
+              تعديل <strong>الاسم / الوصف / الصور / الماركة / الفئة</strong> في الخطوة 2 سيعيد المنتج إلى حالة &quot;قيد المراجعة&quot;. تعديل السعر/المخزون/الباركود فقط لا يؤثر.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit mode with variants */}
       {hasExistingVariants && (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <h3 className="mb-1 flex items-center gap-2 text-sm font-black text-gray-900">
@@ -125,82 +155,136 @@ export default function StepPriceStock({
                   <th className="px-2 py-2 text-right font-bold text-gray-600">التركيبة</th>
                   <th className="px-2 py-2 text-right font-bold text-gray-600">السعر *</th>
                   <th className="px-2 py-2 text-right font-bold text-gray-600">المخزون *</th>
+                  <th className="px-2 py-2 text-right font-bold text-gray-600">محجوز</th>
                   <th className="px-2 py-2 text-right font-bold text-gray-600">الباركود</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {editVariants.map((v, idx) => (
-                  <tr key={v.id}>
-                    <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
-                    <td className="px-2 py-1.5">
-                      <div className="flex flex-wrap gap-1">
-                        {v.options.length > 0 ? (
-                          v.options.map((o, i) => (
-                            <span
-                              key={i}
-                              className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-700"
-                            >
-                              {o.attributeName}: {o.value}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-gray-400">افتراضي</span>
+                {editVariants.map((v, idx) => {
+                  const isInvalid = v.stock < v.reservedQuantity;
+                  return (
+                    <tr
+                      key={v.id}
+                      className={isInvalid ? "bg-red-50" : ""}
+                    >
+                      <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex flex-wrap gap-1">
+                          {v.options.length > 0 ? (
+                            v.options.map((o, i) => (
+                              <span
+                                key={i}
+                                className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-700"
+                              >
+                                {o.attributeName}: {o.value}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-gray-400">افتراضي</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={v.price}
+                          onChange={(e) =>
+                            updateExistingVariant(
+                              v.id,
+                              "price",
+                              Number(e.target.value) || 0
+                            )
+                          }
+                          min="0.01"
+                          step="0.01"
+                          className="w-24 rounded border border-gray-200 px-2 py-1 text-xs outline-none focus:border-[#ff5c00]"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={v.stock}
+                          onChange={(e) =>
+                            updateExistingVariant(
+                              v.id,
+                              "stock",
+                              Number(e.target.value) || 0
+                            )
+                          }
+                          min="0"
+                          className={`w-20 rounded border px-2 py-1 text-xs outline-none focus:border-[#ff5c00] ${
+                            isInvalid
+                              ? "border-red-400 bg-red-50"
+                              : "border-gray-200"
+                          }`}
+                        />
+                        {isInvalid && (
+                          <div className="mt-0.5 text-[9px] font-bold text-red-600">
+                            أقل من المحجوز!
+                          </div>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        value={v.price}
-                        onChange={(e) =>
-                          updateExistingVariant(v.id, "price", Number(e.target.value) || 0)
-                        }
-                        min="0.01"
-                        step="0.01"
-                        className="w-24 rounded border border-gray-200 px-2 py-1 text-xs outline-none focus:border-[#ff5c00]"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        value={v.stock}
-                        onChange={(e) =>
-                          updateExistingVariant(v.id, "stock", Number(e.target.value) || 0)
-                        }
-                        min="0"
-                        className="w-20 rounded border border-gray-200 px-2 py-1 text-xs outline-none focus:border-[#ff5c00]"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="text"
-                        value={v.barcode || ""}
-                        onChange={(e) =>
-                          updateExistingVariant(v.id, "barcode", e.target.value)
-                        }
-                        placeholder="تلقائي"
-                        dir="ltr"
-                        className="w-32 rounded border border-gray-200 px-2 py-1 font-mono text-[11px] outline-none focus:border-[#ff5c00]"
-                      />
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {v.reservedQuantity > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                            <Lock className="h-2.5 w-2.5" />
+                            {v.reservedQuantity}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="text"
+                          value={v.barcode || ""}
+                          onChange={(e) =>
+                            updateExistingVariant(v.id, "barcode", e.target.value)
+                          }
+                          placeholder="تلقائي"
+                          dir="ltr"
+                          className="w-32 rounded border border-gray-200 px-2 py-1 font-mono text-[11px] outline-none focus:border-[#ff5c00]"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           <div className="mt-2 rounded-lg bg-blue-50 p-2 text-[10px] text-blue-800">
-            💡 لإضافة/حذف قيم جديدة، يجب حذف المنتج وإعادة إنشائه (لتجنب فقدان بيانات الطلبات المرتبطة).
+            💡 لتعديل القيم (المقاس/اللون)، يجب حذف المنتج وإعادة إنشائه — حفاظًا على بيانات الطلبات.
           </div>
+
+          {hasInvalidVariant && (
+            <div className="mt-2 rounded-lg bg-red-50 p-2 text-[11px] font-bold text-red-700">
+              ⚠️ لا يمكن تخفيض مخزون متغيرات لها قطع محجوزة. عدّل المخزون أو انتظر تسليم الطلبات أولًا.
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══ Base pricing — hidden in edit+variants ═══ */}
+      {/* Base pricing */}
       {!hasExistingVariants && (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-black text-gray-900">
-            {isEdit ? "السعر والمخزون الأساسي" : "السعر والمخزون"}
+          <h3 className="mb-3 flex items-center justify-between text-sm font-black text-gray-900">
+            <span>{isEdit ? "السعر والمخزون الأساسي" : "السعر والمخزون"}</span>
+            {form.reservedQuantity > 0 && (
+              <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                <Lock className="h-2.5 w-2.5" />
+                محجوز: {form.reservedQuantity}
+              </span>
+            )}
           </h3>
+
+          <div className="mb-2 rounded-lg bg-blue-50 p-2 text-[10px] text-blue-800 flex items-start gap-1.5">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>
+              تغيير السعر يؤثر على <strong>الطلبات الجديدة فقط</strong>. الطلبات الحالية تحتفظ بالسعر الأصلي تلقائيًا.
+            </span>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-bold text-gray-700">
@@ -244,8 +328,17 @@ export default function StepPriceStock({
                 onChange={(e) => update("stock", e.target.value)}
                 min="0"
                 placeholder="50"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
+                className={`w-full rounded-lg border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:bg-white ${
+                  baseInvalid
+                    ? "border-red-400 focus:border-red-500"
+                    : "border-gray-200 focus:border-[#ff5c00]"
+                }`}
               />
+              {baseInvalid && (
+                <div className="mt-1 text-[10px] font-bold text-red-600">
+                  أقل من المحجوز ({form.reservedQuantity})!
+                </div>
+              )}
             </div>
           </div>
 
@@ -266,7 +359,7 @@ export default function StepPriceStock({
         </div>
       )}
 
-      {/* Common fields (always visible) */}
+      {/* Common fields */}
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -304,7 +397,7 @@ export default function StepPriceStock({
         </label>
       </div>
 
-      {/* ═══ Create mode — variant axes ═══ */}
+      {/* Create mode — variant axes */}
       {!isEdit && (
         <>
           {loading ? (
