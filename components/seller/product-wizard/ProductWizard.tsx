@@ -50,7 +50,6 @@ export default function ProductWizard({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Load categories
   useEffect(() => {
     (async () => {
       try {
@@ -63,7 +62,6 @@ export default function ProductWizard({
     })();
   }, []);
 
-  // Load attributes when category changes
   useEffect(() => {
     if (!form.categoryId || form.categoryId < 1) {
       setAttributes([]);
@@ -97,7 +95,7 @@ export default function ProductWizard({
   }
 
   function selectCategory(cat: Category) {
-    if (isEdit) return; // locked in edit mode
+    if (isEdit) return;
     if (cat.id < 1) {
       update("categoryId", null);
       update("categoryName", "");
@@ -121,7 +119,14 @@ export default function ProductWizard({
       return null;
     }
     if (s === 3) {
-      if (isEdit && hasVariants) return null; // price/stock locked
+      // Edit mode with variants: validate each variant
+      if (isEdit && hasVariants && form.existingVariants) {
+        for (const v of form.existingVariants) {
+          if (!v.price || v.price <= 0) return "كل متغير يجب أن يكون له سعر";
+          if (v.stock < 0) return "المخزون لا يمكن أن يكون سالبًا";
+        }
+        return null;
+      }
       if (!form.price || Number(form.price) <= 0) return "السعر مطلوب";
       return null;
     }
@@ -177,7 +182,14 @@ export default function ProductWizard({
 
       if (isEdit) {
         payload = { ...basePayload };
-        if (!hasVariants) {
+        if (hasVariants && form.existingVariants) {
+          payload.variants = form.existingVariants.map((v) => ({
+            id: v.id,
+            price: v.price,
+            stock: v.stock,
+            barcode: v.barcode || null,
+          }));
+        } else {
           payload.price = Number(form.price);
           payload.oldPrice = form.oldPrice ? Number(form.oldPrice) : null;
           payload.stock = Number(form.stock) || 0;
@@ -254,8 +266,7 @@ export default function ProductWizard({
             update={update}
             attributes={attributes}
             loading={loadingAttrs}
-            hideVariantAxes={isEdit && hasVariants}
-            lockPriceStock={isEdit && hasVariants}
+            isEdit={isEdit}
           />
         )}
 

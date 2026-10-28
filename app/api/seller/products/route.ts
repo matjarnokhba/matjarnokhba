@@ -294,7 +294,7 @@ export async function POST(request: Request) {
               isDefault: true,
               isActive: true,
               optionsHash: "DEFAULT",
-              barcode: data.barcode || null, // <--- حفظ الباركود
+              barcode: data.barcode?.trim() || `NK-${p.id}-0`,
               inventory: {
                 create: {
                   quantity: vStock,
@@ -359,7 +359,7 @@ export async function POST(request: Request) {
             isDefault: c.isDefault,
             isActive: true,
             optionsHash: c.hash,
-            barcode: i === 0 ? (data.barcode || null) : null, // <--- حفظ الباركود للـ variant الأول فقط
+            barcode: i === 0 && data.barcode?.trim() ? data.barcode.trim() : `NK-${p.id}-${i}`, // <--- حفظ الباركود للـ variant الأول فقط
           })),
           select: { id: true },
         });

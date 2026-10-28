@@ -12,6 +12,13 @@ async function requireAdmin() {
   return { user: current.user };
 }
 
+const variantPatchSchema = z.object({
+  id: z.number().int().positive(),
+  price: z.number().positive().optional(),
+  stock: z.number().int().min(0).optional(),
+  barcode: z.string().trim().nullable().optional(),
+});
+
 const patchSchema = z.object({
   name: z.string().trim().min(2).max(200).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
@@ -28,6 +35,7 @@ const patchSchema = z.object({
   minOrderQty: z.number().int().min(1).optional(),
   maxOrderQty: z.number().int().min(1).nullable().optional(),
   barcode: z.string().trim().nullable().optional(),
+  variants: z.array(variantPatchSchema).optional(),
 });
 
 export async function PATCH(
@@ -85,15 +93,31 @@ export async function PATCH(
     }
 
     const hasVariants = product.variants.length > 1;
-    if (hasVariants && (data.price !== undefined || data.stock !== undefined)) {
+
+    if (
+      hasVariants &&
+      (data.price !== undefined || data.stock !== undefined) &&
+      !data.variants
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "لا يمكن تعديل السعر/المخزون الأساسي عند وجود متغيرات متعددة.",
+          message: "عدّل كل variant على حدة.",
         },
         { status: 400 }
       );
+    }
+
+    if (data.variants && data.variants.length > 0) {
+      const productVariantIds = new Set(product.variants.map((v) => v.id));
+      for (const v of data.variants) {
+        if (!productVariantIds.has(v.id)) {
+          return NextResponse.json(
+            { success: false, message: `variant #${v.id} لا ينتمي لهذا المنتج` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -134,6 +158,38 @@ export async function PATCH(
             isMain: i === 0,
           })),
         });
+      }
+
+      if (data.variants && data.variants.length > 0) {
+        for (const vPatch of data.variants) {
+          const variantIdx = product.variants.findIndex((v) => v.id === vPatch.id);
+          const existingVariant = product.variants[variantIdx];
+          const variantUpdate: Record<string, unknown> = {};
+          if (vPatch.price !== undefined) variantUpdate.price = vPatch.price;
+          let finalBc: string;
+          if (vPatch.barcode === undefined) {
+            finalBc = existingVariant?.barcode || `NK-${productId}-${variantIdx}`;
+          } else if (!vPatch.barcode || !vPatch.barcode.trim()) {
+            finalBc = `NK-${productId}-${variantIdx}`;
+          } else {
+            finalBc = vPatch.barcode.trim();
+          }
+          variantUpdate.barcode = finalBc;
+
+          if (Object.keys(variantUpdate).length > 0) {
+            await tx.productVariant.update({
+              where: { id: vPatch.id },
+              data: variantUpdate,
+            });
+          }
+
+          if (vPatch.stock !== undefined) {
+            await tx.inventory.updateMany({
+              where: { variantId: vPatch.id },
+              data: { quantity: vPatch.stock },
+            });
+          }
+        }
       }
 
       if (!hasVariants && product.variants.length > 0) {

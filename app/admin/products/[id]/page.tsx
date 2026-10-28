@@ -19,8 +19,23 @@ export default async function EditAdminProductPage({
     where: { id: productId },
     include: {
       images: { orderBy: { order: "asc" } },
+      category: { select: { name: true } },
       variants: {
-        include: { inventory: { select: { quantity: true } } },
+        orderBy: { id: "asc" },
+        include: {
+          inventory: { select: { quantity: true } },
+          optionValues: {
+            select: {
+              optionValue: {
+                select: {
+                  id: true,
+                  value: true,
+                  option: { select: { id: true, name: true, categoryAttributeId: true } },
+                },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -30,6 +45,20 @@ export default async function EditAdminProductPage({
   const defaultVariant =
     product.variants.find((v) => v.isDefault) || product.variants[0];
   const hasVariants = product.variants.length > 1;
+
+  const variantsData = product.variants.map((v) => ({
+    id: v.id,
+    price: Number(v.price),
+    stock: v.inventory?.quantity || 0,
+    barcode: v.barcode || "",
+    isDefault: v.isDefault,
+    options: v.optionValues.map((ov) => ({
+      attributeId: ov.optionValue.option.categoryAttributeId,
+      attributeName: ov.optionValue.option.name,
+      valueId: ov.optionValue.id,
+      value: ov.optionValue.value,
+    })),
+  }));
 
   return (
     <div className="w-full max-w-full overflow-x-hidden px-3 pb-8 pt-16 sm:px-4 lg:px-8 lg:pt-8">
@@ -55,7 +84,7 @@ export default async function EditAdminProductPage({
         hasVariants={hasVariants}
         initialData={{
           categoryId: product.categoryId,
-          categoryName: "",
+          categoryName: product.category?.name || "",
           categorySlug: "",
           name: product.name,
           slug: product.slug,
@@ -76,6 +105,7 @@ export default async function EditAdminProductPage({
           maxOrderQty: product.maxOrderQty?.toString() || "",
           selectedValues: {},
           variantData: {},
+          existingVariants: variantsData,
         }}
       />
     </div>

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import ProductWizard from "@/components/seller/product-wizard/ProductWizard";
+import type { ExistingVariant } from "@/components/seller/product-wizard/types";
 
 type ProductData = {
   id: number;
@@ -26,6 +27,8 @@ type ProductData = {
   minOrderQty: number;
   maxOrderQty: number | null;
   hasVariants: boolean;
+  variants: ExistingVariant[];
+  selectedValues: Record<number, number[]>;
 };
 
 export default function EditSellerProductPage() {
@@ -120,8 +123,9 @@ export default function EditSellerProductPage() {
           freeShipping: data.freeShipping,
           minOrderQty: data.minOrderQty.toString(),
           maxOrderQty: data.maxOrderQty ? data.maxOrderQty.toString() : "",
-          selectedValues: {},
+          selectedValues: data.selectedValues || {},
           variantData: {},
+          existingVariants: data.variants || [],
         }}
       />
     </div>

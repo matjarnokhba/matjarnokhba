@@ -15,7 +15,20 @@ async function requireSellerProduct(productId: number) {
       category: { select: { name: true } },
       variants: {
         orderBy: { id: "asc" },
-        include: { inventory: { select: { quantity: true } } },
+        include: {
+          inventory: { select: { quantity: true } },
+          optionValues: {
+            select: {
+              optionValue: {
+                select: {
+                  id: true,
+                  value: true,
+                  option: { select: { id: true, name: true, categoryAttributeId: true } },
+                },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -30,7 +43,6 @@ async function requireSellerProduct(productId: number) {
   return { user: current.user, seller: current.user.seller, product };
 }
 
-// GET — لتحميل بيانات التعديل
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -56,6 +68,43 @@ export async function GET(
     const { product } = auth;
     const defaultVariant =
       product.variants.find((v) => v.isDefault) || product.variants[0];
+
+    // بناء variants array
+    const variantsData = product.variants.map((v) => ({
+      id: v.id,
+      price: Number(v.price),
+      stock: v.inventory?.quantity || 0,
+      barcode: v.barcode || "",
+      isDefault: v.isDefault,
+      options: v.optionValues.map((ov) => ({
+        attributeId: ov.optionValue.option.categoryAttributeId,
+        attributeName: ov.optionValue.option.name,
+        valueId: ov.optionValue.id,
+        value: ov.optionValue.value,
+      })),
+    }));
+
+    // بناء selectedValues من variant الأول
+    const firstVariantWithOptions = product.variants.find(
+      (v) => v.optionValues.length > 0
+    );
+    const selectedValues: Record<number, number[]> = {};
+    if (firstVariantWithOptions) {
+      for (const ov of firstVariantWithOptions.optionValues) {
+        const attrId = ov.optionValue.option.categoryAttributeId;
+        if (!attrId) continue;
+        if (!selectedValues[attrId]) selectedValues[attrId] = [];
+        // إضافة جميع القيم الفريدة من كل variants
+        for (const v of product.variants) {
+          const match = v.optionValues.find(
+            (x) => x.optionValue.option.categoryAttributeId === attrId
+          );
+          if (match && !selectedValues[attrId].includes(match.optionValue.id)) {
+            selectedValues[attrId].push(match.optionValue.id);
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -83,6 +132,8 @@ export async function GET(
         maxOrderQty: product.maxOrderQty,
         hasVariants: product.variants.length > 1,
         variantCount: product.variants.length,
+        variants: variantsData,
+        selectedValues,
       },
     });
   } catch (error) {
@@ -93,6 +144,13 @@ export async function GET(
     );
   }
 }
+
+const variantPatchSchema = z.object({
+  id: z.number().int().positive(),
+  price: z.number().positive().optional(),
+  stock: z.number().int().min(0).optional(),
+  barcode: z.string().trim().nullable().optional(),
+});
 
 const patchSchema = z.object({
   name: z.string().trim().min(2).max(200).optional(),
@@ -110,6 +168,7 @@ const patchSchema = z.object({
   minOrderQty: z.number().int().min(1).optional(),
   maxOrderQty: z.number().int().min(1).nullable().optional(),
   barcode: z.string().trim().nullable().optional(),
+  variants: z.array(variantPatchSchema).optional(),
 });
 
 export async function PATCH(
@@ -147,22 +206,25 @@ export async function PATCH(
     }
 
     const data = parsed.data;
-    const { product, seller } = auth;
-
-    // ═══ التحقق: variants متعددة = منع تغيير السعر/المخزون ═══
+    const { product } = auth;
     const hasVariants = product.variants.length > 1;
-    if (hasVariants && (data.price !== undefined || data.stock !== undefined)) {
+
+    // إذا منتج بـ variants متعددة و المستخدم يحاول تعديل السعر/المخزون الأساسي بدون variants
+    if (
+      hasVariants &&
+      (data.price !== undefined || data.stock !== undefined) &&
+      !data.variants
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "لا يمكن تعديل السعر/المخزون الأساسي عند وجود متغيرات. عدّل كل متغير من شاشته.",
+          message: "عدّل كل variant على حدة (استخدم جدول المتغيرات).",
         },
         { status: 400 }
       );
     }
 
-    // ═══ التحقق: categoryId تغيير مع variants = منع ═══
+    // منع تغيير الفئة مع وجود variants
     if (
       data.categoryId !== undefined &&
       data.categoryId !== product.categoryId &&
@@ -177,8 +239,20 @@ export async function PATCH(
       );
     }
 
+    // التحقق: variants المرسلة تنتمي لهذا المنتج
+    if (data.variants && data.variants.length > 0) {
+      const productVariantIds = new Set(product.variants.map((v) => v.id));
+      for (const v of data.variants) {
+        if (!productVariantIds.has(v.id)) {
+          return NextResponse.json(
+            { success: false, message: `variant #${v.id} لا ينتمي لهذا المنتج` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
-      // ═══ تحديث الحقول الأساسية ═══
       const updateData: Record<string, unknown> = {};
       if (data.name !== undefined) updateData.name = data.name.trim();
       if (data.description !== undefined)
@@ -206,7 +280,7 @@ export async function PATCH(
         });
       }
 
-      // ═══ تحديث الصور (استبدال كامل) ═══
+      // تحديث الصور
       if (data.imageUrls !== undefined) {
         await tx.productImage.deleteMany({ where: { productId } });
         await tx.productImage.createMany({
@@ -219,7 +293,40 @@ export async function PATCH(
         });
       }
 
-      // ═══ تحديث default variant (فقط إذا لا توجد variants متعددة) ═══
+      // تحديث variants
+      if (data.variants && data.variants.length > 0) {
+        for (const vPatch of data.variants) {
+          const variantIdx = product.variants.findIndex((v) => v.id === vPatch.id);
+          const existingVariant = product.variants[variantIdx];
+          const variantUpdate: Record<string, unknown> = {};
+          if (vPatch.price !== undefined) variantUpdate.price = vPatch.price;
+          let finalBc: string;
+          if (vPatch.barcode === undefined) {
+            finalBc = existingVariant?.barcode || `NK-${productId}-${variantIdx}`;
+          } else if (!vPatch.barcode || !vPatch.barcode.trim()) {
+            finalBc = `NK-${productId}-${variantIdx}`;
+          } else {
+            finalBc = vPatch.barcode.trim();
+          }
+          variantUpdate.barcode = finalBc;
+
+          if (Object.keys(variantUpdate).length > 0) {
+            await tx.productVariant.update({
+              where: { id: vPatch.id },
+              data: variantUpdate,
+            });
+          }
+
+          if (vPatch.stock !== undefined) {
+            await tx.inventory.updateMany({
+              where: { variantId: vPatch.id },
+              data: { quantity: vPatch.stock },
+            });
+          }
+        }
+      }
+
+      // تحديث default variant (إذا لا توجد variants متعددة)
       if (!hasVariants && product.variants.length > 0) {
         const defaultVariant = product.variants[0];
         const variantUpdate: Record<string, unknown> = {};

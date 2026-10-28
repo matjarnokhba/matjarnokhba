@@ -28,6 +28,20 @@ export type Attribute = {
   values: AttributeValue[];
 };
 
+export type ExistingVariant = {
+  id: number;
+  price: number;
+  stock: number;
+  barcode: string;
+  isDefault: boolean;
+  options: {
+    attributeId: number | null;
+    attributeName: string;
+    valueId: number;
+    value: string;
+  }[];
+};
+
 export type WizardStep = 1 | 2 | 3 | 4;
 
 export type ProductFormData = {
@@ -55,6 +69,7 @@ export type ProductFormData = {
 
   selectedValues: Record<number, number[]>;
   variantData: Record<string, { price: number; stock: number }>;
+  existingVariants?: ExistingVariant[];
 };
 
 export const INITIAL_FORM: ProductFormData = {
@@ -78,9 +93,9 @@ export const INITIAL_FORM: ProductFormData = {
   maxOrderQty: "",
   selectedValues: {},
   variantData: {},
+  existingVariants: [],
 };
 
-// ✅ يدعم العربية + الإنجليزية
 export function generateSlug(text: string): string {
   return text
     .toLowerCase()

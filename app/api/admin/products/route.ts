@@ -266,6 +266,7 @@ export async function POST(request: Request) {
               isDefault: true,
               isActive: true,
               optionsHash: "DEFAULT",
+              barcode: body.barcode?.trim() || `NK-${newProduct.id}-0`,
               inventory: {
                 create: {
                   quantity: d.stock ?? baseStock,
@@ -329,6 +330,7 @@ export async function POST(request: Request) {
             isDefault: c.isDefault,
             isActive: true,
             optionsHash: c.hash,
+            barcode: i === 0 && body.barcode?.trim() ? body.barcode.trim() : `NK-${newProduct.id}-${i}`,
           })),
           select: { id: true },
         });
