@@ -40,7 +40,11 @@ const createSchema = z.object({
   stock: z.number().int().min(0).default(0),
   freeShipping: z.boolean().default(false),
   imageUrls: z.array(z.string().url()).min(1, "صورة واحدة على الأقل مطلوبة").max(5),
-  barcode: z.string().trim().optional().nullable(), // <--- تمت إضافة الباركود هنا
+  barcode: z.string().trim().optional().nullable(),
+  originCountry: z.string().trim().max(80).nullable().optional(),
+  videoUrl: z.string().trim().nullable().optional(),
+  minOrderQty: z.number().int().min(1).default(1),
+  maxOrderQty: z.number().int().min(1).nullable().optional(),
   selectedValues: z.record(z.string(), z.array(z.number())).optional(),
   variantData: z
     .record(
@@ -131,20 +135,29 @@ export async function POST(request: Request) {
       .toLowerCase()
       .trim()
       .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
+      .replace(/[^\w\s\u0600-\u06FF-]/g, "")
+      .replace(/-+/g, "-");
 
-    const existing = await prisma.product.findFirst({
-      where: {
-        sellerId: auth.seller.id,
-        slug: cleanSlug,
-        deletedAt: null,
-      },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { success: false, message: "الرابط (slug) مستخدم في منتجاتك" },
-        { status: 400 }
-      );
+    let finalSlug = cleanSlug;
+    let slugCounter = 1;
+    while (
+      await prisma.product.findFirst({
+        where: {
+          sellerId: auth.seller.id,
+          slug: finalSlug,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+    ) {
+      finalSlug = cleanSlug + "-" + slugCounter;
+      slugCounter++;
+      if (slugCounter > 100) {
+        return NextResponse.json(
+          { success: false, message: "تعذر إنشاء رابط فريد للمنتج" },
+          { status: 400 }
+        );
+      }
     }
 
     // ═══ التحقق من الباركود مسبقاً إن وُجد ═══
@@ -244,10 +257,14 @@ export async function POST(request: Request) {
             createdByStaffId: _pIsStaff ? _pStaffId : null,
             categoryId: data.categoryId,
             name: data.name,
-            slug: cleanSlug,
+            slug: finalSlug,
             description: data.description || null,
             brand: data.brand || null,
             badge: data.badge || null,
+            originCountry: data.originCountry || null,
+            videoUrl: data.videoUrl || null,
+            minOrderQty: data.minOrderQty,
+            maxOrderQty: data.maxOrderQty || null,
             freeShipping: data.freeShipping,
             status: "DRAFT",
             images: {
@@ -270,7 +287,7 @@ export async function POST(request: Request) {
             data: {
               productId: p.id,
               sellerId: auth.seller.id,
-              sku: `${cleanSlug}-default-${Date.now()}`,
+              sku: `${finalSlug}-default-${Date.now()}`,
               price: vPrice,
               originalPrice: data.price,
               discountPrice: data.oldPrice || null,
@@ -335,7 +352,7 @@ export async function POST(request: Request) {
           data: comboData.map((c, i) => ({
             productId: p.id,
             sellerId: auth.seller.id,
-            sku: `${cleanSlug}-${i}-${ts}`,
+            sku: `${finalSlug}-${i}-${ts}`,
             price: c.price,
             originalPrice: data.price,
             discountPrice: data.oldPrice || null,

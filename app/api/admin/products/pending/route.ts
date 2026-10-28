@@ -22,23 +22,32 @@ export async function GET() {
     }
 
     const products = await prisma.product.findMany({
-      where: {
-        status: "DRAFT",
-        deletedAt: null,
-      },
+      where: { status: "DRAFT", deletedAt: null },
       include: {
         seller: { select: { id: true, storeName: true, slug: true } },
-        category: { select: { name: true } },
-        images: { orderBy: { order: "asc" }, take: 1 },
+        category: { select: { name: true, slug: true } },
+        images: { orderBy: { order: "asc" } },
         variants: {
-          where: { isDefault: true },
-          include: { inventory: { select: { quantity: true } } },
+          orderBy: { id: "asc" },
+          select: {
+            id: true,
+            price: true,
+            barcode: true,
+            isDefault: true,
+            inventory: { select: { quantity: true } },
+            optionValues: {
+              select: {
+                optionValue: {
+                  select: {
+                    value: true,
+                    option: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
         },
-        // ═══ آخر تعديل ═══
-        editLogs: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
+        editLogs: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -51,17 +60,54 @@ export async function GET() {
         p.createdAt.getTime() === p.updatedAt.getTime() ||
         lastEdit.changedFields === null;
 
+      // ✅ المجموع الحقيقي
+      const totalStock = p.variants.reduce(
+        (sum, v) => sum + (v.inventory?.quantity || 0),
+        0
+      );
+
+      // ✅ أقل سعر بين المتغيرات
+      const minPrice =
+        p.variants.length > 0
+          ? Math.min(...p.variants.map((v) => Number(v.price)))
+          : 0;
+
       return {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        image: p.images[0]?.url || null,
+        description: p.description,
+        brand: p.brand,
+        badge: p.badge,
+        originCountry: p.originCountry,
+        videoUrl: p.videoUrl,
+        minOrderQty: p.minOrderQty,
+        maxOrderQty: p.maxOrderQty,
+        freeShipping: p.freeShipping,
+        productType: p.productType,
+        unit: p.unit,
+        weightGrams: p.weightGrams,
+        lengthCm: p.lengthCm,
+        widthCm: p.widthCm,
+        heightCm: p.heightCm,
+        salePrice: p.salePrice,
         categoryName: p.category.name,
-        price: p.variants[0] ? Number(p.variants[0].price) : 0,
-        stock: p.variants[0]?.inventory?.quantity || 0,
+        images: p.images.map((img) => img.url),
+        variants: p.variants.map((v) => ({
+          id: v.id,
+          price: Number(v.price),
+          barcode: v.barcode,
+          isDefault: v.isDefault,
+          stock: v.inventory?.quantity || 0,
+          options: v.optionValues.map(
+            (ov) => `${ov.optionValue.option.name}: ${ov.optionValue.value}`
+          ),
+        })),
+        totalStock,
+        minPrice,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
-        isNew, // 🆕 منتج جديد vs ✏️ مُعدَّل
+        isNew,
         seller: {
           id: p.seller.id,
           storeName: p.seller.storeName,
