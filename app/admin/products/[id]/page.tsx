@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, History as HistoryIcon } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import ProductWizard from "@/components/seller/product-wizard/ProductWizard";
 
@@ -75,9 +75,18 @@ export default async function EditAdminProductPage({
         رجوع إلى المنتجات
       </Link>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-black text-gray-900">تعديل المنتج</h1>
-        <p className="mt-1 text-sm text-gray-500">{product.name}</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900">تعديل المنتج</h1>
+          <p className="mt-1 text-sm text-gray-500">{product.name}</p>
+        </div>
+        <Link
+          href={`/admin/products/${product.id}/history`}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+        >
+          <HistoryIcon className="h-3.5 w-3.5" />
+          سجل التعديلات
+        </Link>
       </div>
 
       <ProductWizard
