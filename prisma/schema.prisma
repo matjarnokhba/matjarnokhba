@@ -398,6 +398,12 @@ model User {
   customerShipments  Shipment[]        @relation("CustomerShipments")
   wholesaleSupplier  WholesaleSupplier?
   wholesaleOrders    WholesaleOrder[]   @relation("WholesaleBuyer")
+  // Catalog v3
+  productMastersCreated     ProductMaster[]              @relation("MasterCreatedBy")
+  productMastersManufactured ProductMaster[]             @relation("MasterManufacturer")
+  sellerOffers              SellerOffer[]                @relation("OfferSeller")
+  offerClaimsVerified       OfferClaim[]
+  productMasterDerivatives  ProductMasterDerivative[]
   staffOf         SellerStaff?    @relation("StaffUser")
   staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
 
@@ -594,6 +600,7 @@ model Category {
   products   Product[]
   attributes CategoryAttribute[]
   wholesaleProducts WholesaleProduct[]
+  productMasters    ProductMaster[]
 
   @@index([parentId])
   @@index([isActive])
@@ -2675,6 +2682,7 @@ model WholesaleSupplier {
   user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   sources   WholesaleSource[]
   products  WholesaleProduct[]
+  sellerOffers SellerOffer[]
   orders    WholesaleOrder[]
 
   @@index([status])
@@ -2695,6 +2703,7 @@ model WholesaleSource {
 
   supplier  WholesaleSupplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   products  WholesaleProduct[]
+  sellerOffers SellerOffer[]
 
   @@index([supplierId])
 }
@@ -2724,7 +2733,6 @@ model WholesaleProduct {
   category      Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   linkedProduct Product?            @relation("WholesaleLink", fields: [linkedProductId], references: [id], onDelete: SetNull)
   variants      WholesaleVariant[]
-  orderItems    WholesaleOrderItem[]
 
   @@unique([supplierId, slug])
   @@index([supplierId])
@@ -2778,33 +2786,184 @@ model WholesaleOrder {
 }
 
 model WholesaleOrderItem {
-  id           Int      @id @default(autoincrement())
-  orderId      Int
-  productId    Int
-  variantId    Int?
-  productName  String
-  variantName  String?
-  sourceName   String
-  qty          Int
-  unitPrice    Decimal  @db.Decimal(10, 2)
-  total        Decimal  @db.Decimal(10, 2)
+  id              Int      @id @default(autoincrement())
+  orderId         Int
+  offerId         Int
+  offerVariantId  Int?
+  productName     String
+  variantName     String?
+  sourceName      String
+  qty             Int
+  unitPrice       Decimal  @db.Decimal(10, 2)
+  total           Decimal  @db.Decimal(10, 2)
 
-  order   WholesaleOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product WholesaleProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order        WholesaleOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  offer        SellerOffer         @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  offerVariant SellerOfferVariant? @relation(fields: [offerVariantId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
-  @@index([productId])
+  @@index([offerId])
 }
 
 model WholesaleStockTransfer {
-  id                 Int      @id @default(autoincrement())
-  wholesaleVariantId Int
-  retailVariantId    Int?
-  qty                Int
-  type               String
-  notes              String?
-  createdAt          DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  offerVariantId  Int
+  retailVariantId Int?
+  qty             Int
+  type            String
+  notes           String?
+  createdAt       DateTime @default(now())
 
-  @@index([wholesaleVariantId])
+  offerVariant SellerOfferVariant @relation(fields: [offerVariantId], references: [id], onDelete: Cascade)
+
+  @@index([offerVariantId])
   @@index([retailVariantId])
+}
+
+// ============================================
+// CATALOG v3 — Unified Product Identity
+// ============================================
+
+model ProductMaster {
+  id                 Int       @id @default(autoincrement())
+  barcode            String?   @unique
+  qrCode             String?   @unique
+  name               String
+  slug               String    @unique
+  brand              String?
+  description        String?
+  images             String[]  @default([])
+  specifications     Json?
+  categoryId         Int
+  manufacturerUserId Int?
+  createdByUserId    Int
+  isVerified         Boolean   @default(false)
+  status             String    @default("ACTIVE")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  category      Category                    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy     User                        @relation("MasterCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  manufacturer  User?                       @relation("MasterManufacturer", fields: [manufacturerUserId], references: [id], onDelete: SetNull)
+  variants      ProductMasterVariant[]
+  offers        SellerOffer[]
+  derivativesFrom ProductMasterDerivative[] @relation("DerivativeParent")
+  derivedAs       ProductMasterDerivative[] @relation("DerivativeChild")
+
+  @@index([barcode])
+  @@index([categoryId])
+  @@index([manufacturerUserId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model ProductMasterVariant {
+  id         Int      @id @default(autoincrement())
+  masterId   Int
+  sku        String?
+  barcode    String?  @unique
+  options    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  master        ProductMaster        @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  offerVariants SellerOfferVariant[]
+
+  @@index([masterId])
+  @@index([barcode])
+}
+
+model SellerOffer {
+  id                  Int         @id @default(autoincrement())
+  sellerUserId        Int
+  wholesaleSupplierId Int
+  masterId            Int
+  sourceId            Int?
+  offerType           String      @default("WHOLESALE")
+  wholesalePrice      Decimal     @db.Decimal(10, 2)
+  retailPrice         Decimal?    @db.Decimal(10, 2)
+  minOrderQty         Int         @default(1)
+  maxOrderQty         Int?
+  unit                ProductUnit @default(PIECE)
+  claimType           String      @default("MANUFACTURER")
+  claimVerified       Boolean     @default(false)
+  claimProofUrl       String?
+  claimNotes          String?
+  isActive            Boolean     @default(true)
+  notes               String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  deletedAt           DateTime?
+
+  sellerUser  User              @relation("OfferSeller", fields: [sellerUserId], references: [id], onDelete: Restrict)
+  supplier    WholesaleSupplier @relation(fields: [wholesaleSupplierId], references: [id], onDelete: Cascade)
+  master      ProductMaster     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  source      WholesaleSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  variants    SellerOfferVariant[]
+  orderItems  WholesaleOrderItem[]
+  claims      OfferClaim[]
+
+  @@unique([wholesaleSupplierId, masterId, offerType])
+  @@index([sellerUserId])
+  @@index([masterId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model SellerOfferVariant {
+  id              Int      @id @default(autoincrement())
+  offerId         Int
+  masterVariantId Int?
+  stock           Int      @default(0)
+  sku             String?
+  barcode         String?
+  options         Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  offer         SellerOffer           @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  masterVariant ProductMasterVariant? @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+  orderItems    WholesaleOrderItem[]
+  transfers     WholesaleStockTransfer[]
+
+  @@unique([offerId, masterVariantId])
+  @@index([offerId])
+}
+
+model ProductMasterDerivative {
+  id               Int      @id @default(autoincrement())
+  parentMasterId   Int
+  childMasterId    Int
+  modifiedByUserId Int
+  differences      Json
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  parentMaster ProductMaster @relation("DerivativeParent", fields: [parentMasterId], references: [id], onDelete: Cascade)
+  childMaster  ProductMaster @relation("DerivativeChild", fields: [childMasterId], references: [id], onDelete: Cascade)
+  modifiedBy   User          @relation(fields: [modifiedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([parentMasterId, childMasterId])
+  @@index([parentMasterId])
+  @@index([childMasterId])
+}
+
+model OfferClaim {
+  id               Int       @id @default(autoincrement())
+  offerId          Int
+  claimType        String
+  proofUrl         String?
+  notes            String?
+  status           String    @default("PENDING")
+  verifiedById     Int?
+  verifiedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime  @default(now())
+
+  offer       SellerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  verifiedBy  User?       @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([offerId])
+  @@index([status])
 }
