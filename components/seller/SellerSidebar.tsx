@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false, ownerOnly: true },
   { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false, ownerOnly: true },
   { href: "/seller/staff", label: "الموظفون", icon: Users, exact: false, ownerOnly: true },
+  { href: "/seller/wholesale", label: "بوابة الجملة", icon: Building2, exact: false, ownerOnly: true },
   { href: "/seller/products/approvals", label: "منتجات بانتظار الموافقة", icon: AlertTriangle, exact: false, ownerOnly: true },
 ];
 
