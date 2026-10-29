@@ -24,6 +24,7 @@ import {
   TrendingUp,
   ListChecks,
   Sparkles,
+  Building2,
 } from "lucide-react";
 
 const CURRENCY = "د.م";
@@ -254,6 +255,57 @@ async function OwnerDashboard({
           عرض المتجر
         </Link>
       </div>
+
+      {current.user.wholesaleSupplier ? (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-l from-[#fff4ed] to-white p-5 shadow-sm ring-1 ring-orange-100">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Building2 className="h-5 w-5 text-[#ff5c00]" />
+              <span className="text-sm font-black text-gray-900">قسم البيع بالجملة</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                current.user.wholesaleSupplier.status === "ACTIVE"
+                  ? "bg-green-100 text-green-700"
+                  : current.user.wholesaleSupplier.status === "PENDING"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-red-100 text-red-700"
+              }`}>
+                {current.user.wholesaleSupplier.status === "ACTIVE" ? "موثق"
+                  : current.user.wholesaleSupplier.status === "PENDING" ? "بانتظار التوثيق"
+                  : "موقوف"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {current.user.wholesaleSupplier.displayName}
+            </p>
+          </div>
+          <Link
+            href="/wholesale/dashboard"
+            className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white hover:bg-[#e64a00]"
+          >
+            لوحة الجملة
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      ) : (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-l from-[#fff4ed] to-white p-5 shadow-sm ring-1 ring-orange-100">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Building2 className="h-5 w-5 text-[#ff5c00]" />
+              <span className="text-sm font-black text-gray-900">افتح حساب بيع بالجملة</span>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              انضم كشركة أو ورشة أو معمل أو مخزن وابدأ البيع للتجار
+            </p>
+          </div>
+          <Link
+            href="/wholesale/register"
+            className="flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white hover:bg-[#e64a00]"
+          >
+            افتح الحساب
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">

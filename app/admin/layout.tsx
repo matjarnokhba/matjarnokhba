@@ -26,6 +26,11 @@ export default async function AdminLayout({
       label: "تجار بانتظار الموافقة",
       href: "/admin/sellers",
       icon: "sellers" as const,
+    },    {
+      countKey: "wholesalePending",
+      label: "أصحاب جملة بانتظار التوثيق",
+      href: "/admin/wholesale-suppliers",
+      icon: "sellers" as const,
     },
     {
       countKey: "productsPending",

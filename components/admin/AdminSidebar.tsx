@@ -40,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
   { href: "/admin/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
+  { href: "/admin/wholesale-suppliers", label: "أصحاب الجملة", icon: Building2, exact: false },
   { href: "/admin/zones", label: "المناطق", icon: MapPin, exact: false },
   { href: "/admin/documents", label: "وثائق التجار", icon: FileText, exact: false },
   { href: "/admin/bank-accounts", label: "الحسابات البنكية", icon: Building2, exact: false },
