@@ -1,30 +1,93 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Construction } from "lucide-react";
+import { Loader2, ShoppingBag, ArrowLeft, Package, Clock, CheckCircle2, XCircle } from "lucide-react";
 
-export default function WholesaleOrdersPage() {
+type Order = {
+  id: number; orderNumber: string; status: string; total: number;
+  itemCount: number;
+  items: Array<{ id: number; productName: string; qty: number; unitPrice: number; total: number }>;
+  supplier: { id: number; displayName: string; city: string; isVerified: boolean };
+  createdAt: string;
+  acceptedAt: string | null; rejectedAt: string | null;
+  completedAt: string | null; cancelledAt: string | null;
+};
+
+const STATUS_INFO: Record<string, { label: string; color: string; icon: any }> = {
+  PENDING: { label: "بانتظار البائع", color: "bg-amber-100 text-amber-700", icon: Clock },
+  ACCEPTED: { label: "مقبول", color: "bg-blue-100 text-blue-700", icon: CheckCircle2 },
+  REJECTED: { label: "مرفوض", color: "bg-red-100 text-red-700", icon: XCircle },
+  PREPARING: { label: "قيد التجهيز", color: "bg-indigo-100 text-indigo-700", icon: Package },
+  READY: { label: "جاهز", color: "bg-purple-100 text-purple-700", icon: Package },
+  COMPLETED: { label: "مكتمل", color: "bg-green-100 text-green-700", icon: CheckCircle2 },
+  CANCELLED: { label: "ملغى", color: "bg-gray-100 text-gray-700", icon: XCircle },
+};
+
+export default function BuyerOrdersPage() {
+  const router = useRouter();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/wholesale/orders?role=buyer");
+        if (res.status === 401) { router.push("/login?next=/wholesale/orders"); return; }
+        const data = await res.json();
+        if (data.success) setOrders(data.orders);
+        else setError(data.message);
+      } catch { setError("خطأ في الاتصال"); }
+      finally { setLoading(false); }
+    })();
+  }, [router]);
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 py-12" dir="rtl">
-      <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
-        <Link
-          href="/wholesale/dashboard"
-          className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-[#ff5c00]"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          عودة للوحة
+    <div className="min-h-screen bg-gray-50 p-4 py-8" dir="rtl">
+      <div className="mx-auto max-w-4xl">
+        <Link href="/wholesale/browse" className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-[#ff5c00]">
+          <ArrowLeft className="h-3.5 w-3.5" /> عودة للسوق
         </Link>
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
-          <FileText className="h-8 w-8 text-[#ff5c00]" />
-        </div>
-        <h1 className="mt-4 text-xl font-black text-gray-900">الطلبات الواردة</h1>
-        <p className="mt-2 text-sm text-gray-500">
-          هذه الصفحة قيد التطوير — ستتمكن قريبًا من استقبال طلبات التجار وإدارتها
-        </p>
-        <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <Construction className="h-3.5 w-3.5" />
-          المرحلة القادمة: Phase 4
-        </div>
+        <h1 className="mb-6 flex items-center gap-2 text-2xl font-black"><ShoppingBag className="h-6 w-6 text-[#ff5c00]" /> طلباتي من الجملة</h1>
+
+        {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</div>}
+
+        {loading ? (
+          <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#ff5c00]" /></div>
+        ) : orders.length === 0 ? (
+          <div className="rounded-xl bg-white p-12 text-center shadow-sm">
+            <Package className="mx-auto h-12 w-12 text-gray-300" />
+            <p className="mt-3 text-sm text-gray-500">لا توجد طلبات بعد</p>
+            <Link href="/wholesale/browse" className="mt-4 inline-block rounded-lg bg-[#ff5c00] px-4 py-2 text-sm font-bold text-white">تصفح السوق</Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {orders.map((o) => {
+              const info = STATUS_INFO[o.status] || STATUS_INFO.PENDING;
+              const Icon = info.icon;
+              return (
+                <Link key={o.id} href={`/wholesale/orders/${o.id}`} className="block rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-black">{o.orderNumber}</span>
+                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${info.color}`}><Icon className="h-3 w-3" />{info.label}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-600">{o.supplier.displayName}</div>
+                      <div className="mt-0.5 text-[10px] text-gray-500">{o.itemCount} منتج · {new Date(o.createdAt).toLocaleDateString("ar-MA")}</div>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-lg font-black text-[#ff5c00]">{o.total.toFixed(2)}</div>
+                      <div className="text-[10px] text-gray-500">د.م</div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
