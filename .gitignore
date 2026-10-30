@@ -47,3 +47,6 @@ next-env.d.ts
 migrations-history-backup.json
 prisma/migrations.old/
 prisma/migrations.backup/
+
+# Temporary backups
+*.bak-*
