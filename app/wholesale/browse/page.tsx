@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Loader2, Search, Filter, MapPin, Package, ArrowLeft, ShoppingBag,
-  Store, ChevronLeft, ChevronRight, X, BadgeCheck,
+  Store, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 
 type Offer = {
@@ -85,7 +85,12 @@ export default function WholesaleBrowsePage() {
         <div className="mb-4 flex gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="ابحث بالاسم، الماركة، أو الباركود..." className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pr-10 pl-3 text-sm outline-none focus:border-[#ff5c00]" />
+            <input
+              type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+              placeholder="ابحث بالاسم، الماركة، أو الباركود..."
+              className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pr-10 pl-3 text-sm outline-none focus:border-[#ff5c00]"
+            />
           </div>
           <button onClick={() => setShowFilters((s) => !s)} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-gray-50">
             <Filter className="h-4 w-4" /> فلترة
@@ -110,7 +115,9 @@ export default function WholesaleBrowsePage() {
               </div>
             </div>
             <div className="mt-3 flex justify-end gap-2">
-              <button onClick={clearFilters} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"><X className="mr-1 inline h-3 w-3" /> مسح</button>
+              <button onClick={clearFilters} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50">
+                <X className="mr-1 inline h-3 w-3" /> مسح
+              </button>
               <button onClick={applyFilters} className="rounded-lg bg-[#ff5c00] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#e64a00]">تطبيق</button>
             </div>
           </div>
@@ -127,43 +134,101 @@ export default function WholesaleBrowsePage() {
           </div>
         ) : (
           <>
-            {pagination && <div className="mb-3 text-xs text-gray-500">{pagination.total} عرض — صفحة {pagination.page} من {pagination.totalPages}</div>}
+            {pagination && (
+              <div className="mb-3 text-xs text-gray-500">
+                {pagination.total} عرض — صفحة {pagination.page} من {pagination.totalPages}
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {offers.map((o) => (
-                <Link key={o.id} href={`/wholesale/master/${o.master.id}?offer=${o.id}`} className="group flex flex-col overflow-hidden rounded-xl bg-white shadow-sm transition hover:shadow-md">
-                  <div className="aspect-square bg-gray-100">
-                    {o.master.images[0] ? (
-                      <img src={o.master.images[0]} alt={o.master.name} className="h-full w-full object-cover transition group-hover:scale-105" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center"><Package className="h-12 w-12 text-gray-300" /></div>
-                    )}
+                // ✅ البطاقة = div (لا Link) — الروابط كأبناء (siblings)
+                <div key={o.id} className="group flex flex-col overflow-hidden rounded-xl bg-white shadow-sm transition hover:shadow-md">
+                  {/* الرابط 1: الصورة + معلومات المنتج */}
+                  <Link
+                    href={`/wholesale/master/${o.master.id}?offer=${o.id}`}
+                    className="flex flex-1 flex-col"
+                  >
+                    <div className="aspect-square bg-gray-100">
+                      {o.master.images[0] ? (
+                        <img
+                          src={o.master.images[0]}
+                          alt={o.master.name}
+                          className="h-full w-full object-cover transition group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <Package className="h-12 w-12 text-gray-300" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col p-3 pb-0">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-gray-500">
+                        <span>{o.master.category.name}</span>
+                        {o.claimVerified && (
+                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">
+                            {CLAIM_LABEL[o.claimType]}
+                          </span>
+                        )}
+                      </div>
+                      <div className="line-clamp-2 text-sm font-black text-gray-900">{o.master.name}</div>
+                      {o.master.brand && (
+                        <div className="mt-0.5 text-[11px] text-gray-500">{o.master.brand}</div>
+                      )}
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-lg font-black text-[#ff5c00]">
+                          {o.wholesalePrice.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-gray-500">د.م / {o.unit}</span>
+                      </div>
+                      <div className="mt-1 text-[10px] text-gray-500">
+                        الحد الأدنى: {o.minOrderQty} {o.unit}
+                        {o.maxOrderQty && ` — الأقصى: ${o.maxOrderQty}`}
+                      </div>
+                    </div>
+                  </Link>
+
+                  {/* الرابط 2: البائع (sibling، لا تداخل) */}
+                  <div className="mt-2 flex items-center justify-between border-t border-gray-100 px-3 py-2 text-[10px]">
+                    <Link
+                      href={`/wholesale/supplier/${o.supplier.slug}`}
+                      className="flex min-w-0 items-center gap-1 text-gray-600 hover:text-[#ff5c00] hover:underline"
+                    >
+                      <Store className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{o.supplier.displayName}</span>
+                    </Link>
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <MapPin className="h-3 w-3" />
+                      <span>{o.supplier.city}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-1 flex-col p-3">
-                    <div className="mb-1 flex items-center gap-1 text-[10px] text-gray-500">
-                      <span>{o.master.category.name}</span>
-                      {o.claimVerified && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">{CLAIM_LABEL[o.claimType]}</span>}
-                    </div>
-                    <div className="line-clamp-2 text-sm font-black text-gray-900">{o.master.name}</div>
-                    {o.master.brand && <div className="mt-0.5 text-[11px] text-gray-500">{o.master.brand}</div>}
-                    <div className="mt-2 flex items-baseline gap-1">
-                      <span className="text-lg font-black text-[#ff5c00]">{o.wholesalePrice.toFixed(2)}</span>
-                      <span className="text-[10px] text-gray-500">د.م / {o.unit}</span>
-                    </div>
-                    <div className="mt-1 text-[10px] text-gray-500">الحد الأدنى: {o.minOrderQty} {o.unit}{o.maxOrderQty && ` — الأقصى: ${o.maxOrderQty}`}</div>
-                    <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2 text-[10px]">
-                      <div className="flex items-center gap-1 text-gray-600"><Store className="h-3 w-3" /><span className="truncate">{o.supplier.displayName}</span></div>
-                      <div className="flex items-center gap-1 text-gray-500"><MapPin className="h-3 w-3" /><span>{o.supplier.city}</span></div>
-                    </div>
-                    <div className="mt-1 text-[10px] text-gray-400">المخزون: {o.totalStock} {o.unit}{o.variantCount > 1 && ` · ${o.variantCount} خيار`}</div>
+
+                  {/* المخزون (جزء من البطاقة، ليس رابطًا) */}
+                  <div className="px-3 pb-2 text-[10px] text-gray-400">
+                    المخزون: {o.totalStock} {o.unit}
+                    {o.variantCount > 1 && ` · ${o.variantCount} خيار`}
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
+
             {pagination && pagination.totalPages > 1 && (
               <div className="mt-6 flex items-center justify-center gap-2">
-                <button onClick={() => goToPage(page - 1)} disabled={page === 1} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
+                <button
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page === 1}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
                 <span className="text-xs font-bold">{page} / {pagination.totalPages}</span>
-                <button onClick={() => goToPage(page + 1)} disabled={page === pagination.totalPages} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                <button
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page === pagination.totalPages}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
               </div>
             )}
           </>
