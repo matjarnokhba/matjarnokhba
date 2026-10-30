@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { WholesaleOrderService } from "@/services/wholesale-order.service";
 
 const schema = z.object({
   action: z.enum(["accept", "reject", "prepare", "ready", "complete", "cancel"]),
@@ -55,10 +56,10 @@ export async function PATCH(
     }
 
     const { action, reason } = parsed.data;
-    const isSupplier = current.user.wholesaleSupplier?.id === order.supplierId;
+    const isSupplier =
+      current.user.wholesaleSupplier?.id === order.supplierId;
     const isBuyer = order.buyerUserId === current.user.id;
 
-    // Permission check per action
     const supplierActions = ["accept", "reject", "prepare", "ready", "complete"];
     const buyerActions = ["cancel"];
 
@@ -75,7 +76,6 @@ export async function PATCH(
       );
     }
 
-    // State machine validation
     const allowed: Record<string, string[]> = {
       accept: ["PENDING"],
       reject: ["PENDING"],
@@ -95,73 +95,28 @@ export async function PATCH(
       );
     }
 
-    // For accept: reserve stock (decrement variants)
+    // ─── ACCEPT: copy products to buyer ───
     if (action === "accept") {
-      const result = await prisma.$transaction(async (tx) => {
-        // Check stock availability + decrement atomically
-        for (const item of order.items) {
-          if (item.offerVariantId) {
-            const updated = await tx.sellerOfferVariant.updateMany({
-              where: {
-                id: item.offerVariantId,
-                stock: { gte: item.qty },
-              },
-              data: { stock: { decrement: item.qty } },
-            });
-            if (updated.count === 0) {
-              throw new Error(
-                `المخزون غير كافٍ لـ "${item.productName}" — قد يكون تم بيع آخر`
-              );
-            }
-          } else {
-            // No variant — decrement from first available variant (or aggregate)
-            // Strategy: try to decrement from any variant with enough stock
-            const variants = await tx.sellerOfferVariant.findMany({
-              where: { offerId: item.offerId, stock: { gte: item.qty } },
-              orderBy: { stock: "desc" },
-              take: 1,
-            });
-            if (variants.length === 0) {
-              throw new Error(
-                `المخزون غير كافٍ لـ "${item.productName}" — قد يكون تم بيع آخر`
-              );
-            }
-            await tx.sellerOfferVariant.update({
-              where: { id: variants[0].id },
-              data: { stock: { decrement: item.qty } },
-            });
-          }
-        }
-
-        const updated = await tx.wholesaleOrder.update({
-          where: { id: orderId },
-          data: {
-            status: "ACCEPTED",
-            acceptedAt: new Date(),
-          },
+      try {
+        const result = await WholesaleOrderService.acceptOrder(
+          orderId,
+          current.user.id
+        );
+        return NextResponse.json({
+          success: true,
+          order: { id: orderId, status: "ACCEPTED" },
+          result,
         });
-
-        // Notify buyer
-        await tx.notification.create({
-          data: {
-            userId: order.buyerUserId,
-            type: "ORDER_STATUS_CHANGED" as any,
-            title: "تم قبول طلبك",
-            message: `قبل البائع طلب الجملة ${order.orderNumber}`,
-            link: `/wholesale/orders/${order.id}`,
-          },
-        });
-
-        return updated;
-      });
-
-      return NextResponse.json({
-        success: true,
-        order: { id: result.id, status: result.status },
-      });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "حدث خطأ";
+        return NextResponse.json(
+          { success: false, message: msg },
+          { status: 400 }
+        );
+      }
     }
 
-    // Other actions: simple state update
+    // ─── OTHER ACTIONS: simple state updates ───
     const statusMap: Record<string, string> = {
       reject: "REJECTED",
       prepare: "PREPARING",
@@ -190,9 +145,7 @@ export async function PATCH(
       data: updateData,
     });
 
-    // Notify the other party
-    const notifyUserId =
-      isSupplier ? order.buyerUserId : order.supplier.userId;
+    const notifyUserId = isSupplier ? order.buyerUserId : order.supplier.userId;
     if (notifyUserId) {
       const titles: Record<string, string> = {
         reject: "تم رفض الطلب",
