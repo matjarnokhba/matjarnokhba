@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Loader2, ArrowLeft, Package, Barcode, Search, AlertCircle,
-  CheckCircle2, Image as ImageIcon,
+  Loader2, ArrowLeft, AlertCircle, CheckCircle2, Image as ImageIcon,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
+import QRCodeInput from "@/components/shared/QRCodeInput";
 
 type Category = {
   id: number;
@@ -17,21 +17,14 @@ type Category = {
   isLeaf: boolean;
 };
 
-type LookupResult = {
-  found: boolean;
-  master?: {
-    id: number;
-    name: string;
-    barcode: string | null;
-  };
-};
-
+type CodeType = "BARCODE" | "QR";
 type Step = 1 | 2 | 3;
 
 export default function NewMasterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const prefilledBarcode = searchParams.get("barcode") || "";
+  const preBarcode = searchParams.get("barcode") || "";
+  const preQr = searchParams.get("qr") || "";
 
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState("");
@@ -40,10 +33,11 @@ export default function NewMasterPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
 
-  const [barcode, setBarcode] = useState(prefilledBarcode);
+  const [codeValue, setCodeValue] = useState(preBarcode || preQr);
+  const [codeType, setCodeType] = useState<CodeType>(preQr ? "QR" : "BARCODE");
   const [checking, setChecking] = useState(false);
-  const [existingMaster, setExistingMaster] = useState<LookupResult["master"] | null>(null);
-  const [barcodeChecked, setBarcodeChecked] = useState(false);
+  const [existingMaster, setExistingMaster] = useState<{ id: number; name: string } | null>(null);
+  const [codeChecked, setCodeChecked] = useState(false);
 
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
@@ -63,22 +57,27 @@ export default function NewMasterPage() {
   }, []);
 
   useEffect(() => {
-    if (prefilledBarcode) {
-      checkBarcode();
-    }
+    if (preBarcode || preQr) checkCode();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function checkBarcode() {
-    if (!barcode.trim() || barcode.trim().length < 3) {
-      setError("الباركود قصير جدًا");
+  function handleCodeChange(value: string, type: CodeType) {
+    setCodeValue(value);
+    setCodeType(type);
+    setCodeChecked(false);
+    setExistingMaster(null);
+  }
+
+  async function checkCode() {
+    if (!codeValue.trim() || codeValue.trim().length < 3) {
+      setError("الكود قصير جدًا");
       return;
     }
     setChecking(true); setError(""); setExistingMaster(null);
     try {
       const res = await fetch("/api/products/master/lookup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: barcode.trim(), codeType: "BARCODE" }),
+        body: JSON.stringify({ code: codeValue.trim(), codeType }),
       });
       const d = await res.json();
       if (d.success && d.found) {
@@ -86,14 +85,14 @@ export default function NewMasterPage() {
       } else {
         setExistingMaster(null);
       }
-      setBarcodeChecked(true);
+      setCodeChecked(true);
     } catch { setError("خطأ في الاتصال"); }
     finally { setChecking(false); }
   }
 
   function proceedToStep2() {
     if (existingMaster) {
-      setError("هذا الباركود مسجل بالفعل. لا يمكن إنشاء هوية مكررة. استخدم المنتج الموجود.");
+      setError("هذا الكود مسجل بالفعل. استخدم المنتج الموجود.");
       return;
     }
     setError(""); setStep(2);
@@ -116,7 +115,8 @@ export default function NewMasterPage() {
           brand: brand.trim() || null,
           description: description.trim() || null,
           categoryId: parseInt(categoryId),
-          barcode: barcode.trim() || null,
+          barcode: codeType === "BARCODE" ? codeValue.trim() || null : null,
+          qrCode: codeType === "QR" ? codeValue.trim() || null : null,
           images: imageUrls,
         }),
       });
@@ -147,31 +147,28 @@ export default function NewMasterPage() {
         </Link>
         <h1 className="mb-1 text-2xl font-black">هوية منتج جديدة</h1>
         <p className="mb-6 text-sm text-gray-500">
-          المرحلة {step} من 3 — {step === 1 ? "الباركود" : step === 2 ? "المعلومات" : "الصور"}
+          المرحلة {step} من 3 — {step === 1 ? "الكود" : step === 2 ? "المعلومات" : "الصور"}
         </p>
 
         {step === 1 && (
           <div className="space-y-4">
             <div className="rounded-xl bg-white p-5 shadow-sm">
-              <label className="mb-2 flex items-center gap-2 text-sm font-bold">
-                <Barcode className="h-4 w-4 text-[#ff5c00]" /> الباركود (اختياري)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={barcode}
-                  onChange={(e) => { setBarcode(e.target.value); setBarcodeChecked(false); setExistingMaster(null); }}
-                  onKeyDown={(e) => e.key === "Enter" && checkBarcode()}
-                  placeholder="امسح أو اكتب الباركود..."
-                  dir="ltr"
-                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2.5 font-mono text-sm outline-none focus:border-[#ff5c00]"
-                />
+              <QRCodeInput
+                value={codeValue}
+                codeType={codeType}
+                onChange={handleCodeChange}
+                label="الباركود أو QR (اختياري)"
+                helperText="امسح بالكاميرا أو اكتب يدويًا. اتركه فارغًا لإنشاء بدون كود."
+                placeholder="امسح أو اكتب..."
+              />
+
+              <div className="mt-3">
                 <button
-                  onClick={checkBarcode}
-                  disabled={checking || !barcode.trim()}
-                  className="rounded-lg bg-[#ff5c00] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#e64a00] disabled:opacity-50"
+                  onClick={checkCode}
+                  disabled={checking || !codeValue.trim()}
+                  className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
                 >
-                  {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : "تحقق"}
+                  {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "تحقق من التوفر"}
                 </button>
               </div>
 
@@ -181,7 +178,7 @@ export default function NewMasterPage() {
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
                       <strong>المنتج موجود بالفعل:</strong> {existingMaster.name}
-                      <div className="mt-1">لا يمكن إنشاء نسخة مكررة. استخدم المنتج الموجود لعرضه بالجملة.</div>
+                      <div className="mt-1">استخدم المنتج الموجود لعرضه بالجملة.</div>
                       <Link
                         href={`/wholesale/master/${existingMaster.id}`}
                         className="mt-2 inline-block rounded bg-amber-700 px-3 py-1 text-[10px] font-bold text-white"
@@ -193,16 +190,10 @@ export default function NewMasterPage() {
                 </div>
               )}
 
-              {barcodeChecked && !existingMaster && (
+              {codeChecked && !existingMaster && (
                 <div className="mt-3 rounded-lg bg-green-50 p-3 text-xs font-bold text-green-800">
-                  ✅ الباركود متاح — يمكنك المتابعة
+                  ✅ الكود متاح — يمكنك المتابعة
                 </div>
-              )}
-
-              {!barcode.trim() && (
-                <p className="mt-3 text-[10px] text-gray-500">
-                  💡 بدون باركود ستُنشئ هوية يدوية. يمكنك ربطها بباركود لاحقًا من التعديل.
-                </p>
               )}
             </div>
 
@@ -212,7 +203,7 @@ export default function NewMasterPage() {
               <Link href="/seller/wholesale/masters" className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-bold">إلغاء</Link>
               <button
                 onClick={proceedToStep2}
-                disabled={existingMaster !== null || (barcode.trim().length > 0 && !barcodeChecked)}
+                disabled={existingMaster !== null || (codeValue.trim().length > 0 && !codeChecked)}
                 className="flex-1 rounded-lg bg-[#ff5c00] py-2.5 text-sm font-bold text-white hover:bg-[#e64a00] disabled:opacity-50"
               >
                 التالي

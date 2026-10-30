@@ -22,56 +22,67 @@ export default async function SellerLayout({
     redirect("/");
   }
 
-  // Admins don't have their own seller - if they access /seller, redirect to admin
   const isAdminViewing =
     user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
-  if (!user.seller && !isAdminViewing) {
+  const hasRetailStore = !!user.seller;
+  const hasWholesaleAccess = !!user.wholesaleSupplier;
+
+  // Neither retail nor wholesale → onboarding
+  if (!hasRetailStore && !hasWholesaleAccess && !isAdminViewing) {
     redirect("/seller-onboarding");
   }
 
+  // Retail store suspended/closed
   if (
-    user.seller &&
-    (user.seller.status === "SUSPENDED" || user.seller.status === "CLOSED")
+    hasRetailStore &&
+    (user.seller!.status === "SUSPENDED" || user.seller!.status === "CLOSED")
   ) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center bg-gray-50 p-6"
-        dir="rtl"
-      >
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6" dir="rtl">
         <div className="max-w-md text-center">
           <div className="text-6xl">🚫</div>
-          <h1 className="mt-4 text-2xl font-black text-gray-900">
-            حسابك معطّل
-          </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            يرجى التواصل مع الدعم لمعرفة السبب.
-          </p>
+          <h1 className="mt-4 text-2xl font-black text-gray-900">حسابك معطّل</h1>
+          <p className="mt-2 text-sm text-gray-500">يرجى التواصل مع الدعم لمعرفة السبب.</p>
         </div>
       </div>
     );
   }
 
-  // Admins visiting /seller should not break the layout if no seller
-  if (!user.seller) {
+  // Wholesale-only user (no retail store)
+  if (!hasRetailStore && hasWholesaleAccess) {
+    const ws = user.wholesaleSupplier!;
     return (
-      <div
-        className="flex min-h-screen items-center justify-center bg-gray-50 p-6"
-        dir="rtl"
-      >
-        <div className="max-w-md text-center">
-          <div className="text-6xl">🏪</div>
-          <h1 className="mt-4 text-2xl font-black text-gray-900">
-            لا يوجد متجر مرتبط بحسابك
-          </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            هذه الصفحة للتجار فقط.
-          </p>
-        </div>
+      <div className="min-h-screen w-full overflow-x-hidden bg-gray-50" dir="rtl">
+        {/* Minimal layout for wholesale-only users */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-xs font-black text-white">
+              ج
+            </span>
+            <div className="leading-none">
+              <strong className="block text-sm font-black">{ws.displayName}</strong>
+              <small className="text-[10px] text-gray-500">بوابة الجملة</small>
+            </div>
+          </div>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              ws.status === "ACTIVE"
+                ? "bg-green-100 text-green-700"
+                : ws.status === "PENDING"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-red-100 text-red-700"
+            }`}
+          >
+            {ws.status === "ACTIVE" ? "موثق" : ws.status === "PENDING" ? "بانتظار" : "موقوف"}
+          </span>
+        </header>
+        <main className="min-w-0 overflow-x-hidden">{children}</main>
       </div>
     );
   }
 
+  // Full seller (retail + optional wholesale)
   const topbarItems = [
     {
       countKey: "ordersNew",
@@ -97,20 +108,14 @@ export default async function SellerLayout({
       href: "/seller/returns-batches",
       icon: "batches" as const,
     },
-    {
-      countKey: "productsPendingOwnerApproval",
-      label: "منتجات بانتظار الموافقة",
-      href: "/seller/products/approvals",
-      icon: "products" as const,
-    },
   ];
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-gray-50" dir="rtl">
       <SellerSidebar
-        storeName={user.seller.storeName}
-        storeSlug={user.seller.slug}
-        isVerified={user.seller.isVerified}
+        storeName={user.seller!.storeName}
+        storeSlug={user.seller!.slug}
+        isVerified={user.seller!.isVerified}
         isSellerOwner={user.isSellerOwner}
         staffPermissions={user.staffPermissions}
       />

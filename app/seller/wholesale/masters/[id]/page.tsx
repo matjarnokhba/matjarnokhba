@@ -7,8 +7,10 @@ import {
   Loader2, ArrowLeft, Save, AlertCircle, Image as ImageIcon, Package, Shield,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
+import QRCodeInput from "@/components/shared/QRCodeInput";
 
 type Category = { id: number; name: string; parentId: number | null; level: number };
+type CodeType = "BARCODE" | "QR";
 type Master = {
   id: number;
   name: string;
@@ -38,7 +40,8 @@ export default function EditMasterPage() {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [description, setDescription] = useState("");
-  const [barcode, setBarcode] = useState("");
+  const [codeValue, setCodeValue] = useState("");
+  const [codeType, setCodeType] = useState<CodeType>("BARCODE");
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [parentCategoryId, setParentCategoryId] = useState<string>("");
   const [categoryId, setCategoryId] = useState<string>("");
@@ -59,7 +62,14 @@ export default function EditMasterPage() {
         setName(m.name);
         setBrand(m.brand || "");
         setDescription(m.description || "");
-        setBarcode(m.barcode || "");
+        // Determine code type from existing data
+        if (m.qrCode) {
+          setCodeType("QR");
+          setCodeValue(m.qrCode);
+        } else if (m.barcode) {
+          setCodeType("BARCODE");
+          setCodeValue(m.barcode);
+        }
         setImageUrls(m.images);
         setCategoryId(m.category.id.toString());
         if (cData.success) {
@@ -83,7 +93,8 @@ export default function EditMasterPage() {
           name: name.trim(),
           brand: brand.trim() || null,
           description: description.trim() || null,
-          barcode: barcode.trim() || null,
+          barcode: codeType === "BARCODE" ? (codeValue.trim() || null) : null,
+          qrCode: codeType === "QR" ? (codeValue.trim() || null) : null,
           categoryId: parseInt(categoryId),
           images: imageUrls,
         }),
@@ -149,19 +160,22 @@ export default function EditMasterPage() {
               <label className="mb-1 block text-xs font-bold">الاسم *</label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00]" />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-bold">الماركة</label>
-                <input type="text" value={brand} onChange={(e) => setBrand(e.target.value)} maxLength={80} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00]" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold">الباركود</label>
-                <input type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} dir="ltr" maxLength={100} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 font-mono text-sm outline-none focus:border-[#ff5c00]" />
-              </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold">الماركة</label>
+              <input type="text" value={brand} onChange={(e) => setBrand(e.target.value)} maxLength={80} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00]" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold">الوصف</label>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={2000} className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00]" />
+            </div>
+            <div>
+              <QRCodeInput
+                value={codeValue}
+                codeType={codeType}
+                onChange={(v, t) => { setCodeValue(v); setCodeType(t); }}
+                label="الباركود أو QR"
+                helperText="عدّل الكود الحالي أو امسح كودًا جديدًا"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold">الفئة الرئيسية *</label>
