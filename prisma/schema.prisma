@@ -657,7 +657,7 @@ model Product {
   editLogs   ProductEditLog[]
   favorites  Favorite[]
   wholesaleProducts WholesaleProduct[] @relation("WholesaleLink")
-  masterId  Int?            @unique
+  masterId  Int?
   master    ProductMaster?  @relation("ProductMasterLink", fields: [masterId], references: [id], onDelete: SetNull)
   offer     SellerOffer?
 
@@ -2853,7 +2853,7 @@ model ProductMaster {
   offers        SellerOffer[]
   derivativesFrom ProductMasterDerivative[] @relation("DerivativeParent")
   derivedAs       ProductMasterDerivative[] @relation("DerivativeChild")
-  product Product? @relation("ProductMasterLink")
+  products Product[] @relation("ProductMasterLink")
 
   @@index([barcode])
   @@index([categoryId])
