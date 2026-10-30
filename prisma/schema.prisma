@@ -657,6 +657,9 @@ model Product {
   editLogs   ProductEditLog[]
   favorites  Favorite[]
   wholesaleProducts WholesaleProduct[] @relation("WholesaleLink")
+  masterId  Int?            @unique
+  master    ProductMaster?  @relation("ProductMasterLink", fields: [masterId], references: [id], onDelete: SetNull)
+  offer     SellerOffer?
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -2850,6 +2853,7 @@ model ProductMaster {
   offers        SellerOffer[]
   derivativesFrom ProductMasterDerivative[] @relation("DerivativeParent")
   derivedAs       ProductMasterDerivative[] @relation("DerivativeChild")
+  product Product? @relation("ProductMasterLink")
 
   @@index([barcode])
   @@index([categoryId])
@@ -2879,6 +2883,7 @@ model SellerOffer {
   sellerUserId        Int
   wholesaleSupplierId Int
   masterId            Int
+  productId           Int?        @unique
   sourceId            Int?
   offerType           String      @default("WHOLESALE")
   wholesalePrice      Decimal     @db.Decimal(10, 2)
@@ -2899,6 +2904,7 @@ model SellerOffer {
   sellerUser  User              @relation("OfferSeller", fields: [sellerUserId], references: [id], onDelete: Restrict)
   supplier    WholesaleSupplier @relation(fields: [wholesaleSupplierId], references: [id], onDelete: Cascade)
   master      ProductMaster     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  product     Product?          @relation(fields: [productId], references: [id], onDelete: Cascade)
   source      WholesaleSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   variants    SellerOfferVariant[]
   orderItems  WholesaleOrderItem[]
