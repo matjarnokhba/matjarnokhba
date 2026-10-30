@@ -78,6 +78,7 @@ export async function GET() {
           where: { isDefault: true },
           include: { inventory: { select: { quantity: true } } },
         },
+        offer: { select: { id: true, isActive: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -92,6 +93,8 @@ export async function GET() {
       stock: p.variants[0]?.inventory?.quantity || 0,
       status: p.status,
       sold: p.sold,
+      masterId: p.masterId,
+      offer: p.offer ? { id: p.offer.id, isActive: p.offer.isActive } : null,
       createdAt: p.createdAt,
     }));
 

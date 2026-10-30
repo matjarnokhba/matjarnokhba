@@ -24,6 +24,7 @@ export default function NewOfferPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preMasterId = searchParams.get("masterId");
+  const preProductId = searchParams.get("productId");
 
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState("");
@@ -58,6 +59,25 @@ export default function NewOfferPage() {
   }, []);
 
   // Pre-load master if masterId in URL
+  useEffect(() => {
+    if (!preProductId) return;
+    if (preMasterId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/seller/products/${preProductId}`);
+        const d = await res.json();
+        if (d.success && d.product?.masterId) {
+          const mRes = await fetch(`/api/products/master/${d.product.masterId}`);
+          const mData = await mRes.json();
+          if (mData.success) {
+            setMaster(mData.master);
+            setStep(2);
+          }
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preProductId, preMasterId]);
   useEffect(() => {
     if (preMasterId) {
       (async () => {
