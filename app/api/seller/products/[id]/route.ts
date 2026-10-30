@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
+import { SessionService } from '@/services/session.service';
+import { ProductMasterLinker } from '@/services/product-master-linker.service';
 
 const FIELD_NAMES: Record<string, string> = {
   name: "الاسم",
@@ -548,6 +549,12 @@ export async function PATCH(
         changedFields: changedKeys,
       };
     });
+
+    try {
+      await ProductMasterLinker.ensureMasterForProduct(null, productId);
+    } catch (e) {
+      console.error("Master linking failed (non-fatal):", e);
+    }
 
     return NextResponse.json({ success: true, product: result });
   } catch (error) {

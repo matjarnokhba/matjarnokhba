@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
+import { SessionService } from '@/services/session.service';
+import { ProductMasterLinker } from '@/services/product-master-linker.service';
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();
@@ -390,6 +391,12 @@ export async function POST(request: Request) {
       },
       { timeout: 30000, maxWait: 10000 }
     );
+
+    try {
+      await ProductMasterLinker.ensureMasterForProduct(null, product.id);
+    } catch (e) {
+      console.error("Master linking failed (non-fatal):", e);
+    }
 
     return NextResponse.json(
       { success: true, product: { id: product.id, slug: product.slug } },
