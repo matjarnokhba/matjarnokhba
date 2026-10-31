@@ -13,6 +13,7 @@ const variantSchema = z.object({
 
 const createSchema = z.object({
   masterId: z.number().int().positive(),
+  productId: z.number().int().positive().nullable().optional(),
   sourceId: z.number().int().positive().nullable().optional(),
   wholesalePrice: z.number().positive(),
   retailPrice: z.number().positive().nullable().optional(),
@@ -176,6 +177,47 @@ export async function POST(request: Request) {
       }
     }
 
+    // Verify product belongs to seller (if productId provided)
+    if (data.productId) {
+      const product = await prisma.product.findUnique({
+        where: { id: data.productId },
+        select: {
+          sellerId: true,
+          deletedAt: true,
+          masterId: true,
+        },
+      });
+      if (!product || product.deletedAt) {
+        return NextResponse.json(
+          { success: false, message: "المنتج غير موجود" },
+          { status: 404 }
+        );
+      }
+      if (product.sellerId !== auth.supplier.userId) {
+        // Check via seller relation
+        const seller = await prisma.seller.findFirst({
+          where: { userId: auth.supplier.userId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!seller || product.sellerId !== seller.id) {
+          return NextResponse.json(
+            { success: false, message: "المنتج لا ينتمي إليك" },
+            { status: 403 }
+          );
+        }
+      }
+      // If masterId mismatch — product's master should be the same
+      if (product.masterId && product.masterId !== data.masterId) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "معرف المنتج لا يطابق الهوية المختارة",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check duplicate offer (unique: supplierId, masterId, offerType)
     const existing = await prisma.sellerOffer.findFirst({
       where: {
@@ -224,6 +266,7 @@ export async function POST(request: Request) {
         sellerUserId: auth.user.id,
         wholesaleSupplierId: auth.supplier.id,
         masterId: data.masterId,
+        productId: data.productId || null,
         sourceId: data.sourceId || null,
         offerType: "WHOLESALE",
         wholesalePrice: data.wholesalePrice,

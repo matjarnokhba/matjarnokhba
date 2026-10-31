@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Loader2, Search, ArrowLeft, Package, AlertCircle,
-  CheckCircle2, X, Plus, QrCode,
+  CheckCircle2, X, Plus,
 } from "lucide-react";
 import QRCodeInput from "@/components/shared/QRCodeInput";
 
@@ -29,6 +29,7 @@ export default function NewOfferPage() {
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loadingMaster, setLoadingMaster] = useState(!!(searchParams.get("productId") || searchParams.get("masterId")));
   const [master, setMaster] = useState<Master | null>(null);
   const [codeValue, setCodeValue] = useState("");
   const [codeType, setCodeType] = useState<CodeType>("BARCODE");
@@ -58,25 +59,36 @@ export default function NewOfferPage() {
     })();
   }, []);
 
-  // Pre-load master if masterId in URL
+  // Pre-load master from productId (via ensure-master endpoint)
   useEffect(() => {
-    if (!preProductId) return;
-    if (preMasterId) return;
-    (async () => {
-      try {
-        const res = await fetch(`/api/seller/products/${preProductId}`);
-        const d = await res.json();
-        if (d.success && d.product?.masterId) {
-          const mRes = await fetch(`/api/products/master/${d.product.masterId}`);
-          const mData = await mRes.json();
-          if (mData.success) {
-            setMaster(mData.master);
-            setStep(2);
-          }
-        }
-      } catch {}
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  if (!preProductId) return;
+  if (preMasterId) return;
+  (async () => {
+    try {
+      // Ensure master exists (creates it if missing, preserves barcode)
+      const emRes = await fetch(
+        `/api/seller/products/${preProductId}/ensure-master`,
+        { method: "POST" }
+      );
+      const emData = await emRes.json();
+      if (!emData.success || !emData.masterId) {
+        setError(emData.message || "تعذر تحميل هوية المنتج");
+        return;
+      }
+      // Load full master
+      const mRes = await fetch(`/api/products/master/${emData.masterId}`);
+      const mData = await mRes.json();
+      if (mData.success) {
+        setMaster(mData.master);
+        setStep(2);
+      } else {
+        setError(mData.message || "تعذر تحميل بيانات المنتج");
+      }
+    } catch {
+      setError("خطأ في الاتصال");
+    }
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preProductId, preMasterId]);
   useEffect(() => {
     if (preMasterId) {
@@ -86,6 +98,9 @@ export default function NewOfferPage() {
           const d = await res.json();
           if (d.success) { setMaster(d.master); setStep(2); }
         } catch {}
+        finally {
+          setLoadingMaster(false);
+        }
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,7 +170,9 @@ export default function NewOfferPage() {
       const res = await fetch("/api/wholesale/offers", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          masterId: master.id, sourceId: sourceId ? parseInt(sourceId) : null,
+          masterId: master.id,
+          productId: preProductId ? parseInt(preProductId) : null,
+          sourceId: sourceId ? parseInt(sourceId) : null,
           wholesalePrice: Number(wholesalePrice), retailPrice: retailPrice ? Number(retailPrice) : null,
           minOrderQty: Number(minOrderQty), maxOrderQty: maxOrderQty ? Number(maxOrderQty) : null,
           unit, claimType, claimNotes: claimNotes.trim() || null, notes: notes.trim() || null, variants,
@@ -182,7 +199,13 @@ export default function NewOfferPage() {
           المرحلة {step} من 3 — {step === 1 ? "اختر المنتج" : step === 2 ? "السعر والكمية" : "المخزون والتفاصيل"}
         </p>
 
-        {step === 1 && (
+        {loadingMaster && (
+          <div className="flex justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-[#ff5c00]" />
+          </div>
+        )}
+
+        {!loadingMaster && step === 1 && (
           <div className="space-y-4">
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <QRCodeInput
