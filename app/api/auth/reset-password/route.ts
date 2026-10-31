@@ -4,7 +4,7 @@ import { PasswordResetService } from "@/services/password-reset.service";
 
 const schema = z.object({
   token: z.string().min(10, "الرابط غير صحيح"),
-  password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
+  password: z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
 });
 
 export async function POST(request: Request) {

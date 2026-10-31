@@ -18,7 +18,7 @@ const createSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().email().toLowerCase().trim(),
   phone: z.string().trim().min(8).max(20),
-  password: z.string().min(6).max(100),
+  password: z.string().min(8).max(100),
   city: z.string().trim().min(2).max(100),
   vehicleType: z.string().trim().max(50).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
