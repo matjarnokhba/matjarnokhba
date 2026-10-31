@@ -25,6 +25,7 @@ import {
   Users,
   AlertTriangle,
   BookOpen,
+  ShoppingBag,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -65,6 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false, ownerOnly: true },
   { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false, ownerOnly: true },
   { href: "/seller/staff", label: "الموظفون", icon: Users, exact: false, ownerOnly: true },
+  { href: "/wholesale/browse", label: "سوق الجملة", icon: ShoppingBag, exact: false, ownerOnly: true },
   { href: "/seller/wholesale", label: "بوابة الجملة", icon: Building2, exact: false, ownerOnly: true },
   { href: "/seller/wholesale/join", label: "الانضمام للجملة", icon: Building2, exact: false, ownerOnly: true, hideWhenWholesale: true },
   { href: "/seller/wholesale/masters", label: "هويات المنتجات", icon: Package, exact: false, ownerOnly: true },
