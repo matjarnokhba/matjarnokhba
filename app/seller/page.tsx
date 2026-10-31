@@ -219,6 +219,29 @@ async function OwnerDashboard({
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
+      {current.user.wholesaleSupplier ? (
+        <div className="mb-4 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 p-4 text-white flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-6 w-6" />
+            <div>
+              <p className="font-bold text-sm">أنت في سوق الجملة</p>
+              <p className="text-xs opacity-90">{current.user.wholesaleSupplier.displayName}</p>
+            </div>
+          </div>
+          <Link href="/seller/wholesale" className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold hover:bg-white/30">لوحة الجملة</Link>
+        </div>
+      ) : (
+        <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-6 w-6 text-blue-600" />
+            <div>
+              <p className="font-bold text-sm text-blue-900">هل تريد البيع بالجملة؟</p>
+              <p className="text-xs text-blue-700">انضم لسوق الجملة كشركة، مصنع، أو مورد. متجرك يبقى مستقلًا.</p>
+            </div>
+          </div>
+          <Link href="/seller/wholesale/join" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">انضم الآن</Link>
+        </div>
+      )}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

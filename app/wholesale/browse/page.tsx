@@ -17,7 +17,7 @@ type Offer = {
   };
   supplier: {
     id: number; displayName: string; slug: string; isVerified: boolean;
-    activityType: string; city: string; region: string | null;
+    activityType: string; entityType: "COMPANY" | "FACTORY" | "SUPPLIER" | null; city: string; region: string | null;
   };
   source: { id: number; name: string; city: string } | null;
   wholesalePrice: number; retailPrice: number | null;
@@ -196,6 +196,15 @@ export default function WholesaleBrowsePage() {
                     >
                       <Store className="h-3 w-3 shrink-0" />
                       <span className="truncate">{o.supplier.displayName}</span>
+                          {o.supplier.entityType && (
+                            <span className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold ${
+                              o.supplier.entityType === "FACTORY" ? "bg-purple-100 text-purple-700" :
+                              o.supplier.entityType === "COMPANY" ? "bg-blue-100 text-blue-700" :
+                              "bg-gray-100 text-gray-700"
+                            }`}>
+                              {o.supplier.entityType === "FACTORY" ? "مصنع" : o.supplier.entityType === "COMPANY" ? "شركة" : "مورد"}
+                            </span>
+                          )}
                     </Link>
                     <div className="flex items-center gap-1 text-gray-500">
                       <MapPin className="h-3 w-3" />

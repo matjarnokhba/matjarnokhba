@@ -99,7 +99,7 @@ export async function GET(request: Request) {
               displayName: true,
               slug: true,
               isVerified: true,
-              activityType: true,
+              activityType: true, entityType: true,
               city: true,
               region: true,
             },
