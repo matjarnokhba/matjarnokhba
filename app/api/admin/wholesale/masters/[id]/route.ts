@@ -55,14 +55,6 @@ export async function GET(
             supplier: { select: { id: true, displayName: true, slug: true } },
           },
         },
-        derivativesFrom: {
-          select: {
-            id: true,
-            childMasterId: true,
-            childMaster: { select: { id: true, name: true, slug: true } },
-            createdAt: true,
-          },
-        },
       },
     });
 
@@ -99,13 +91,7 @@ export async function GET(
           claimVerified: o.claimVerified,
           supplier: o.supplier,
         })),
-        derivatives: master.derivativesFrom.map((d) => ({
-          id: d.id,
-          childMasterId: d.childMasterId,
-          childName: d.childMaster.name,
-          childSlug: d.childMaster.slug,
-          createdAt: d.createdAt,
-        })),
+        derivatives: [],
         createdAt: master.createdAt,
       },
     });

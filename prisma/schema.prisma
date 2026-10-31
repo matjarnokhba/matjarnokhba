@@ -402,7 +402,6 @@ model User {
   productMastersCreated     ProductMaster[]              @relation("MasterCreatedBy")
   productMastersManufactured ProductMaster[]             @relation("MasterManufacturer")
   sellerOffers              SellerOffer[]                @relation("OfferSeller")
-  productMasterDerivatives  ProductMasterDerivative[]
   staffOf         SellerStaff?    @relation("StaffUser")
   staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
 
@@ -2811,8 +2810,6 @@ model ProductMaster {
   manufacturer  User?                       @relation("MasterManufacturer", fields: [manufacturerUserId], references: [id], onDelete: SetNull)
   variants      ProductMasterVariant[]
   offers        SellerOffer[]
-  derivativesFrom ProductMasterDerivative[] @relation("DerivativeParent")
-  derivedAs       ProductMasterDerivative[] @relation("DerivativeChild")
   products Product[] @relation("ProductMasterLink")
 
   @@index([barcode])
@@ -2896,26 +2893,6 @@ model SellerOfferVariant {
   @@unique([offerId, masterVariantId])
   @@index([offerId])
 }
-
-model ProductMasterDerivative {
-  id               Int      @id @default(autoincrement())
-  parentMasterId   Int
-  childMasterId    Int
-  modifiedByUserId Int
-  differences      Json
-  reason           String?
-  createdAt        DateTime @default(now())
-
-  parentMaster ProductMaster @relation("DerivativeParent", fields: [parentMasterId], references: [id], onDelete: Cascade)
-  childMaster  ProductMaster @relation("DerivativeChild", fields: [childMasterId], references: [id], onDelete: Cascade)
-  modifiedBy   User          @relation(fields: [modifiedByUserId], references: [id], onDelete: Restrict)
-
-  @@unique([parentMasterId, childMasterId])
-  @@index([parentMasterId])
-  @@index([childMasterId])
-}
-
-
 
 model LedgerEntry {
   id                 Int      @id @default(autoincrement())

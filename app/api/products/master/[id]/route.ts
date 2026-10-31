@@ -43,15 +43,6 @@ export async function GET(
           orderBy: { id: "asc" },
           select: { id: true, barcode: true, sku: true, options: true },
         },
-        derivativesFrom: {
-          select: {
-            id: true,
-            childMasterId: true,
-            differences: true,
-            createdAt: true,
-            childMaster: { select: { id: true, name: true, slug: true } },
-          },
-        },
         offers: {
           where: { deletedAt: null },
           select: { id: true, isActive: true },
@@ -83,14 +74,7 @@ export async function GET(
         isVerified: master.isVerified,
         status: master.status,
         variants: master.variants,
-        derivatives: master.derivativesFrom.map((d) => ({
-          id: d.id,
-          childMasterId: d.childMasterId,
-          childName: d.childMaster.name,
-          childSlug: d.childMaster.slug,
-          differences: d.differences,
-          createdAt: d.createdAt,
-        })),
+        derivatives: [],
         offersCount: master.offers.length,
         activeOffersCount: master.offers.filter((o) => o.isActive).length,
         isOwner: master.createdByUserId === auth.user.id,
