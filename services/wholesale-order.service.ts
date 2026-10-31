@@ -188,7 +188,7 @@ export const WholesaleOrderService = {
               brand: srcProduct.brand,
               badge: srcProduct.badge,
               freeShipping: srcProduct.freeShipping,
-              status: "ACTIVE",
+              status: "DRAFT",
               productType: srcProduct.productType,
               originCountry: srcProduct.originCountry,
               unit: srcProduct.unit,
@@ -307,6 +307,17 @@ export const WholesaleOrderService = {
             }
           }
 
+          // ─── 7b. Link order items to draft product ───
+          for (const item of items) {
+            await tx.wholesaleOrderItem.update({
+              where: { id: item.id },
+              data: {
+                importedProductId: newProduct.id,
+                importedQty: item.qty,
+                salePrice: offer.retailPrice ?? offer.wholesalePrice,
+              },
+            });
+          }
           createdProductIds.push(newProduct.id);
           productsCreated++;
         }
@@ -314,7 +325,7 @@ export const WholesaleOrderService = {
         // ─── 8. Update order status ───
         await tx.wholesaleOrder.update({
           where: { id: orderId },
-          data: { status: "ACCEPTED", acceptedAt: new Date() },
+          data: { status: "IMPORT_PENDING", acceptedAt: new Date() },
         });
 
         // ─── 9. Notify buyer ───
@@ -323,7 +334,7 @@ export const WholesaleOrderService = {
             userId: order.buyer.id,
             type: "ORDER_STATUS_CHANGED" as any,
             title: "✅ تم قبول طلب الجملة",
-            message: `تم قبول طلبك ${order.orderNumber} من "${order.supplier.displayName}". المنتجات أُضيفت إلى متجرك.`,
+            message: `تم قبول طلبك ${order.orderNumber} من "${order.supplier.displayName}". المنتجات جاهزة كمسودات. راجعها من صفحة الطلب ثم انشرها.`,
             link: `/wholesale/orders/${order.id}`,
           },
         });
