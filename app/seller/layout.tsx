@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { SessionService } from "@/services/session.service";
 import SellerSidebar from "@/components/seller/SellerSidebar";
 import RoleTopBar from "@/components/layout/RoleTopBar";
@@ -49,6 +50,15 @@ export default async function SellerLayout({
     );
   }
 
+  const WHOLESALE_NAV = [
+    { href: "/seller/wholesale", label: "اللوحة" },
+    { href: "/seller/wholesale/offers", label: "عروضي" },
+    { href: "/seller/wholesale/masters", label: "الهويات" },
+    { href: "/seller/wholesale/orders", label: "الطلبات" },
+    { href: "/wholesale/browse", label: "سوق الجملة" },
+    { href: "/seller/wholesale/settings", label: "الإعدادات" },
+  ];
+
   // Wholesale-only user (no retail store)
   if (!hasRetailStore && hasWholesaleAccess) {
     const ws = user.wholesaleSupplier!;
@@ -77,6 +87,15 @@ export default async function SellerLayout({
             {ws.status === "ACTIVE" ? "موثق" : ws.status === "PENDING" ? "بانتظار" : "موقوف"}
           </span>
         </header>
+        <nav className="sticky top-14 z-20 border-b border-gray-200 bg-white px-4 shadow-sm">
+          <div className="flex gap-1 overflow-x-auto py-1.5">
+            {WHOLESALE_NAV.map((item) => (
+              <Link key={item.href} href={item.href} className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-100">
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </nav>
         <main className="min-w-0 overflow-x-hidden">{children}</main>
       </div>
     );
