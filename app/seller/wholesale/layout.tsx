@@ -11,7 +11,7 @@ export default async function WholesaleLayout({
 
   const supplier = current.user.wholesaleSupplier;
   if (!supplier) {
-    redirect("/wholesale/register");
+    redirect("/seller/wholesale/join");
   }
 
   return <>{children}</>;

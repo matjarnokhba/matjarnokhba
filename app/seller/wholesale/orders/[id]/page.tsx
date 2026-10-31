@@ -22,6 +22,7 @@ type OrderDetail = {
 
 const STATUS_INFO: Record<string, { label: string; color: string }> = {
   PENDING: { label: "جديد — بانتظار قرارك", color: "bg-amber-100 text-amber-700" },
+  IMPORT_PENDING: { label: "بانتظار الاستيراد", color: "bg-orange-100 text-orange-700" },
   ACCEPTED: { label: "مقبول", color: "bg-blue-100 text-blue-700" },
   REJECTED: { label: "مرفوض", color: "bg-red-100 text-red-700" },
   PREPARING: { label: "قيد التجهيز", color: "bg-indigo-100 text-indigo-700" },
@@ -150,6 +151,15 @@ export default function SupplierOrderDetailPage() {
         {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</div>}
 
         {/* Actions */}
+        {order.status === "IMPORT_PENDING" && (
+          <div className="mb-3 rounded-xl bg-orange-50 border border-orange-200 p-4">
+            <p className="text-xs font-bold text-orange-800 mb-2">📦 المنتجات جاهزة كمسودات</p>
+            <p className="text-[11px] text-orange-700 mb-3">حدد السعر والكمية لكل منتج ثم انشره في متجرك.</p>
+            <Link href={`/seller/wholesale/orders/${order.id}/import`} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-2.5 text-sm font-bold text-white hover:bg-[#e64a00]">
+              <Package className="h-4 w-4" /> إعداد المنتجات ونشرها
+            </Link>
+          </div>
+        )}
         <div className="rounded-xl bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-black">الإجراءات</h2>
           {order.status === "PENDING" && (

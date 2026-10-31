@@ -12,7 +12,7 @@ type Supplier = {
   id: number;
   displayName: string;
   slug: string;
-  activityType: string;
+  activityType: string; entityType: "COMPANY" | "FACTORY" | "SUPPLIER" | null;
   description: string | null;
   city: string;
   region: string | null;
@@ -44,6 +44,11 @@ type Offer = {
   variantCount: number;
 };
 
+const ENTITY_LABEL: Record<string, { label: string; color: string }> = {
+  COMPANY: { label: "شركة", color: "bg-blue-50 text-blue-700" },
+  FACTORY: { label: "مصنع", color: "bg-purple-50 text-purple-700" },
+  SUPPLIER: { label: "مورّد", color: "bg-gray-100 text-gray-700" },
+};
 const ACTIVITY_LABEL: Record<string, string> = {
   COMPANY: "شركة تجارية", WORKSHOP: "ورشة", FACTORY: "معمل / مصنع",
   WAREHOUSE: "مخزن", SHOP: "محل تجاري", DISTRIBUTOR: "موزع / مورد",
@@ -87,6 +92,7 @@ export default function SupplierPage() {
           displayName: firstSupplier.displayName,
           slug: firstSupplier.slug,
           activityType: firstSupplier.activityType,
+          entityType: (firstSupplier as any).entityType ?? null,
           description: null,
           city: firstSupplier.city,
           region: firstSupplier.region,
@@ -140,7 +146,7 @@ export default function SupplierPage() {
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                 <span className="rounded bg-orange-50 px-2 py-0.5 font-bold text-[#ff5c00]">
-                  {ACTIVITY_LABEL[supplier.activityType]}
+                  {(supplier.entityType ? (ENTITY_LABEL[supplier.entityType]?.label || supplier.entityType) : ACTIVITY_LABEL[supplier.activityType])}
                 </span>
                 <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{supplier.city}{supplier.region && ` - ${supplier.region}`}</span>
                 <span>· {offers.length} منتج معروض</span>
