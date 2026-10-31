@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from '@/services/session.service';
-import { ProductMasterLinker } from '@/services/product-master-linker.service';
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();
@@ -78,7 +77,6 @@ export async function GET() {
           where: { isDefault: true },
           include: { inventory: { select: { quantity: true } } },
         },
-        offer: { select: { id: true, isActive: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -93,8 +91,6 @@ export async function GET() {
       stock: p.variants[0]?.inventory?.quantity || 0,
       status: p.status,
       sold: p.sold,
-      masterId: p.masterId,
-      offer: p.offer ? { id: p.offer.id, isActive: p.offer.isActive } : null,
       createdAt: p.createdAt,
     }));
 
@@ -396,7 +392,6 @@ export async function POST(request: Request) {
     );
 
     try {
-      await ProductMasterLinker.ensureMasterForProduct(null, product.id);
     } catch (e) {
       console.error("Master linking failed (non-fatal):", e);
     }

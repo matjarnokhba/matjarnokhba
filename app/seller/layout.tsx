@@ -27,10 +27,9 @@ export default async function SellerLayout({
     user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
   const hasRetailStore = !!user.seller;
-  const hasWholesaleAccess = !!user.wholesaleSupplier;
 
   // Neither retail nor wholesale → onboarding
-  if (!hasRetailStore && !hasWholesaleAccess && !isAdminViewing) {
+  if (!hasRetailStore && !isAdminViewing) {
     redirect("/seller-onboarding");
   }
 
@@ -50,56 +49,7 @@ export default async function SellerLayout({
     );
   }
 
-  const WHOLESALE_NAV = [
-    { href: "/seller/wholesale", label: "اللوحة" },
-    { href: "/seller/wholesale/offers", label: "عروضي" },
-    { href: "/seller/wholesale/masters", label: "الهويات" },
-    { href: "/seller/wholesale/orders", label: "الطلبات" },
-    { href: "/wholesale/browse", label: "سوق الجملة" },
-    { href: "/seller/wholesale/settings", label: "الإعدادات" },
-  ];
 
-  // Wholesale-only user (no retail store)
-  if (!hasRetailStore && hasWholesaleAccess) {
-    const ws = user.wholesaleSupplier!;
-    return (
-      <div className="min-h-screen w-full overflow-x-hidden bg-gray-50" dir="rtl">
-        {/* Minimal layout for wholesale-only users */}
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-xs font-black text-white">
-              ج
-            </span>
-            <div className="leading-none">
-              <strong className="block text-sm font-black">{ws.displayName}</strong>
-              <small className="text-[10px] text-gray-500">بوابة الجملة</small>
-            </div>
-          </div>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-              ws.status === "ACTIVE"
-                ? "bg-green-100 text-green-700"
-                : ws.status === "PENDING"
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-red-100 text-red-700"
-            }`}
-          >
-            {ws.status === "ACTIVE" ? "موثق" : ws.status === "PENDING" ? "بانتظار" : "موقوف"}
-          </span>
-        </header>
-        <nav className="sticky top-14 z-20 border-b border-gray-200 bg-white px-4 shadow-sm">
-          <div className="flex gap-1 overflow-x-auto py-1.5">
-            {WHOLESALE_NAV.map((item) => (
-              <Link key={item.href} href={item.href} className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-100">
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </nav>
-        <main className="min-w-0 overflow-x-hidden">{children}</main>
-      </div>
-    );
-  }
 
   // Full seller (retail + optional wholesale)
   const topbarItems = [
@@ -137,7 +87,6 @@ export default async function SellerLayout({
         isVerified={user.seller!.isVerified}
         isSellerOwner={user.isSellerOwner}
         staffPermissions={user.staffPermissions}
-        hasWholesaleSupplier={!!(user as any).wholesaleSupplier}
       />
       <RoleTopBar
         endpointUrl="/api/seller/topbar"

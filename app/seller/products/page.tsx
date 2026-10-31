@@ -17,8 +17,6 @@ type SellerProduct = {
   stock: number;
   status: string;
   sold: number;
-  masterId: number | null;
-  offer: { id: number; isActive: boolean } | null;
   createdAt: string;
 };
 
@@ -122,10 +120,6 @@ export default function SellerProductsPage() {
           {products.map((product) => {
             const statusInfo = STATUS_INFO[product.status] || STATUS_INFO.DRAFT;
             const productHref = sellerSlug ? `/product/${sellerSlug}/${product.slug}` : "#";
-            const wholesaleHref = product.offer
-              ? `/seller/wholesale/offers/${product.offer.id}`
-              : `/seller/wholesale/offers/new?productId=${product.id}`;
-            const offerIsActive = product.offer?.isActive === true;
 
             return (
               <div key={product.id} className="rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md">
@@ -146,16 +140,6 @@ export default function SellerProductsPage() {
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusInfo.bg} ${statusInfo.color}`}>
                         {statusInfo.label}
                       </span>
-                      {product.offer && (
-                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          offerIsActive
-                            ? "bg-orange-100 text-[#ff5c00]"
-                            : "bg-gray-200 text-gray-600"
-                        }`}>
-                          <Tag className="h-2.5 w-2.5" />
-                          {offerIsActive ? "في الجملة" : "عرض معطّل"}
-                        </span>
-                      )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
                       <span>{product.categoryName}</span>
@@ -172,23 +156,6 @@ export default function SellerProductsPage() {
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-1">
-                    {product.offer ? (
-                      <Link
-                        href={wholesaleHref}
-                        className="flex items-center gap-1 rounded-lg border border-[#ff5c00] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#ff5c00] transition hover:bg-[#fff4ed]"
-                      >
-                        <Settings2 className="h-3.5 w-3.5" />
-                        إدارة العرض
-                      </Link>
-                    ) : (
-                      <Link
-                        href={wholesaleHref}
-                        className="flex items-center gap-1 rounded-lg bg-[#ff5c00] px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#e64a00]"
-                      >
-                        <Tag className="h-3.5 w-3.5" />
-                        اعرض في الجملة
-                      </Link>
-                    )}
                     <Link href={productHref} target="_blank" className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-50" aria-label="عرض">
                       <Eye className="h-4 w-4" />
                     </Link>

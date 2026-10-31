@@ -72,16 +72,7 @@ export const SessionService = {
             deletedAt: true,
             emailVerified: true,
             seller: { select: SELLER_SELECT },
-            wholesaleSupplier: {
-              select: {
-                id: true,
-                displayName: true,
-                slug: true,
-                status: true,
-                isVerified: true,
-                activityType: true,
-              },
-            },
+
             staffOf: {
               where: { deletedAt: null, isActive: true },
               select: {

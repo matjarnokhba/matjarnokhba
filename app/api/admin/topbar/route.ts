@@ -26,7 +26,6 @@ export async function GET() {
       withdrawalsPending,
       legalNoticesActive,
       handoverPending,
-      wholesalePending,
       unreadList,
     ] = await Promise.all([
       prisma.notification.count({ where: { userId, isRead: false } }),
@@ -43,7 +42,6 @@ export async function GET() {
         where: { status: { in: ["WARNING", "ESCALATED"] } },
       }),
       prisma.adminCashHandover.count({ where: { status: "PENDING" } }),
-      prisma.wholesaleSupplier.count({ where: { status: "PENDING", deletedAt: null } }),
       prisma.notification.findMany({
         where: { userId, isRead: false },
         orderBy: { createdAt: "desc" },
@@ -69,7 +67,6 @@ export async function GET() {
         withdrawalsPending,
         legalNoticesActive,
         handoverPending,
-        wholesalePending,
       },
       notificationsList: unreadList,
     });
