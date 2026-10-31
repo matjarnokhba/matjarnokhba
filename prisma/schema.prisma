@@ -2665,6 +2665,7 @@ enum WholesaleOrderStatus {
   READY
   COMPLETED
   CANCELLED
+  IMPORT_PENDING
 }
 
 model WholesaleSupplier {
@@ -2750,6 +2751,11 @@ model WholesaleOrderItem {
   qty             Int
   unitPrice       Decimal  @db.Decimal(10, 2)
   total           Decimal  @db.Decimal(10, 2)
+  importedQty       Int?
+  importedProductId Int?
+  salePrice         Decimal? @db.Decimal(10, 2)
+  purchaseCost      Decimal? @db.Decimal(10, 2)
+  importedAt        DateTime?
 
   order        WholesaleOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   offer        SellerOffer         @relation(fields: [offerId], references: [id], onDelete: Restrict)
