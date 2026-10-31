@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { SessionService } from "@/services/session.service";
 import {
   reverseGeocode,
   isWithinMorocco,
@@ -43,13 +42,7 @@ function checkRate(ip: string): boolean {
 
 export async function GET(request: Request) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current) {
-      return NextResponse.json(
-        { success: false, message: "غير مصرح" },
-        { status: 401 }
-      );
-    }
+
 
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||

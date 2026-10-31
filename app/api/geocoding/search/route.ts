@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { SessionService } from "@/services/session.service";
 import { searchPlaces, type GeocodingResult } from "@/lib/geocoding";
 
 // ═══ Cache ═══
@@ -83,13 +82,7 @@ function generateQueryVariants(q: string): string[] {
 
 export async function GET(request: Request) {
   try {
-    const current = await SessionService.getCurrent();
-    if (!current) {
-      return NextResponse.json(
-        { success: false, message: "غير مصرح" },
-        { status: 401 }
-      );
-    }
+
 
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
