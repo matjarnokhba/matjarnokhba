@@ -17,10 +17,17 @@ export async function GET(
     if (isNaN(orderId)) {
       return NextResponse.json({ success: false, message: "معرف غير صحيح" }, { status: 400 });
     }
+
     const order = await prisma.wholesaleOrder.findUnique({
       where: { id: orderId },
       include: {
-        items: { select: { id: true, importedProductId: true, importedQty: true, salePrice: true } },
+        items: {
+          select: {
+            id: true, offerId: true, productName: true, variantName: true,
+            qty: true, importedQty: true, importedProductId: true,
+            salePrice: true, purchaseCost: true, unitPrice: true,
+          },
+        },
         buyer: { select: { seller: { select: { id: true } } } },
       },
     });
@@ -28,9 +35,8 @@ export async function GET(
     if (order.buyer.seller?.id !== buyerSellerId) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
-    const productIds = order.items
-      .map((i: any) => i.importedProductId)
-      .filter((pid: any): pid is number => typeof pid === "number");
+
+    const productIds = order.items.map((i: any) => i.importedProductId).filter((pid: any): pid is number => typeof pid === "number");
     const drafts = productIds.length > 0
       ? await prisma.product.findMany({
           where: { id: { in: productIds }, sellerId: buyerSellerId },
@@ -40,9 +46,11 @@ export async function GET(
           },
         })
       : [];
+
     return NextResponse.json({
       success: true,
       order: { id: order.id, orderNumber: order.orderNumber, status: order.status },
+      items: order.items,
       drafts,
     });
   } catch (error) {
