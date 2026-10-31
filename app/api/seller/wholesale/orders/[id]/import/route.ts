@@ -41,16 +41,21 @@ export async function GET(
       ? await prisma.product.findMany({
           where: { id: { in: productIds }, sellerId: buyerSellerId },
           select: {
-            id: true, name: true, slug: true, status: true, images: true,
+            id: true, name: true, slug: true, status: true, images: true, masterId: true,
             variants: { select: { id: true, sku: true, price: true, barcode: true } },
           },
         })
       : [];
+    const draftById = new Map(drafts.map((d: any) => [d.id, d] as const));
+    const enrichedItems = order.items.map((it: any) => ({
+      ...it,
+      importedMasterId: it.importedProductId ? (draftById.get(it.importedProductId)?.masterId ?? null) : null,
+    }));
 
     return NextResponse.json({
       success: true,
       order: { id: order.id, orderNumber: order.orderNumber, status: order.status },
-      items: order.items,
+      items: enrichedItems,
       drafts,
     });
   } catch (error) {

@@ -12,6 +12,7 @@ type OrderItem = {
   qty: number;
   importedQty: number | null;
   importedProductId: number | null;
+  importedMasterId: number | null;
   salePrice: string | number | null;
   purchaseCost: string | number | null;
   unitPrice: string | number;
@@ -36,6 +37,7 @@ export default function ImportPage() {
   const orderId = parseInt(params.id as string);
   const [data, setData] = useState<Data | null>(null);
   const [edits, setEdits] = useState<Record<number, Edit>>({});
+  const [marketPrices, setMarketPrices] = useState<Record<number, { avg: number; min: number; max: number; count: number }>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -56,6 +58,18 @@ export default function ImportPage() {
             };
           }
           setEdits(initial);
+          const mids = Array.from(new Set(d.items.map((it: OrderItem) => it.importedMasterId).filter((m: number | null): m is number => typeof m === "number")));
+          if (mids.length > 0) {
+            try {
+              const pr = await fetch("/api/products/market-prices", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ masterIds: mids }),
+              });
+              const pd = await pr.json();
+              if (pd.success) setMarketPrices(pd.prices);
+            } catch {}
+          }
         } else {
           setError(d.message || "فشل التحميل");
         }
@@ -177,6 +191,28 @@ export default function ImportPage() {
                   <Info className="h-3 w-3" /> الربح المتوقع: {profit.toFixed(2)} د.م للوحدة
                 </div>
               )}
+              {(() => {
+                const market = it.importedMasterId ? marketPrices[it.importedMasterId] : null;
+                if (!market || market.count < 2) return null;
+                const sp = Number(e.salePrice);
+                if (!sp || isNaN(sp)) return null;
+                const diff = ((sp - market.avg) / market.avg) * 100;
+                if (diff > 20) return (
+                  <div className="mt-2 rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> سعرك أعلى من السوق بنسبة {diff.toFixed(0)}% (متوسط: {market.avg.toFixed(2)} د.م)
+                  </div>
+                );
+                if (diff < -20) return (
+                  <div className="mt-2 rounded-md bg-green-50 border border-green-200 p-2 text-xs text-green-700">
+                    سعرك أقل من السوق بنسبة {Math.abs(diff).toFixed(0)}% — تنافسي
+                  </div>
+                );
+                return (
+                  <div className="mt-2 text-xs text-gray-600">
+                    متوسط السوق: {market.avg.toFixed(2)} د.م ({market.count} عرض)
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
