@@ -195,8 +195,13 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Wholesale register error:", error);
+    const isDev = process.env.NODE_ENV !== "production";
     return NextResponse.json(
-      { success: false, message: "حدث خطأ أثناء التسجيل" },
+      {
+        success: false,
+        message: isDev && error instanceof Error ? error.message : "حدث خطأ أثناء التسجيل",
+        ...(isDev && error instanceof Error ? { stack: error.stack } : {}),
+      },
       { status: 500 }
     );
   }
