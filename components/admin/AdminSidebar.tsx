@@ -28,6 +28,7 @@ import {
   Wallet,
   Banknote,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
   { href: "/admin/wholesale-suppliers", label: "أصحاب الجملة", icon: Building2, exact: false },
   { href: "/admin/wholesale", label: "سوق الجملة", icon: Package, exact: false },
+  { href: "/admin/wholesale/claims", label: "مراجعة مطالبات الجملة", icon: ShieldCheck, exact: false },
   { href: "/admin/zones", label: "المناطق", icon: MapPin, exact: false },
   { href: "/admin/documents", label: "وثائق التجار", icon: FileText, exact: false },
   { href: "/admin/bank-accounts", label: "الحسابات البنكية", icon: Building2, exact: false },

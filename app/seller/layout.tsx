@@ -118,6 +118,7 @@ export default async function SellerLayout({
         isVerified={user.seller!.isVerified}
         isSellerOwner={user.isSellerOwner}
         staffPermissions={user.staffPermissions}
+        hasWholesaleSupplier={!!(user as any).wholesaleSupplier}
       />
       <RoleTopBar
         endpointUrl="/api/seller/topbar"

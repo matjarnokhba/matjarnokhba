@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -24,6 +24,7 @@ import {
   PackageX,
   Users,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -32,6 +33,7 @@ type SellerSidebarProps = {
   isVerified: boolean;
   isSellerOwner?: boolean;
   staffPermissions?: string[];
+  hasWholesaleSupplier?: boolean;
 };
 
 type NavItem = {
@@ -41,6 +43,7 @@ type NavItem = {
   exact: boolean;
   ownerOnly?: boolean;
   permission?: string;
+  hideWhenWholesale?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -57,11 +60,13 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false, permission: "VIEW_PERFORMANCE" },
   { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false, ownerOnly: true },
   { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false, permission: "VIEW_WALLET" },
+  { href: "/seller/ledger", label: "كناش الديون", icon: BookOpen, exact: false, ownerOnly: true },
   { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false, ownerOnly: true },
   { href: "/seller/documents", label: "وثائقي", icon: FileText, exact: false, ownerOnly: true },
   { href: "/seller/profile", label: "ملف المتجر", icon: User, exact: false, ownerOnly: true },
   { href: "/seller/staff", label: "الموظفون", icon: Users, exact: false, ownerOnly: true },
   { href: "/seller/wholesale", label: "بوابة الجملة", icon: Building2, exact: false, ownerOnly: true },
+  { href: "/seller/wholesale/join", label: "الانضمام للجملة", icon: Building2, exact: false, ownerOnly: true, hideWhenWholesale: true },
   { href: "/seller/wholesale/masters", label: "هويات المنتجات", icon: Package, exact: false, ownerOnly: true },
   { href: "/seller/products/approvals", label: "منتجات بانتظار الموافقة", icon: AlertTriangle, exact: false, ownerOnly: true },
 ];
@@ -72,6 +77,7 @@ export default function SellerSidebar({
   isVerified,
   isSellerOwner = true,
   staffPermissions = [],
+  hasWholesaleSupplier = false,
 }: SellerSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -99,6 +105,7 @@ export default function SellerSidebar({
   }
 
   const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.hideWhenWholesale && hasWholesaleSupplier) return false;
     if (isSellerOwner) return true;
     if (item.ownerOnly) return false;
     if (item.permission && !staffPermissions.includes(item.permission)) {
