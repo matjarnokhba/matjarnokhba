@@ -60,18 +60,29 @@ export const ProductMasterLinker = {
         }
       }
 
-      await db.productMaster.update({
+      const masterOwnership = await db.productMaster.findUnique({
         where: { id: product.masterId },
-        data: {
-          barcode: firstBarcode,
-          name: product.name,
-          brand: product.brand,
-          description: product.description,
-          images: product.images.map((i: any) => i.url),
-          categoryId: product.categoryId,
-        },
+        select: { createdByUserId: true, manufacturerUserId: true },
       });
-      return { masterId: product.masterId, action: "synced" };
+      const sellerUserId = product.seller?.userId;
+      const canSync = !!masterOwnership && !!sellerUserId &&
+        (masterOwnership.createdByUserId === sellerUserId ||
+         masterOwnership.manufacturerUserId === sellerUserId);
+      if (canSync) {
+        await db.productMaster.update({
+          where: { id: product.masterId },
+          data: {
+            barcode: firstBarcode,
+            name: product.name,
+            brand: product.brand,
+            description: product.description,
+            images: product.images.map((i: any) => i.url),
+            categoryId: product.categoryId,
+          },
+        });
+        return { masterId: product.masterId, action: "synced" };
+      }
+      return { masterId: product.masterId, action: "read-only" };
     }
 
     // Case 2: No master → create or link
