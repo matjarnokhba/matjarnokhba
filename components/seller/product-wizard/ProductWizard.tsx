@@ -35,9 +35,11 @@ export default function ProductWizard({
   const router = useRouter();
   const isEdit = mode === "edit";
 
-  const [step, setStep] = useState<WizardStep>(isEdit ? 2 : 1);
+  const hasPrefilledCategory = !isEdit && !!initialData?.categoryId && (initialData.categoryId as number) > 0;
+  const initialStep: WizardStep = isEdit ? 2 : (hasPrefilledCategory ? 2 : 1);
+  const [step, setStep] = useState<WizardStep>(initialStep);
   const [completed, setCompleted] = useState<WizardStep[]>(
-    isEdit ? [1, 2, 3] : []
+    isEdit ? [1, 2, 3] : (hasPrefilledCategory ? [1] : [])
   );
 
   const [form, setForm] = useState<ProductFormData>({
