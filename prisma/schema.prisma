@@ -2625,6 +2625,12 @@ model ProductSpecification {
 // WHOLESALE SYSTEM (B2B)
 // ============================================
 
+enum WholesaleEntityType {
+  COMPANY
+  FACTORY
+  SUPPLIER
+}
+
 enum WholesaleActivityType {
   COMPANY
   WORKSHOP
@@ -2667,6 +2673,7 @@ model WholesaleSupplier {
   displayName     String
   slug            String                  @unique
   activityType    WholesaleActivityType
+  entityType      WholesaleEntityType?
   description     String?
   city            String
   region          String?
@@ -2837,6 +2844,7 @@ model SellerOffer {
   unit                ProductUnit @default(PIECE)
   claimType           String      @default("MANUFACTURER")
   claimVerified       Boolean     @default(false)
+    purchaseCost        Decimal?    @db.Decimal(10, 2)
   claimProofUrl       String?
   claimNotes          String?
   isActive            Boolean     @default(true)
