@@ -196,20 +196,16 @@ export default function ImportPage() {
                 if (!market || market.count < 2) return null;
                 const sp = Number(e.salePrice);
                 if (!sp || isNaN(sp)) return null;
-                const diff = ((sp - market.avg) / market.avg) * 100;
-                if (diff > 20) return (
+                // Compare against the LOWEST price in market
+                const diff = ((sp - market.min) / market.min) * 100;
+                if (diff > 5) return (
                   <div className="mt-2 rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" /> سعرك أعلى من السوق بنسبة {diff.toFixed(0)}% (متوسط: {market.avg.toFixed(2)} د.م)
-                  </div>
-                );
-                if (diff < -20) return (
-                  <div className="mt-2 rounded-md bg-green-50 border border-green-200 p-2 text-xs text-green-700">
-                    سعرك أقل من السوق بنسبة {Math.abs(diff).toFixed(0)}% — تنافسي
+                    <AlertCircle className="h-3 w-3" /> سعرك أعلى من أرخص عرض بنسبة {diff.toFixed(1)}% (أقل سعر: {market.min.toFixed(2)} د.م)
                   </div>
                 );
                 return (
-                  <div className="mt-2 text-xs text-gray-600">
-                    متوسط السوق: {market.avg.toFixed(2)} د.م ({market.count} عرض)
+                  <div className="mt-2 rounded-md bg-green-50 border border-green-200 p-2 text-xs text-green-700">
+                    سعرك ضمن 5% من أرخص عرض في السوق ({market.min.toFixed(2)} د.م) — تنافسي
                   </div>
                 );
               })()}
