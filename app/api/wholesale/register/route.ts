@@ -19,6 +19,9 @@ const supplierFields = {
   region: z.string().trim().max(80).optional().nullable(),
   description: z.string().trim().max(1000).optional().nullable(),
   logo: z.string().url().optional().nullable(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  address: z.string().trim().max(500).optional().nullable(),
 };
 
 const guestSchema = z.object({
@@ -119,6 +122,9 @@ export async function POST(request: Request) {
           region: data.region?.trim() || null,
           description: data.description?.trim() || null,
           logo: data.logo || null,
+          latitude: data.latitude ?? null,
+          longitude: data.longitude ?? null,
+          address: data.address?.trim() || null,
           status: "PENDING",
         },
         select: { id: true, slug: true, displayName: true, status: true },
@@ -169,6 +175,9 @@ export async function POST(request: Request) {
           region: data.region?.trim() || null,
           description: data.description?.trim() || null,
           logo: data.logo || null,
+          latitude: data.latitude ?? null,
+          longitude: data.longitude ?? null,
+          address: data.address?.trim() || null,
           status: "PENDING",
         },
         select: { id: true, slug: true, displayName: true, status: true },
