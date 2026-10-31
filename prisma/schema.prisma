@@ -402,7 +402,6 @@ model User {
   productMastersCreated     ProductMaster[]              @relation("MasterCreatedBy")
   productMastersManufactured ProductMaster[]             @relation("MasterManufacturer")
   sellerOffers              SellerOffer[]                @relation("OfferSeller")
-  offerClaimsVerified       OfferClaim[]
   productMasterDerivatives  ProductMasterDerivative[]
   staffOf         SellerStaff?    @relation("StaffUser")
   staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
@@ -599,7 +598,6 @@ model Category {
   children   Category[]          @relation("CategoryHierarchy")
   products   Product[]
   attributes CategoryAttribute[]
-  wholesaleProducts WholesaleProduct[]
   productMasters    ProductMaster[]
 
   @@index([parentId])
@@ -656,7 +654,6 @@ model Product {
   reviews    Review[]
   editLogs   ProductEditLog[]
   favorites  Favorite[]
-  wholesaleProducts WholesaleProduct[] @relation("WholesaleLink")
   masterId  Int?
   master    ProductMaster?  @relation("ProductMasterLink", fields: [masterId], references: [id], onDelete: SetNull)
   offer     SellerOffer?
@@ -2684,7 +2681,6 @@ model WholesaleSupplier {
 
   user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   sources   WholesaleSource[]
-  products  WholesaleProduct[]
   sellerOffers SellerOffer[]
   orders    WholesaleOrder[]
 
@@ -2705,61 +2701,9 @@ model WholesaleSource {
   updatedAt   DateTime            @updatedAt
 
   supplier  WholesaleSupplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  products  WholesaleProduct[]
   sellerOffers SellerOffer[]
 
   @@index([supplierId])
-}
-
-model WholesaleProduct {
-  id              Int          @id @default(autoincrement())
-  supplierId      Int
-  sourceId        Int
-  categoryId      Int
-  name            String
-  slug            String
-  description     String?
-  imageUrl        String?
-  minOrderQty     Int          @default(1)
-  unit            ProductUnit
-  wholesalePrice  Decimal      @db.Decimal(10, 2)
-  retailPrice     Decimal?     @db.Decimal(10, 2)
-  isActive        Boolean      @default(true)
-  wholesaleOnly   Boolean      @default(true)
-  linkedProductId Int?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  deletedAt       DateTime?
-
-  supplier      WholesaleSupplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  source        WholesaleSource     @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  category      Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  linkedProduct Product?            @relation("WholesaleLink", fields: [linkedProductId], references: [id], onDelete: SetNull)
-  variants      WholesaleVariant[]
-
-  @@unique([supplierId, slug])
-  @@index([supplierId])
-  @@index([sourceId])
-  @@index([categoryId])
-  @@index([isActive])
-  @@index([linkedProductId])
-}
-
-model WholesaleVariant {
-  id           Int      @id @default(autoincrement())
-  productId    Int
-  sku          String
-  barcode      String?
-  stock        Int      @default(0)
-  optionsHash  String   @default("DEFAULT")
-  optionsJson  Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  product WholesaleProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([productId, optionsHash])
-  @@index([productId])
 }
 
 model WholesaleOrder {
@@ -2908,7 +2852,6 @@ model SellerOffer {
   source      WholesaleSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   variants    SellerOfferVariant[]
   orderItems  WholesaleOrderItem[]
-  claims      OfferClaim[]
 
   @@unique([wholesaleSupplierId, masterId, offerType])
   @@index([sellerUserId])
@@ -2955,21 +2898,3 @@ model ProductMasterDerivative {
   @@index([childMasterId])
 }
 
-model OfferClaim {
-  id               Int       @id @default(autoincrement())
-  offerId          Int
-  claimType        String
-  proofUrl         String?
-  notes            String?
-  status           String    @default("PENDING")
-  verifiedById     Int?
-  verifiedAt       DateTime?
-  rejectionReason  String?
-  createdAt        DateTime  @default(now())
-
-  offer       SellerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  verifiedBy  User?       @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
-
-  @@index([offerId])
-  @@index([status])
-}

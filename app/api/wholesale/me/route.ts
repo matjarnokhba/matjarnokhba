@@ -16,7 +16,7 @@ export async function GET() {
       where: { userId: current.user.id },
       include: {
         _count: {
-          select: { sources: true, products: true, orders: true },
+          select: { sources: true, orders: true },
         },
       },
     });

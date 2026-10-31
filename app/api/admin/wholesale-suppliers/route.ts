@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { id: true, name: true, email: true, phone: true } },
-        _count: { select: { sources: true, products: true, orders: true } },
+        _count: { select: { sources: true, orders: true } },
       },
       take: 100,
     });

@@ -53,8 +53,7 @@ export async function GET() {
       where: { supplierId: auth.supplier.id },
       orderBy: { createdAt: "desc" },
       include: {
-        _count: { select: { products: true } },
-      },
+        },
     });
 
     return NextResponse.json({ success: true, sources });

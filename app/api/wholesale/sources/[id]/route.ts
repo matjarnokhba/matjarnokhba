@@ -27,7 +27,7 @@ async function requireOwnSource(sourceId: number) {
 
   const source = await prisma.wholesaleSource.findUnique({
     where: { id: sourceId },
-    include: { _count: { select: { products: true } } },
+    include: { _count: { select: { sellerOffers: true } } },
   });
   if (!source || source.supplierId !== supplier.id) {
     return { error: "المصدر غير موجود", status: 404 };
@@ -122,11 +122,11 @@ export async function DELETE(
       );
     }
 
-    if (auth.source._count.products > 0) {
+    if (auth.source._count.sellerOffers > 0) {
       return NextResponse.json(
         {
           success: false,
-          message: `لا يمكن حذف المصدر لأنه مرتبط بـ ${auth.source._count.products} منتج. انقل المنتجات لمصدر آخر أولًا.`,
+          message: `لا يمكن حذف المصدر لأنه مرتبط بـ ${auth.source._count.sellerOffers} عرض. لا يمكن الحذف لمصدر آخر أولًا.`,
         },
         { status: 400 }
       );
