@@ -28,7 +28,7 @@ export default async function SellerLayout({
 
   const hasRetailStore = !!user.seller;
 
-  // Neither retail nor wholesale → onboarding
+  // Neither retail nor admin → onboarding
   if (!hasRetailStore && !isAdminViewing) {
     redirect("/seller-onboarding");
   }
@@ -51,7 +51,7 @@ export default async function SellerLayout({
 
 
 
-  // Full seller (retail + optional wholesale)
+  // Full seller (retail)
   const topbarItems = [
     {
       countKey: "ordersNew",
