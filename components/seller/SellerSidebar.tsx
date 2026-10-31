@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   BookOpen,
   ShoppingBag,
+  Settings,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -45,6 +46,7 @@ type NavItem = {
   ownerOnly?: boolean;
   permission?: string;
   hideWhenWholesale?: boolean;
+  showOnlyWhenWholesale?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -69,6 +71,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/wholesale/browse", label: "سوق الجملة", icon: ShoppingBag, exact: false, ownerOnly: true },
   { href: "/seller/wholesale", label: "بوابة الجملة", icon: Building2, exact: false, ownerOnly: true },
   { href: "/seller/wholesale/join", label: "الانضمام للجملة", icon: Building2, exact: false, ownerOnly: true, hideWhenWholesale: true },
+  { href: "/seller/wholesale/settings", label: "إعدادات الجملة", icon: Settings, exact: false, ownerOnly: true, showOnlyWhenWholesale: true },
   { href: "/seller/wholesale/masters", label: "هويات المنتجات", icon: Package, exact: false, ownerOnly: true },
   { href: "/seller/products/approvals", label: "منتجات بانتظار الموافقة", icon: AlertTriangle, exact: false, ownerOnly: true },
 ];
@@ -108,6 +111,7 @@ export default function SellerSidebar({
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.hideWhenWholesale && hasWholesaleSupplier) return false;
+    if (item.showOnlyWhenWholesale && !hasWholesaleSupplier) return false;
     if (isSellerOwner) return true;
     if (item.ownerOnly) return false;
     if (item.permission && !staffPermissions.includes(item.permission)) {
