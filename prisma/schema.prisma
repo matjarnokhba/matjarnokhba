@@ -408,6 +408,8 @@ model User {
 
   @@index([email])
   @@index([deletedAt])
+  ledgerEntriesAsCounterparty LedgerEntry[] @relation("LedgerCounterparty")
+  ledgerEntriesCreated       LedgerEntry[] @relation("LedgerCreatedBy")
 }
 
 model Address {
@@ -567,6 +569,7 @@ model Seller {
   @@index([isFeatured])
   @@index([isVerified])
   @@index([collectionZoneId])
+  ledgerEntries              LedgerEntry[]
 }
 
 // ============================================
@@ -2912,3 +2915,41 @@ model ProductMasterDerivative {
   @@index([childMasterId])
 }
 
+
+
+model LedgerEntry {
+  id                 Int      @id @default(autoincrement())
+  sellerId           Int
+
+  counterpartyType   String
+  counterpartyUserId Int?
+  counterpartyName   String
+
+  entryType          String
+  amount             Decimal  @db.Decimal(12, 2)
+  currency           String   @default("MAD")
+
+  referenceType      String?
+  referenceId        Int?
+  referenceNumber    String?
+
+  description        String
+  entryDate          DateTime @default(now())
+  dueDate            DateTime?
+  notes              String?
+
+  createdById        Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+
+  seller             Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  counterpartyUser   User?    @relation("LedgerCounterparty", fields: [counterpartyUserId], references: [id], onDelete: SetNull)
+  createdBy          User     @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([sellerId, deletedAt])
+  @@index([counterpartyUserId])
+  @@index([entryDate])
+  @@index([sellerId, counterpartyName])
+  @@index([referenceType, referenceId])
+}
