@@ -18,13 +18,37 @@ const TEST_EMAIL_BUYER = `${TAG}-buyer@test.local`;
 type Cleanup = { model: string; where: any }[];
 
 async function cleanup(collected: Cleanup) {
-  console.log("\n[CLEANUP] Removing test data...");
+  console.log("\n[CLEANUP] Removing test data (leaf → root)...");
+  // Correct deletion order — children before parents
+  const ORDER = [
+    "productLineage",
+    "wholesaleOrderStatusHistory",
+    "wholesaleOrderItem",
+    "wholesaleOrder",
+    "wholesaleOfferVariant",
+    "wholesaleOfferTier",
+    "wholesaleOffer",
+    "wholesaleInventory",
+    "productMasterVariant",
+    "productMaster",
+    "businessMember",
+    "business",
+    "user",
+  ];
+  const byModel = new Map<string, any[]>();
   for (const c of collected) {
+    if (!byModel.has(c.model)) byModel.set(c.model, []);
+    byModel.get(c.model)!.push(c.where);
+  }
+  for (const model of ORDER) {
+    const wheres = byModel.get(model);
+    if (!wheres || wheres.length === 0) continue;
     try {
-      const result = await (prisma as any)[c.model].deleteMany({ where: c.where });
-      console.log(`  ${c.model}: ${result.count} deleted`);
+      const merged = { OR: wheres };
+      const result = await (prisma as any)[model].deleteMany({ where: merged });
+      console.log(`  ${model}: ${result.count} deleted`);
     } catch (e: any) {
-      console.warn(`  ${c.model} failed: ${e.message}`);
+      console.warn(`  ${model} failed: ${e.message}`);
     }
   }
 }
@@ -95,9 +119,10 @@ async function run() {
       },
     });
     cleanupList.push({ model: "business", where: { id: sellerBiz.id } });
-    await prisma.businessMember.create({
+    const sellerMember = await prisma.businessMember.create({
       data: { businessId: sellerBiz.id, userId: sellerUser.id, role: "OWNER" },
     });
+    cleanupList.push({ model: "businessMember", where: { id: sellerMember.id } });
 
     const buyerBiz = await prisma.business.create({
       data: {
@@ -112,9 +137,10 @@ async function run() {
       },
     });
     cleanupList.push({ model: "business", where: { id: buyerBiz.id } });
-    await prisma.businessMember.create({
+    const buyerMember = await prisma.businessMember.create({
       data: { businessId: buyerBiz.id, userId: buyerUser.id, role: "OWNER" },
     });
+    cleanupList.push({ model: "businessMember", where: { id: buyerMember.id } });
     console.log(`  sellerBiz: ${sellerBiz.id}, buyerBiz: ${buyerBiz.id}`);
 
     // ─── Create master ───
