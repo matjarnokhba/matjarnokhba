@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     if (statusFilter && ["PENDING", "VERIFIED", "SUSPENDED", "REJECTED"].includes(statusFilter)) {
       where.status = statusFilter;
     }
-    if (typeFilter && ["FACTORY", "COMPANY", "SUPPLIER", "IMPORTER", "WHOLESALE_TRADER"].includes(typeFilter)) {
+    if (typeFilter && ["INDEPENDENT_SUPPLIER", "WHOLESALE_TRADER"].includes(typeFilter)) {
       where.type = typeFilter;
     }
 

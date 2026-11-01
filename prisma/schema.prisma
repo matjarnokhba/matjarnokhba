@@ -2672,10 +2672,7 @@ model ProductSpecification {
 // ═══════════════════════════════════════════
 
 enum BusinessType {
-  FACTORY
-  COMPANY
-  SUPPLIER
-  IMPORTER
+  INDEPENDENT_SUPPLIER
   WHOLESALE_TRADER
 }
 

@@ -19,10 +19,7 @@ type Offer = {
 };
 
 const BUSINESS_TYPES = [
-  { value: "FACTORY", label: "مصنع" },
-  { value: "COMPANY", label: "شركة" },
-  { value: "SUPPLIER", label: "مورد" },
-  { value: "IMPORTER", label: "مستورد" },
+  { value: "INDEPENDENT_SUPPLIER", label: "مورد مستقل" },
   { value: "WHOLESALE_TRADER", label: "تاجر جملة" },
 ];
 

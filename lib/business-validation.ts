@@ -1,10 +1,7 @@
 import { z } from "zod";
 
 export const businessTypeSchema = z.enum([
-  "FACTORY",
-  "COMPANY",
-  "SUPPLIER",
-  "IMPORTER",
+  "INDEPENDENT_SUPPLIER",
   "WHOLESALE_TRADER",
 ]);
 

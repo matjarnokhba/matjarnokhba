@@ -2,14 +2,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Building2, Factory, Truck, PackageSearch, Store, ArrowLeft } from "lucide-react";
+import { Loader2, Building2, Store, ArrowLeft } from "lucide-react";
 
 const TYPES = [
-  { value: "FACTORY", label: "مصنع", Icon: Factory, desc: "إنتاج وتصنيع" },
-  { value: "COMPANY", label: "شركة", Icon: Building2, desc: "بيع بالجملة" },
-  { value: "SUPPLIER", label: "مورد", Icon: Truck, desc: "توريد منتجات" },
-  { value: "IMPORTER", label: "مستورد", Icon: PackageSearch, desc: "استيراد" },
-  { value: "WHOLESALE_TRADER", label: "تاجر جملة", Icon: Store, desc: "شراء وبيع" },
+  { value: "INDEPENDENT_SUPPLIER", label: "مورد مستقل", Icon: Building2, desc: "شركة أو مصنع أو مورد أو مستورد" },
+  { value: "WHOLESALE_TRADER", label: "تاجر جملة", Icon: Store, desc: "شراء وبيع بالجملة" },
 ];
 
 type Seller = { id: number; storeName: string; isVerified: boolean };

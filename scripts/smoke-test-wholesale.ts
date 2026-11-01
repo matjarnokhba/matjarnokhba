@@ -119,7 +119,7 @@ async function run() {
     log("Create seller + buyer businesses (FACTORY / WHOLESALE_TRADER)");
     const sellerBiz = await prisma.business.create({
       data: {
-        type: "FACTORY",
+        type: "INDEPENDENT_SUPPLIER",
         status: "VERIFIED",
         name: `${TAG} Factory`,
         slug: `${TAG}-factory`,
