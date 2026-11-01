@@ -53,7 +53,7 @@ async function run() {
         passwordHash: "$2a$12$dummy",
         emailVerified: true,
         role: "CUSTOMER",
-        referralCode: `${TAG}-S`.substring(0, 20),
+        referralCode: `S${TS.toString().slice(-10)}`,
       },
     });
     cleanupList.push({ model: "user", where: { id: sellerUser.id } });
@@ -65,7 +65,7 @@ async function run() {
         passwordHash: "$2a$12$dummy",
         emailVerified: true,
         role: "CUSTOMER",
-        referralCode: `${TAG}-B`.substring(0, 20),
+        referralCode: `B${TS.toString().slice(-10)}`,
       },
     });
     cleanupList.push({ model: "user", where: { id: buyerUser.id } });
