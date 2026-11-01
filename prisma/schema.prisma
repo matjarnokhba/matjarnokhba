@@ -419,6 +419,10 @@ model User {
   // P13 ledger back-relations
   createdLedgerTransactions    LedgerTransaction[] @relation("LedgerTransactionCreator")
   confirmedLedgerTransactions  LedgerTransaction[] @relation("LedgerTransactionConfirmer")
+
+  // P24 back-relations
+  requestedWholesaleReturns         WholesaleReturnRequest[]       @relation("ReturnRequester")
+  changedWholesaleReturnStatuses    WholesaleReturnStatusHistory[] @relation("ReturnStatusChanger")
 }
 
 model Address {
@@ -2757,6 +2761,10 @@ model Business {
   ledgerAccountsAsCounterparty LedgerAccount[]     @relation("LedgerAccountCounterparty")
   ledgerDebtsAsDebtor          LedgerTransaction[] @relation("LedgerDebtor")
   ledgerDebtsAsCreditor        LedgerTransaction[] @relation("LedgerCreditor")
+
+  // P24 back-relations
+  returnsAsBuyer  WholesaleReturnRequest[] @relation("ReturnBuyer")
+  returnsAsSeller WholesaleReturnRequest[] @relation("ReturnSeller")
 }
 
 model BusinessMember {
@@ -2841,6 +2849,9 @@ model ProductMaster {
   // P5 back-relations
   lineages              ProductLineage[]
   wholesaleInventories  WholesaleInventory[]
+
+  // P24 back-relations
+  wholesaleReturnItems WholesaleReturnItem[]
 }
 
 model ProductMasterVariant {
@@ -2869,6 +2880,9 @@ model ProductMasterVariant {
   // P5 back-relations
   lineages              ProductLineage[]
   wholesaleInventories  WholesaleInventory[]
+
+  // P24 back-relations
+  wholesaleReturnItems WholesaleReturnItem[]
 }
 
 // ═══════════════════════════════════════════
@@ -3023,6 +3037,9 @@ model WholesaleOrder {
 
   // P13 back-relations
   ledgerTransactions LedgerTransaction[]
+
+  // P24 back-relations
+  wholesaleReturns WholesaleReturnRequest[]
 }
 
 model WholesaleOrderItem {
@@ -3056,6 +3073,9 @@ model WholesaleOrderItem {
 
   // P5 back-relations
   lineages ProductLineage[]
+
+  // P24 back-relations
+  returnItems WholesaleReturnItem[]
 }
 
 model WholesaleOrderStatusHistory {
@@ -3201,5 +3221,90 @@ model LedgerTransaction {
   @@index([creditorBusinessId])
   @@index([orderId])
   @@index([status])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// P24: Wholesale Returns & Disputes
+// ═══════════════════════════════════════════
+
+enum WholesaleReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  RECEIVED
+  REFUNDED
+  CANCELLED
+}
+
+model WholesaleReturnRequest {
+  id                Int                   @id @default(autoincrement())
+  returnNumber      String                @unique
+  orderId           Int
+  buyerBusinessId   Int
+  sellerBusinessId  Int
+  requestedByUserId Int
+  reason            String
+  reasonDetails     String?
+  status            WholesaleReturnStatus @default(REQUESTED)
+  totalAmount       Decimal               @db.Decimal(12, 2)
+  approvedAmount    Decimal?              @db.Decimal(12, 2)
+  sellerNotes       String?
+  rejectionReason   String?
+  approvedAt        DateTime?
+  receivedAt        DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  order          WholesaleOrder                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  buyerBusiness  Business                        @relation("ReturnBuyer", fields: [buyerBusinessId], references: [id], onDelete: Restrict)
+  sellerBusiness Business                        @relation("ReturnSeller", fields: [sellerBusinessId], references: [id], onDelete: Restrict)
+  requestedBy    User                            @relation("ReturnRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  items          WholesaleReturnItem[]
+  statusHistory  WholesaleReturnStatusHistory[]
+
+  @@index([orderId])
+  @@index([buyerBusinessId])
+  @@index([sellerBusinessId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WholesaleReturnItem {
+  id              Int      @id @default(autoincrement())
+  returnId        Int
+  orderItemId     Int
+  masterId        Int
+  masterVariantId Int
+  quantity        Int
+  unitPrice       Decimal  @db.Decimal(12, 2)
+  subtotal        Decimal  @db.Decimal(12, 2)
+  condition       String?
+  notes           String?
+
+  returnRequest WholesaleReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderItem     WholesaleOrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  master        ProductMaster          @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  masterVariant ProductMasterVariant   @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+
+  @@index([returnId])
+  @@index([orderItemId])
+  @@index([masterVariantId])
+}
+
+model WholesaleReturnStatusHistory {
+  id              Int                    @id @default(autoincrement())
+  returnId        Int
+  fromStatus      WholesaleReturnStatus?
+  toStatus        WholesaleReturnStatus
+  changedByUserId Int
+  notes           String?
+  createdAt       DateTime               @default(now())
+
+  returnRequest WholesaleReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  changedByUser User                   @relation("ReturnStatusChanger", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([returnId])
   @@index([createdAt])
 }
