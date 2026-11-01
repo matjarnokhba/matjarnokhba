@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { WholesaleNotifications } from "@/lib/wholesale-notifications";
 
 const schema = z.object({
   approve: z.boolean(),
@@ -47,6 +48,16 @@ export async function POST(
       data: updateData,
       select: { id: true, name: true, status: true, verifiedAt: true, rejectionReason: true },
     });
+
+    if (parsed.data.approve) {
+      WholesaleNotifications.businessVerified(biz.ownerUserId, {
+        businessId: updated.id, businessName: updated.name,
+      }).catch((e) => console.error("notify biz:", e));
+    } else {
+      WholesaleNotifications.businessRejected(biz.ownerUserId, {
+        businessId: updated.id, businessName: updated.name, reason: parsed.data.reason,
+      }).catch((e) => console.error("notify biz reject:", e));
+    }
 
     return NextResponse.json({ success: true, business: updated });
   } catch (error) {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { slugifySupplyActivity, ensureUniqueSupplyActivitySlug } from "@/lib/supply-activity-slug";
+import { WholesaleNotifications } from "@/lib/wholesale-notifications";
 
 type CreateInput = {
   type: "FACTORY" | "COMPANY" | "SUPPLIER" | "IMPORTER";
@@ -109,14 +110,14 @@ export const SupplyActivityService = {
   async adminVerify(saId: number, adminUserId: number, approve: boolean, reason?: string | null) {
     const sa = await prisma.supplyActivity.findUnique({
       where: { id: saId },
-      select: { id: true, status: true, type: true },
+      select: { id: true, status: true, type: true, businessId: true, name: true },
     });
     if (!sa) throw new Error("الهوية غير موجودة");
     if (sa.type === "TRADER") throw new Error("هويات TRADER تلقائية ولا تحتاج توثيق");
     if (sa.status === "VERIFIED" && approve) throw new Error("موثقة مسبقًا");
 
     if (approve) {
-      return prisma.supplyActivity.update({
+      const updated = await prisma.supplyActivity.update({
         where: { id: saId },
         data: {
           status: "VERIFIED",
@@ -126,8 +127,15 @@ export const SupplyActivityService = {
         },
         select: { id: true, name: true, type: true, status: true, verifiedAt: true },
       });
+      const owner = await prisma.business.findUnique({ where: { id: sa.businessId }, select: { ownerUserId: true } });
+      if (owner) {
+        WholesaleNotifications.supplyActivityVerified(owner.ownerUserId, {
+          businessId: sa.businessId, saName: updated.name,
+        }).catch((e) => console.error("notify SA:", e));
+      }
+      return updated;
     } else {
-      return prisma.supplyActivity.update({
+      const updated = await prisma.supplyActivity.update({
         where: { id: saId },
         data: {
           status: "REJECTED",
@@ -137,6 +145,13 @@ export const SupplyActivityService = {
         },
         select: { id: true, name: true, type: true, status: true, rejectionReason: true },
       });
+      const owner = await prisma.business.findUnique({ where: { id: sa.businessId }, select: { ownerUserId: true } });
+      if (owner) {
+        WholesaleNotifications.supplyActivityRejected(owner.ownerUserId, {
+          businessId: sa.businessId, saName: updated.name, reason,
+        }).catch((e) => console.error("notify SA reject:", e));
+      }
+      return updated;
     }
   },
 };

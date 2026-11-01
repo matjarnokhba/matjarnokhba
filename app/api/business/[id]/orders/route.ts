@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SessionService } from "@/services/session.service";
+import { prisma } from "@/lib/prisma";
 import { orderCreateSchema } from "@/lib/wholesale-order-validation";
 import { WholesaleOrderService } from "@/services/wholesale-order.service";
 import { checkBusinessAccess } from "@/lib/business-access";
+import { WholesaleNotifications } from "@/lib/wholesale-notifications";
 import { isWholesaleTrader } from "@/lib/business-type-guards";
 
 const listQuerySchema = z.object({
@@ -98,6 +100,21 @@ export async function POST(
       notes: parsed.data.notes,
       estimatedDelivery: parsed.data.estimatedDelivery,
     });
+
+    // A7: notify seller (fire-and-forget)
+    Promise.all([
+      prisma.business.findUnique({ where: { id: buyerBusinessId }, select: { name: true } }),
+      prisma.business.findUnique({ where: { id: parsed.data.sellerBusinessId }, select: { ownerUserId: true } }),
+    ]).then(([buyerBiz, sellerBiz]) => {
+      if (buyerBiz && sellerBiz) {
+        WholesaleNotifications.orderPlaced(sellerBiz.ownerUserId, {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          buyerName: buyerBiz.name,
+          total: Number(order.total),
+        }).catch((e) => console.error("notify:", e));
+      }
+    }).catch((e) => console.error("lookup:", e));
 
     return NextResponse.json({ success: true, order }, { status: 201 });
   } catch (error) {

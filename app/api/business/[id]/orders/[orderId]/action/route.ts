@@ -4,6 +4,7 @@ import { SessionService } from "@/services/session.service";
 import { orderActionSchema } from "@/lib/wholesale-order-validation";
 import { WholesaleOrderService } from "@/services/wholesale-order.service";
 import { checkBusinessAccess } from "@/lib/business-access";
+import { WholesaleNotifications } from "@/lib/wholesale-notifications";
 
 const ACTION_TO_SIDE: Record<string, "buyer" | "seller"> = {
   accept: "seller",
@@ -97,6 +98,31 @@ export async function POST(
         result = await WholesaleOrderService.cancelOrder(oid, current.user.id, parsed.data.reason);
         break;
     }
+
+    // A7: fire-and-forget notifications
+    (async () => {
+      try {
+        const [sellerBiz, buyerBiz] = await Promise.all([
+          prisma.business.findUnique({ where: { id: stub.sellerBusinessId }, select: { name: true, ownerUserId: true } }),
+          prisma.business.findUnique({ where: { id: stub.buyerBusinessId }, select: { name: true, ownerUserId: true } }),
+        ]);
+        if (!sellerBiz || !buyerBiz) return;
+
+        if (action === "accept") {
+          await WholesaleNotifications.orderAccepted(buyerBiz.ownerUserId, {
+            orderId: oid, orderNumber: result.orderNumber ?? `#${oid}`, sellerName: sellerBiz.name,
+          });
+        } else if (action === "reject") {
+          await WholesaleNotifications.orderRejected(buyerBiz.ownerUserId, {
+            orderId: oid, orderNumber: result.orderNumber ?? `#${oid}`, sellerName: sellerBiz.name, reason: parsed.data.reason,
+          });
+        } else if (action === "ship") {
+          await WholesaleNotifications.orderShipped(buyerBiz.ownerUserId, {
+            orderId: oid, orderNumber: result.orderNumber ?? `#${oid}`, trackingNumber: parsed.data.trackingNumber, carrier: parsed.data.shippingCarrier,
+          });
+        }
+      } catch (e) { console.error("action notify:", e); }
+    })();
 
     return NextResponse.json({ success: true, order: result });
   } catch (error) {
