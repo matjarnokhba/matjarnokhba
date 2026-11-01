@@ -34,6 +34,12 @@ export async function GET() {
         region: true,
         isVerified: true,
         status: true,
+        _count: {
+          select: {
+            products: { where: { deletedAt: null } },
+            orders: true,
+          },
+        },
       },
     });
 
