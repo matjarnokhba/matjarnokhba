@@ -774,6 +774,60 @@ async function run() {
     assert(chain[3].transferType === "RETAIL_IMPORT", "Fourth should be RETAIL_IMPORT");
     console.log(`  ✅ chain complete: INITIAL_CREATION → WHOLESALE_SALE → RETURN → RETAIL_IMPORT`);
 
+    // ─── A6a: Independent supplier registration ───
+    log("A6a: Register independent supplier (FACTORY)");
+    const { WholesaleRegistrationService } = await import("../services/wholesale-registration.service");
+    const supplierEmail = `${TAG}-supplier@test.local`;
+    const supplierReg = await WholesaleRegistrationService.registerSupplier({
+      accountName: `${TAG} Supplier Owner`,
+      email: supplierEmail,
+      password: "TestPassword123!",
+      phone: "+212600008888",
+      supplyActivityType: "FACTORY",
+      businessName: `${TAG} Independent Factory`,
+      city: "Fès",
+    });
+    cleanupList.push({ model: "businessMember", where: { businessId: supplierReg.businessId } });
+    cleanupList.push({ model: "supplyActivity", where: { id: supplierReg.supplyActivityId } });
+    cleanupList.push({ model: "business", where: { id: supplierReg.businessId } });
+    cleanupList.push({ model: "user", where: { id: supplierReg.userId } });
+    
+    assert(supplierReg.userId > 0, "User created");
+    assert(supplierReg.businessId > 0, "Business created");
+    assert(supplierReg.supplyActivityType === "FACTORY", `SA type should be FACTORY, got ${supplierReg.supplyActivityType}`);
+    console.log(`  ✅ Supplier registered: user=${supplierReg.userId}, biz=${supplierReg.businessId}, SA=FACTORY`);
+    
+    log("A6a: Verify supplier has NO seller/linkedSeller");
+    const supplierUser = await prisma.user.findUnique({ where: { id: supplierReg.userId }, include: { seller: true } });
+    assert(supplierUser!.seller === null, "Supplier should NOT have a Seller");
+    const supplierBiz = await prisma.business.findUnique({ where: { id: supplierReg.businessId } });
+    assert(supplierBiz!.linkedSellerId === null, "Supplier business should NOT have linkedSellerId");
+    console.log(`  ✅ Supplier has no seller, no linkedSellerId`);
+    
+    log("A6a: Verify status PENDING");
+    assert(supplierBiz!.status === "PENDING", `Business status should be PENDING, got ${supplierBiz!.status}`);
+    const supplierSA = await prisma.supplyActivity.findUnique({ where: { id: supplierReg.supplyActivityId } });
+    assert(supplierSA!.status === "PENDING", `SA status should be PENDING, got ${supplierSA!.status}`);
+    console.log(`  ✅ Both PENDING (awaiting admin verification)`);
+    
+    log("A6a: Verify email uniqueness (duplicate register blocked)");
+    let duplicateRegisterBlocked = false;
+    try {
+      await WholesaleRegistrationService.registerSupplier({
+        accountName: `${TAG} Dup Supplier`,
+        email: supplierEmail,
+        password: "AnotherPassword456!",
+        phone: "+212600007777",
+        supplyActivityType: "COMPANY",
+        businessName: `${TAG} Dup Company`,
+        city: "Rabat",
+      });
+    } catch (e: any) {
+      if (e.message.includes("مسجل") || e.message.includes("البريد")) duplicateRegisterBlocked = true;
+    }
+    assert(duplicateRegisterBlocked, "Duplicate email should be blocked");
+    console.log(`  ✅ Duplicate email blocked`);
+
     // ─── All passed ───
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`\n${"=".repeat(60)}`);
