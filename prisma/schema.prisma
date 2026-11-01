@@ -423,6 +423,10 @@ model User {
   // P24 back-relations
   requestedWholesaleReturns         WholesaleReturnRequest[]       @relation("ReturnRequester")
   changedWholesaleReturnStatuses    WholesaleReturnStatusHistory[] @relation("ReturnStatusChanger")
+
+  // A1 back-relations
+  verifiedSupplyActivities SupplyActivity[] @relation("SupplyActivityVerifier")
+  reviewedSupplyActivityDocuments SupplyActivityDocument[] @relation("SupplyActivityDocumentReviewer")
 }
 
 model Address {
@@ -2765,6 +2769,9 @@ model Business {
   // P24 back-relations
   returnsAsBuyer  WholesaleReturnRequest[] @relation("ReturnBuyer")
   returnsAsSeller WholesaleReturnRequest[] @relation("ReturnSeller")
+
+  // A1 back-relations
+  supplyActivities SupplyActivity[]
 }
 
 model BusinessMember {
@@ -2927,6 +2934,8 @@ model WholesaleOffer {
   updatedAt           DateTime     @updatedAt
 
   business Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplyActivityId Int?
+  supplyActivity   SupplyActivity? @relation(fields: [supplyActivityId], references: [id], onDelete: SetNull)
   master   ProductMaster          @relation(fields: [masterId], references: [id], onDelete: Cascade)
   tiers    WholesaleOfferTier[]
   variants WholesaleOfferVariant[]
@@ -2938,6 +2947,7 @@ model WholesaleOffer {
   @@index([isActive])
   @@index([claimVerified])
   @@index([deletedAt])
+  @@index([supplyActivityId])
 
   // P4 back-relations
   orderItems WholesaleOrderItem[]
@@ -3307,4 +3317,67 @@ model WholesaleReturnStatusHistory {
 
   @@index([returnId])
   @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// A1: SupplyActivity
+// ═══════════════════════════════════════════
+
+enum SupplyActivityType {
+  FACTORY
+  COMPANY
+  SUPPLIER
+  IMPORTER
+  TRADER
+}
+
+model SupplyActivity {
+  id                 Int                 @id @default(autoincrement())
+  businessId         Int
+  type               SupplyActivityType
+  status             BusinessStatus      @default(PENDING)
+  name               String
+  slug               String              @unique
+  legalName          String?
+  description        String?
+  logo               String?
+  commercialRegister String?
+  taxId              String?
+  city               String
+  address            String?
+  verifiedAt         DateTime?
+  verifiedById       Int?
+  rejectionReason    String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+
+  business     Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  verifiedBy   User?                      @relation("SupplyActivityVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  documents    SupplyActivityDocument[]
+  offers       WholesaleOffer[]
+
+  @@index([businessId])
+  @@index([type])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model SupplyActivityDocument {
+  id               Int                    @id @default(autoincrement())
+  supplyActivityId Int
+  type             BusinessDocumentType
+  url              String
+  notes            String?
+  status           BusinessDocumentStatus @default(PENDING)
+  reviewedById     Int?
+  reviewedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime               @default(now())
+
+  supplyActivity SupplyActivity @relation(fields: [supplyActivityId], references: [id], onDelete: Cascade)
+  reviewedBy     User?          @relation("SupplyActivityDocumentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([supplyActivityId])
+  @@index([status])
 }
