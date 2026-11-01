@@ -415,6 +415,10 @@ model User {
   // P4 back-relations
   placedWholesaleOrders          WholesaleOrder[]              @relation("WholesaleOrderPlacer")
   changedWholesaleOrderStatuses  WholesaleOrderStatusHistory[] @relation("WholesaleOrderStatusChanger")
+
+  // P13 ledger back-relations
+  createdLedgerTransactions    LedgerTransaction[] @relation("LedgerTransactionCreator")
+  confirmedLedgerTransactions  LedgerTransaction[] @relation("LedgerTransactionConfirmer")
 }
 
 model Address {
@@ -2747,6 +2751,12 @@ model Business {
   lineagesTo                     ProductLineage[]     @relation("LineageTo")
   wholesaleInventories           WholesaleInventory[] @relation("WholesaleInventoryOwner")
   wholesaleInventoriesAsSource   WholesaleInventory[] @relation("WholesaleInventoryLastSource")
+
+  // P13 ledger back-relations
+  ledgerAccountsAsOwner        LedgerAccount[]     @relation("LedgerAccountOwner")
+  ledgerAccountsAsCounterparty LedgerAccount[]     @relation("LedgerAccountCounterparty")
+  ledgerDebtsAsDebtor          LedgerTransaction[] @relation("LedgerDebtor")
+  ledgerDebtsAsCreditor        LedgerTransaction[] @relation("LedgerCreditor")
 }
 
 model BusinessMember {
@@ -3010,6 +3020,9 @@ model WholesaleOrder {
 
   // P5 back-relations
   lineages ProductLineage[]
+
+  // P13 back-relations
+  ledgerTransactions LedgerTransaction[]
 }
 
 model WholesaleOrderItem {
@@ -3124,4 +3137,69 @@ model WholesaleInventory {
   @@index([businessId])
   @@index([masterId])
   @@index([masterVariantId])
+}
+
+// ═══════════════════════════════════════════
+// P13: Ledger (per-business-per-counterparty balances)
+// ═══════════════════════════════════════════
+
+enum LedgerTransactionType {
+  SALE
+  PAYMENT
+  REFUND
+  ADJUSTMENT
+}
+
+enum LedgerTransactionStatus {
+  CONFIRMED
+  PENDING
+  REJECTED
+}
+
+model LedgerAccount {
+  id                     Int       @id @default(autoincrement())
+  businessId             Int
+  counterpartyBusinessId Int
+  balance                Decimal   @db.Decimal(12, 2) @default(0)
+  currency               String    @default("MAD")
+  lastActivityAt         DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  business     Business @relation("LedgerAccountOwner", fields: [businessId], references: [id], onDelete: Cascade)
+  counterparty Business @relation("LedgerAccountCounterparty", fields: [counterpartyBusinessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, counterpartyBusinessId])
+  @@index([businessId])
+  @@index([counterpartyBusinessId])
+}
+
+model LedgerTransaction {
+  id                 Int                     @id @default(autoincrement())
+  type               LedgerTransactionType
+  status             LedgerTransactionStatus @default(CONFIRMED)
+  debtorBusinessId   Int
+  creditorBusinessId Int
+  amount             Decimal                 @db.Decimal(12, 2)
+  currency           String                  @default("MAD")
+  orderId            Int?
+  externalRef        String?
+  notes              String?
+  createdByUserId    Int
+  confirmedByUserId  Int?
+  confirmedAt        DateTime?
+  rejectionReason    String?
+  createdAt          DateTime                @default(now())
+
+  debtor     Business        @relation("LedgerDebtor", fields: [debtorBusinessId], references: [id], onDelete: Restrict)
+  creditor   Business        @relation("LedgerCreditor", fields: [creditorBusinessId], references: [id], onDelete: Restrict)
+  order      WholesaleOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdBy  User            @relation("LedgerTransactionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  confirmedBy User?          @relation("LedgerTransactionConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([debtorBusinessId])
+  @@index([creditorBusinessId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
 }

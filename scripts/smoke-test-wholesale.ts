@@ -32,6 +32,7 @@ async function cleanup(collected: Cleanup) {
     "productMasterVariant",
     "productMaster",
     "businessMember",
+    "seller",
     "business",
     "user",
   ];
