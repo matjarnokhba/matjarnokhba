@@ -2741,6 +2741,12 @@ model Business {
   // P4 back-relations
   wholesaleOrdersAsBuyer  WholesaleOrder[] @relation("WholesaleBuyer")
   wholesaleOrdersAsSeller WholesaleOrder[] @relation("WholesaleSeller")
+
+  // P5 back-relations
+  lineagesFrom                   ProductLineage[]     @relation("LineageFrom")
+  lineagesTo                     ProductLineage[]     @relation("LineageTo")
+  wholesaleInventories           WholesaleInventory[] @relation("WholesaleInventoryOwner")
+  wholesaleInventoriesAsSource   WholesaleInventory[] @relation("WholesaleInventoryLastSource")
 }
 
 model BusinessMember {
@@ -2821,6 +2827,10 @@ model ProductMaster {
 
   // P4 back-relations
   orderItems WholesaleOrderItem[]
+
+  // P5 back-relations
+  lineages              ProductLineage[]
+  wholesaleInventories  WholesaleInventory[]
 }
 
 model ProductMasterVariant {
@@ -2845,6 +2855,10 @@ model ProductMasterVariant {
 
   // P4 back-relations
   orderItems WholesaleOrderItem[]
+
+  // P5 back-relations
+  lineages              ProductLineage[]
+  wholesaleInventories  WholesaleInventory[]
 }
 
 // ═══════════════════════════════════════════
@@ -2993,6 +3007,9 @@ model WholesaleOrder {
   @@index([status])
   @@index([createdAt])
   @@index([deliveredAt])
+
+  // P5 back-relations
+  lineages ProductLineage[]
 }
 
 model WholesaleOrderItem {
@@ -3023,6 +3040,9 @@ model WholesaleOrderItem {
   @@index([offerVariantId])
   @@index([masterId])
   @@index([masterVariantId])
+
+  // P5 back-relations
+  lineages ProductLineage[]
 }
 
 model WholesaleOrderStatusHistory {
@@ -3039,4 +3059,69 @@ model WholesaleOrderStatusHistory {
 
   @@index([orderId])
   @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════
+// P5: ProductLineage + WholesaleInventory
+// ═══════════════════════════════════════════
+
+enum LineageTransferType {
+  INITIAL_CREATION
+  WHOLESALE_SALE
+  INTERNAL_TRANSFER
+  RETAIL_IMPORT
+  RETURN
+}
+
+model ProductLineage {
+  id               Int                 @id @default(autoincrement())
+  masterId         Int
+  masterVariantId  Int
+  fromBusinessId   Int?
+  toBusinessId     Int
+  orderId          Int?
+  orderItemId      Int?
+  quantity         Int
+  unitPrice        Decimal             @db.Decimal(10, 2)
+  currency         String              @default("MAD")
+  transferType     LineageTransferType
+  notes            String?
+  createdAt        DateTime            @default(now())
+
+  master         ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  masterVariant  ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+  fromBusiness   Business?             @relation("LineageFrom", fields: [fromBusinessId], references: [id], onDelete: SetNull)
+  toBusiness     Business              @relation("LineageTo", fields: [toBusinessId], references: [id], onDelete: Restrict)
+  order          WholesaleOrder?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderItem      WholesaleOrderItem?   @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@index([masterId])
+  @@index([masterVariantId])
+  @@index([fromBusinessId])
+  @@index([toBusinessId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model WholesaleInventory {
+  id                    Int      @id @default(autoincrement())
+  businessId            Int
+  masterId              Int
+  masterVariantId       Int
+  quantity              Int      @default(0)
+  quantityReserved      Int      @default(0)
+  lastUnitCost          Decimal  @db.Decimal(10, 2) @default(0)
+  lastSourceBusinessId  Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  business            Business              @relation("WholesaleInventoryOwner", fields: [businessId], references: [id], onDelete: Cascade)
+  master              ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  masterVariant       ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+  lastSourceBusiness  Business?             @relation("WholesaleInventoryLastSource", fields: [lastSourceBusinessId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, masterVariantId])
+  @@index([businessId])
+  @@index([masterId])
+  @@index([masterVariantId])
 }
