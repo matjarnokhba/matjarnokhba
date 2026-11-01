@@ -411,6 +411,10 @@ model User {
 
   // P2 back-relations
   verifiedProductMasters ProductMaster[] @relation("ProductMasterVerifier")
+
+  // P4 back-relations
+  placedWholesaleOrders          WholesaleOrder[]              @relation("WholesaleOrderPlacer")
+  changedWholesaleOrderStatuses  WholesaleOrderStatusHistory[] @relation("WholesaleOrderStatusChanger")
 }
 
 model Address {
@@ -2733,6 +2737,10 @@ model Business {
 
   // P3 back-relations
   wholesaleOffers WholesaleOffer[]
+
+  // P4 back-relations
+  wholesaleOrdersAsBuyer  WholesaleOrder[] @relation("WholesaleBuyer")
+  wholesaleOrdersAsSeller WholesaleOrder[] @relation("WholesaleSeller")
 }
 
 model BusinessMember {
@@ -2810,6 +2818,9 @@ model ProductMaster {
 
   // P3 back-relations
   wholesaleOffers WholesaleOffer[]
+
+  // P4 back-relations
+  orderItems WholesaleOrderItem[]
 }
 
 model ProductMasterVariant {
@@ -2831,6 +2842,9 @@ model ProductMasterVariant {
 
   // P3 back-relations
   wholesaleOfferVariants WholesaleOfferVariant[]
+
+  // P4 back-relations
+  orderItems WholesaleOrderItem[]
 }
 
 // ═══════════════════════════════════════════
@@ -2886,6 +2900,9 @@ model WholesaleOffer {
   @@index([isActive])
   @@index([claimVerified])
   @@index([deletedAt])
+
+  // P4 back-relations
+  orderItems WholesaleOrderItem[]
 }
 
 model WholesaleOfferTier {
@@ -2918,4 +2935,108 @@ model WholesaleOfferVariant {
   @@unique([offerId, masterVariantId])
   @@index([offerId])
   @@index([masterVariantId])
+
+  // P4 back-relations
+  orderItems WholesaleOrderItem[]
+}
+
+// ═══════════════════════════════════════════
+// P4: WholesaleOrder (B2B lifecycle)
+// ═══════════════════════════════════════════
+
+enum WholesaleOrderStatus {
+  DRAFT
+  PENDING
+  ACCEPTED
+  PREPARING
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+model WholesaleOrder {
+  id                  Int                   @id @default(autoincrement())
+  orderNumber         String                @unique
+  buyerBusinessId     Int
+  sellerBusinessId    Int
+  buyerUserId         Int
+  status              WholesaleOrderStatus  @default(PENDING)
+  subtotal            Decimal               @db.Decimal(10, 2)
+  shippingCost        Decimal               @db.Decimal(10, 2) @default(0)
+  discountAmount      Decimal               @db.Decimal(10, 2) @default(0)
+  total               Decimal               @db.Decimal(10, 2)
+  currency            String                @default("MAD")
+  notes               String?
+  rejectionReason     String?
+  cancellationReason  String?
+  trackingNumber      String?
+  shippingCarrier     String?
+  acceptedAt          DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+  completedAt         DateTime?
+  estimatedDelivery   DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  buyerBusiness  Business    @relation("WholesaleBuyer", fields: [buyerBusinessId], references: [id], onDelete: Restrict)
+  sellerBusiness Business    @relation("WholesaleSeller", fields: [sellerBusinessId], references: [id], onDelete: Restrict)
+  buyerUser      User        @relation("WholesaleOrderPlacer", fields: [buyerUserId], references: [id], onDelete: Restrict)
+  items          WholesaleOrderItem[]
+  statusHistory  WholesaleOrderStatusHistory[]
+
+  @@index([buyerBusinessId])
+  @@index([sellerBusinessId])
+  @@index([buyerUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deliveredAt])
+}
+
+model WholesaleOrderItem {
+  id                 Int      @id @default(autoincrement())
+  orderId            Int
+  offerId            Int
+  offerVariantId     Int
+  masterId           Int
+  masterVariantId    Int
+  productName        String
+  sku                String?
+  barcode            String?
+  options            Json?
+  quantity           Int
+  unitPrice          Decimal  @db.Decimal(10, 2)
+  subtotal           Decimal  @db.Decimal(10, 2)
+  deliveredQuantity  Int?
+  notes              String?
+
+  order         WholesaleOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  offer         WholesaleOffer        @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  offerVariant  WholesaleOfferVariant @relation(fields: [offerVariantId], references: [id], onDelete: Restrict)
+  master        ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  masterVariant ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([offerId])
+  @@index([offerVariantId])
+  @@index([masterId])
+  @@index([masterVariantId])
+}
+
+model WholesaleOrderStatusHistory {
+  id               Int                    @id @default(autoincrement())
+  orderId          Int
+  fromStatus       WholesaleOrderStatus?
+  toStatus         WholesaleOrderStatus
+  changedByUserId  Int
+  notes            String?
+  createdAt        DateTime               @default(now())
+
+  order          WholesaleOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedByUser  User           @relation("WholesaleOrderStatusChanger", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([createdAt])
 }
