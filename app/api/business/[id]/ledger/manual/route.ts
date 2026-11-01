@@ -3,6 +3,7 @@ import { z } from "zod";
 import { SessionService } from "@/services/session.service";
 import { checkBusinessAccess } from "@/lib/business-access";
 import { LedgerService } from "@/services/ledger.service";
+import { isWholesaleTrader } from "@/lib/business-type-guards";
 
 const schema = z.object({
   counterpartyBusinessId: z.number().int().positive(),
@@ -34,6 +35,13 @@ export async function POST(
     }
     if (!access.canWrite) {
       return NextResponse.json({ success: false, message: "صلاحية محاسب مطلوبة" }, { status: 403 });
+    }
+
+    if (!(await isWholesaleTrader(businessId))) {
+      return NextResponse.json(
+        { success: false, message: "دفتر الديون التجاري متاح لتجار الجملة فقط" },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();

@@ -4,6 +4,7 @@ import { SessionService } from "@/services/session.service";
 import { checkBusinessAccess } from "@/lib/business-access";
 import { returnCreateSchema } from "@/lib/wholesale-return-validation";
 import { WholesaleReturnService } from "@/services/wholesale-return.service";
+import { isWholesaleTrader } from "@/lib/business-type-guards";
 
 const listQuerySchema = z.object({
   side: z.enum(["buyer", "seller"]).default("buyer"),
@@ -62,6 +63,13 @@ export async function POST(
     const access = await checkBusinessAccess(businessId, current.user.id, ["MANAGER", "SALES", "INVENTORY"]);
     if ("error" in access) return NextResponse.json({ success: false, message: access.error }, { status: access.status });
     if (!access.canWrite) return NextResponse.json({ success: false, message: "لا تملك صلاحية إنشاء مرتجع" }, { status: 403 });
+
+    if (!(await isWholesaleTrader(businessId))) {
+      return NextResponse.json(
+        { success: false, message: "المرتجعات متاحة لتجار الجملة فقط" },
+        { status: 403 }
+      );
+    }
 
     const body = await request.json();
     const parsed = createBodySchema.safeParse(body);

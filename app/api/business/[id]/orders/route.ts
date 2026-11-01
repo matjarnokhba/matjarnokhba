@@ -4,6 +4,7 @@ import { SessionService } from "@/services/session.service";
 import { orderCreateSchema } from "@/lib/wholesale-order-validation";
 import { WholesaleOrderService } from "@/services/wholesale-order.service";
 import { checkBusinessAccess } from "@/lib/business-access";
+import { isWholesaleTrader } from "@/lib/business-type-guards";
 
 const listQuerySchema = z.object({
   side: z.enum(["buyer", "seller"]).default("buyer"),
@@ -35,6 +36,13 @@ export async function GET(
     const parsed = listQuerySchema.safeParse(Object.fromEntries(url.searchParams));
     if (!parsed.success) {
       return NextResponse.json({ success: false, message: "معاملات غير صحيحة" }, { status: 400 });
+    }
+
+    if (parsed.data.side === "buyer" && !(await isWholesaleTrader(businessId))) {
+      return NextResponse.json(
+        { success: false, message: "المشتريات متاحة لتجار الجملة فقط" },
+        { status: 403 }
+      );
     }
 
     const result = await WholesaleOrderService.listOrders(businessId, parsed.data.side, {

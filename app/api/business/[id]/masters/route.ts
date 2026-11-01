@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { productMasterCreateSchema } from "@/lib/product-master-validation";
 import { ProductMasterService } from "@/services/product-master.service";
+import { isWholesaleTrader } from "@/lib/business-type-guards";
 
 async function requireBusinessAccess(businessId: number, userId: number) {
   const biz = await prisma.business.findUnique({
@@ -71,6 +72,13 @@ export async function POST(
     }
     if (!access.canWrite) {
       return NextResponse.json({ success: false, message: "لا تملك صلاحية إدارة المنتجات" }, { status: 403 });
+    }
+
+    if (await isWholesaleTrader(businessId)) {
+      return NextResponse.json(
+        { success: false, message: "حسابات تجار الجملة لا تنشئ منتجات جديدة" },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();
