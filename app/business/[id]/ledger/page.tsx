@@ -107,7 +107,7 @@ export default function LedgerPage() {
 
   async function handleConfirm(txId: number, action: "confirm" | "reject") {
     try {
-      const res = await fetch(`/api/business/${bizId}/ledger/${txId}/confirm`, {
+      const res = await fetch(`/api/business/${bizId}/ledger/transactions/${txId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
