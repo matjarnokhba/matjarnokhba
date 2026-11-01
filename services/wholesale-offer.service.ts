@@ -56,8 +56,23 @@ export const WholesaleOfferService = {
         include: { variants: true },
       });
       if (!master) throw new Error("المنتج غير موجود");
-      if (!master.isVerified && master.createdByBusinessId !== businessId) {
-        throw new Error("لا يمكن عرض منتج غير موثق من نشاط آخر");
+      if (!master.isVerified) {
+        throw new Error("لا يمكن عرض منتج غير موثق");
+      }
+
+      // P30.1b: type-based master ownership
+      if (biz.type === "WHOLESALE_TRADER") {
+        const inv = await tx.wholesaleInventory.findFirst({
+          where: { businessId, masterId: input.masterId, quantity: { gt: 0 } },
+          select: { id: true },
+        });
+        if (!inv) {
+          throw new Error("يجب شراء المنتج من المورد أولاً قبل عرضه بالجملة");
+        }
+      } else {
+        if (master.createdByBusinessId !== businessId) {
+          throw new Error("يمكنك عرض منتجاتك الخاصة فقط");
+        }
       }
 
       const existing = await tx.wholesaleOffer.findUnique({

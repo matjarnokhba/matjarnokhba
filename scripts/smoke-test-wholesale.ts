@@ -151,6 +151,22 @@ async function run() {
     const buyerMember = await prisma.businessMember.create({
       data: { businessId: buyerBiz.id, userId: buyerUser.id, role: "OWNER" },
     });
+    // P30.1b: create linked seller (required by assertCanBuy before order creation)
+    const buyerSeller = await prisma.seller.create({
+      data: {
+        userId: buyerUser.id,
+        storeName: `${TAG} Retail Store`,
+        slug: `${TAG}-retail`,
+        isVerified: true,
+        status: "ACTIVE",
+      },
+    });
+    cleanupList.push({ model: "seller", where: { id: buyerSeller.id } });
+    await prisma.business.update({
+      where: { id: buyerBiz.id },
+      data: { linkedSellerId: buyerSeller.id },
+    });
+    console.log(`  buyerSeller: ${buyerSeller.id}, linked to buyerBiz`);
     cleanupList.push({ model: "businessMember", where: { id: buyerMember.id } });
     console.log(`  sellerBiz: ${sellerBiz.id}, buyerBiz: ${buyerBiz.id}`);
 
@@ -502,22 +518,7 @@ async function run() {
     console.log(`  ✅ 2nd return CANCELLED, inventory unchanged (10)`);
 
     // ─── Retail Import test ───
-    log("Setup: create Seller for buyer + link to buyerBiz");
-    const buyerSeller = await prisma.seller.create({
-      data: {
-        userId: buyerUser.id,
-        storeName: `${TAG} Retail Store`,
-        slug: `${TAG}-retail`,
-        isVerified: true,
-        status: "ACTIVE",
-      },
-    });
-    cleanupList.push({ model: "seller", where: { id: buyerSeller.id } });
-    await prisma.business.update({
-      where: { id: buyerBiz.id },
-      data: { linkedSellerId: buyerSeller.id },
-    });
-    console.log(`  buyerSeller: ${buyerSeller.id}, linked to buyerBiz`);
+    log("Setup: buyer seller already created at step 3");
 
     log("Import 10 units to retail (retailPrice: 65)");
     const { RetailImportService } = await import("../services/retail-import.service");

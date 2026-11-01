@@ -50,6 +50,21 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
+    // P30.1b: enforce type-based linkedSellerId rules
+    if (data.type === "WHOLESALE_TRADER") {
+      if (!data.linkedSellerId) {
+        return NextResponse.json(
+          { success: false, message: "تجار الجملة يجب أن يربطوا متجر تجزئة" },
+          { status: 400 }
+        );
+      }
+    } else if (data.type === "INDEPENDENT_SUPPLIER" && data.linkedSellerId) {
+      return NextResponse.json(
+        { success: false, message: "الموردون المستقلون لا يمكنهم ربط متجر تجزئة" },
+        { status: 400 }
+      );
+    }
+
     let initialStatus: "PENDING" | "VERIFIED" = "PENDING";
     let verifiedAt: Date | null = null;
 

@@ -24,11 +24,12 @@ const TX_TIMEOUT = 60000;
 async function assertCanBuy(tx: any, buyerBusinessId: number) {
   const buyer = await tx.business.findUnique({
     where: { id: buyerBusinessId },
-    select: { id: true, type: true, status: true, deletedAt: true },
+    select: { id: true, type: true, status: true, deletedAt: true, linkedSellerId: true },
   });
   if (!buyer || buyer.deletedAt) throw new Error("نشاط المشتري غير موجود");
   if (buyer.status !== "VERIFIED") throw new Error("نشاط المشتري غير موثق");
   if (buyer.type !== "WHOLESALE_TRADER") throw new Error("فقط حسابات تجار الجملة يمكنها الشراء");
+  if (!buyer.linkedSellerId) throw new Error("حساب تاجر الجملة يجب أن يكون مربوطاً بمتجر تجزئة");
   return buyer;
 }
 
