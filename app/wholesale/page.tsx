@@ -48,6 +48,7 @@ export default async function WholesaleLandingPage() {
               <>
                 <Link href="/login" className="text-sm text-gray-700 hover:text-gray-900">دخول</Link>
                 <Link href="/register" className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50">حساب جديد</Link>
+                <Link href="/wholesale/register" className="rounded-lg bg-orange-500 text-white px-4 py-2 text-sm hover:bg-orange-600">سجّل كمورد</Link>
               </>
             )}
           </div>
@@ -68,6 +69,9 @@ export default async function WholesaleLandingPage() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link href="/marketplace" className="rounded-lg bg-orange-500 text-white px-8 py-3 font-medium hover:bg-orange-600 flex items-center justify-center gap-2">
             تصفح سوق الجملة <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link href="/wholesale/register" className="rounded-lg bg-orange-500 text-white px-8 py-3 font-medium hover:bg-orange-600 inline-flex items-center justify-center gap-2">
+            انضم كمورد مستقل
           </Link>
           <Link href={current ? "/business/new" : "/register"} className="rounded-lg border-2 border-gray-300 px-8 py-3 font-medium hover:border-orange-500 hover:text-orange-600 flex items-center justify-center gap-2">
             {current ? "أنشئ نشاطك التجاري" : "ابدأ الآن"}
