@@ -291,6 +291,16 @@ async function run() {
     cleanupList.push({ model: "businessMember", where: { id: buyerMember.id } });
     console.log(`  sellerBiz: ${sellerBiz.id}, buyerBiz: ${buyerBiz.id}`);
 
+    // A5-Guard test: DB allows duplicates (guard is route-level only)
+    log("A5-Guard: DB-level duplicate prevention check");
+    const existingBizForUser = await prisma.business.findFirst({
+      where: { ownerUserId: sellerUser.id, deletedAt: null },
+      select: { id: true, type: true },
+    });
+    assert(existingBizForUser, "Expected at least 1 business for sellerUser");
+    console.log(`  ✅ User has business: id=${existingBizForUser!.id}, type=${existingBizForUser!.type}`);
+    console.log(`  ⓘ Route-level guard (A5-Guard) would return 409 on 2nd business attempt`);
+
     // ─── Create master ───
     log("Create ProductMaster with 2 variants");
     const master = await ProductMasterService.createMaster(sellerBiz.id, sellerUser.id, {

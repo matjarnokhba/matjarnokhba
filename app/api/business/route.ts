@@ -51,6 +51,22 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
+    // A5-Guard: one business per user (vision: no duplicate accounts for same person)
+    const existingBusiness = await prisma.business.findFirst({
+      where: { ownerUserId: current.user.id, deletedAt: null },
+      select: { id: true, type: true, name: true },
+    });
+    if (existingBusiness) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `لديك نشاط تجاري بالفعل في سوق الجملة ("${existingBusiness.name}"). لا يمكن إنشاء أكثر من نشاط واحد — أضف هوياتك التجارية داخل نفس النشاط.`,
+          existingBusinessId: existingBusiness.id,
+        },
+        { status: 409 }
+      );
+    }
+
     // P30.1b: enforce type-based linkedSellerId rules
     if (data.type === "WHOLESALE_TRADER") {
       if (!data.linkedSellerId) {
