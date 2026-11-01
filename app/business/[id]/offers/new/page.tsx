@@ -19,6 +19,14 @@ type MasterDetail = Master & { variants: MasterVariant[] };
 type TierInput = { minQty: string; maxQty: string; unitPrice: string };
 type VariantStockInput = { masterVariantId: number; stock: string };
 
+const SA_TYPE_LABEL: Record<string, string> = {
+  TRADER: "تاجر جملة", FACTORY: "مصنع", COMPANY: "شركة", SUPPLIER: "مورد", IMPORTER: "مستورد",
+};
+const CLAIM_FROM_SA: Record<string, string> = {
+  TRADER: "RESELLER", FACTORY: "MANUFACTURER", COMPANY: "DISTRIBUTOR",
+  SUPPLIER: "DISTRIBUTOR", IMPORTER: "IMPORTER",
+};
+
 const CLAIM_OPTIONS = [
   { value: "MANUFACTURER", label: "مصنع (أنا المنتج)" },
   { value: "DISTRIBUTOR", label: "موزع" },
@@ -49,7 +57,9 @@ export default function NewOfferPage() {
   const [minOrderQty, setMinOrderQty] = useState("1");
   const [maxOrderQty, setMaxOrderQty] = useState("");
   const [unit, setUnit] = useState("PIECE");
-  const [claimType, setClaimType] = useState("MANUFACTURER");
+    type SAOption = { id: number; type: string; name: string; status: string };
+  const [supplyActivities, setSupplyActivities] = useState<SAOption[]>([]);
+  const [selectedSAId, setSelectedSAId] = useState<number | null>(null);
   const [claimProofUrl, setClaimProofUrl] = useState("");
   const [claimNotes, setClaimNotes] = useState("");
   const [leadTimeDays, setLeadTimeDays] = useState("3");
@@ -69,6 +79,20 @@ export default function NewOfferPage() {
   }, [bizId]);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/business/${bizId}/supply-activities`);
+        const d = await res.json();
+        if (d.success) {
+          setSupplyActivities(d.activities || []);
+          const firstVerified = (d.activities || []).find((sa: any) => sa.status === "VERIFIED");
+          if (firstVerified) setSelectedSAId(firstVerified.id);
+        }
+      } catch {}
+    })();
+  }, [bizId]);
+
+  useEffect(() => {
     if (!preMasterId || selectedMaster) return;
     loadMaster(preMasterId);
   }, [preMasterId]);
@@ -76,6 +100,7 @@ export default function NewOfferPage() {
   async function loadMaster(mid: number) {
     setMasterLoading(true);
     setError("");
+    if (!selectedSAId) return setError("اختر الهوية التجارية البائعة");
     try {
       const res = await fetch(`/api/business/${bizId}/masters/${mid}`);
       const d = await res.json();
@@ -102,6 +127,7 @@ export default function NewOfferPage() {
 
   async function handleSubmit() {
     setError("");
+    if (!selectedSAId) return setError("اختر الهوية التجارية البائعة");
     if (!selectedMaster) return;
     const wp = parseFloat(wholesalePrice);
     if (!wp || wp <= 0) return setError("سعر الجملة مطلوب");
@@ -129,10 +155,10 @@ export default function NewOfferPage() {
     try {
       const body: any = {
         masterId: selectedMaster.id,
+        supplyActivityId: selectedSAId,
         wholesalePrice: wp,
         minOrderQty: moq,
         unit,
-        claimType,
         tiers: parsedTiers,
         variants: parsedVariants,
       };
@@ -285,19 +311,33 @@ export default function NewOfferPage() {
       </div>
 
       <div className="rounded-xl bg-white border p-5 space-y-3">
-        <h2 className="font-semibold">نوع المطالبة</h2>
-        <select value={claimType} onChange={(e) => setClaimType(e.target.value)} className="w-full rounded-lg border p-2">
-          {CLAIM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <div>
-          <label className="block text-sm font-medium mb-1">رابط إثبات (اختياري)</label>
-          <input value={claimProofUrl} onChange={(e) => setClaimProofUrl(e.target.value)} placeholder="https://..." className="w-full rounded-lg border p-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">ملاحظات المطالبة</label>
-          <textarea value={claimNotes} onChange={(e) => setClaimNotes(e.target.value)} rows={2} className="w-full rounded-lg border p-2 text-sm" />
-        </div>
-        <p className="text-xs text-gray-500">إذا كنت مصنعًا وتطابق نوع المطالبة، سيُوثق العرض تلقائيًا</p>
+        <h2 className="font-semibold">الهوية التجارية البائعة</h2>
+        <p className="text-xs text-gray-600">اختر الهوية التجارية التي تبيع من خلالها. سيتم تحديد نوع المطالبة تلقائيًا.</p>
+        {supplyActivities.length === 0 ? (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+            لا توجد هويات موثقة. أضف هوية تجارية من صفحة "الهويات" أولاً.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {supplyActivities.filter(sa => sa.status === "VERIFIED").map((sa) => (
+              <label key={sa.id} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer ${selectedSAId === sa.id ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}>
+                <input type="radio" name="sa" checked={selectedSAId === sa.id} onChange={() => setSelectedSAId(sa.id)} className="mt-1" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">{sa.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {SA_TYPE_LABEL[sa.type] || sa.type} · المطالبة التلقائية: <span className="font-mono">{CLAIM_FROM_SA[sa.type] || "—"}</span>
+                  </p>
+                </div>
+              </label>
+            ))}
+            {supplyActivities.filter(sa => sa.status !== "VERIFIED").map((sa) => (
+              <div key={sa.id} className="rounded-lg border border-dashed p-3 bg-gray-50 opacity-60">
+                <p className="font-medium text-sm">{sa.name}</p>
+                <p className="text-xs text-gray-500">{SA_TYPE_LABEL[sa.type] || sa.type} · بانتظار التوثيق</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl bg-white border p-5 space-y-3">
