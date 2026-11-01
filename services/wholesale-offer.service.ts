@@ -2,12 +2,13 @@ import { prisma } from "@/lib/prisma";
 
 type OfferCreateInput = {
   masterId: number;
+  supplyActivityId?: number;
   wholesalePrice: number;
   retailPrice?: number | null;
   minOrderQty: number;
   maxOrderQty?: number | null;
   unit: string;
-  claimType: "MANUFACTURER" | "DISTRIBUTOR" | "RESELLER" | "IMPORTER";
+  claimType?: "MANUFACTURER" | "DISTRIBUTOR" | "RESELLER" | "IMPORTER";
   claimProofUrl?: string | null;
   claimNotes?: string | null;
   leadTimeDays?: number | null;
@@ -16,13 +17,18 @@ type OfferCreateInput = {
   variants: Array<{ masterVariantId: number; stock: number; lowStockThreshold?: number }>;
 };
 
-const AUTO_VERIFY_MAP: Record<string, string[]> = {
-  INDEPENDENT_SUPPLIER: ["MANUFACTURER", "DISTRIBUTOR", "IMPORTER"],
-  WHOLESALE_TRADER: ["RESELLER"],
+const CLAIM_FROM_SUPPLY_TYPE: Record<string, string> = {
+  TRADER: "RESELLER",
+  FACTORY: "MANUFACTURER",
+  COMPANY: "DISTRIBUTOR",
+  SUPPLIER: "DISTRIBUTOR",
+  IMPORTER: "IMPORTER",
 };
 
-function shouldAutoVerify(businessType: string, claimType: string): boolean {
-  return AUTO_VERIFY_MAP[businessType]?.includes(claimType) ?? false;
+function deriveClaimTypeFromSA(saType: string): string {
+  const claim = CLAIM_FROM_SUPPLY_TYPE[saType];
+  if (!claim) throw new Error(`نوع الهوية التجارية غير معروف: ${saType}`);
+  return claim;
 }
 
 function validateTiers(tiers: Array<{ minQty: number; maxQty?: number | null; unitPrice: number }>) {
@@ -51,13 +57,31 @@ export const WholesaleOfferService = {
       if (!biz || biz.deletedAt) throw new Error("النشاط غير موجود");
       if (biz.status !== "VERIFIED") throw new Error("النشاط غير موثق");
 
-      // A3: fetch default supply activity
-      const defaultSA = await tx.supplyActivity.findFirst({
-        where: { businessId, deletedAt: null },
-        orderBy: { createdAt: "asc" },
-        select: { id: true },
-      });
-      if (!defaultSA) throw new Error("النشاط لا يملك هوية تجارية — يرجى التواصل مع الإدارة");
+      // A4b: fetch target supply activity
+      let targetSA: { id: number; type: string; status: string; name: string } | null = null;
+      if (input.supplyActivityId) {
+        targetSA = await tx.supplyActivity.findFirst({
+          where: { id: input.supplyActivityId, businessId, deletedAt: null },
+          select: { id: true, type: true, status: true, name: true },
+        });
+        if (!targetSA) throw new Error("الهوية التجارية غير موجودة أو لا تنتمي لهذا النشاط");
+      } else {
+        targetSA = await tx.supplyActivity.findFirst({
+          where: { businessId, deletedAt: null },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, type: true, status: true, name: true },
+        });
+        if (!targetSA) throw new Error("النشاط لا يملك هوية تجارية — يرجى التواصل مع الإدارة");
+      }
+      if (targetSA.status !== "VERIFIED") {
+        throw new Error(`الهوية "${targetSA.name}" غير موثقة — لا يمكن عرض المنتج من خلالها`);
+      }
+
+      const derivedClaim = deriveClaimTypeFromSA(targetSA.type);
+      if (input.claimType && input.claimType !== derivedClaim) {
+        throw new Error(`نوع المطالبة يجب أن يكون "${derivedClaim}" حسب هوية "${targetSA.name}"`);
+      }
+      const finalClaimType = derivedClaim as "MANUFACTURER" | "DISTRIBUTOR" | "RESELLER" | "IMPORTER";
 
       const master = await tx.productMaster.findFirst({
         where: { id: input.masterId, deletedAt: null },
@@ -68,18 +92,18 @@ export const WholesaleOfferService = {
         throw new Error("لا يمكن عرض منتج غير موثق");
       }
 
-      // P30.1b: type-based master ownership
-      if (biz.type === "WHOLESALE_TRADER") {
+      // A4b: SA-type-based ownership
+      if (targetSA.type === "TRADER") {
         const inv = await tx.wholesaleInventory.findFirst({
           where: { businessId, masterId: input.masterId, quantity: { gt: 0 } },
           select: { id: true },
         });
         if (!inv) {
-          throw new Error("يجب شراء المنتج من المورد أولاً قبل عرضه بالجملة");
+          throw new Error("يجب شراء المنتج من المورد أولاً قبل عرضه بالجملة كتاجر");
         }
       } else {
         if (master.createdByBusinessId !== businessId) {
-          throw new Error("يمكنك عرض منتجاتك الخاصة فقط");
+          throw new Error(`يمكنك عرض منتجاتك الخاصة فقط عند البيع بصفتك "${targetSA.name}"`);
         }
       }
 
@@ -98,19 +122,19 @@ export const WholesaleOfferService = {
 
       validateTiers(input.tiers);
 
-      const autoVerify = shouldAutoVerify(biz.type, input.claimType);
+      const autoVerify = true; // A4b: SA is verified
 
       const offer = await tx.wholesaleOffer.create({
         data: {
           businessId,
-          supplyActivityId: defaultSA.id,
+          supplyActivityId: targetSA.id,
           masterId: input.masterId,
           wholesalePrice: input.wholesalePrice,
           retailPrice: input.retailPrice ?? null,
           minOrderQty: input.minOrderQty,
           maxOrderQty: input.maxOrderQty ?? null,
           unit: input.unit as any,
-          claimType: input.claimType,
+          claimType: finalClaimType,
           claimVerified: autoVerify,
           claimProofUrl: input.claimProofUrl ?? null,
           claimNotes: input.claimNotes ?? null,

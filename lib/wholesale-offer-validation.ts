@@ -13,13 +13,14 @@ export const offerVariantSchema = z.object({
 });
 
 export const offerCreateSchema = z.object({
+  supplyActivityId: z.number().int().positive().optional(),
   masterId: z.number().int().positive(),
   wholesalePrice: z.number().positive(),
   retailPrice: z.number().positive().optional().nullable(),
   minOrderQty: z.number().int().positive().default(1),
   maxOrderQty: z.number().int().positive().optional().nullable(),
   unit: z.enum(["PIECE", "BOX", "PACK", "KG", "LITER", "METER", "DOZEN"]).default("PIECE"),
-  claimType: z.enum(["MANUFACTURER", "DISTRIBUTOR", "RESELLER", "IMPORTER"]),
+  claimType: z.enum(["MANUFACTURER", "DISTRIBUTOR", "RESELLER", "IMPORTER"]).optional(),
   claimProofUrl: z.string().url().optional().nullable(),
   claimNotes: z.string().trim().max(1000).optional().nullable(),
   leadTimeDays: z.number().int().nonnegative().optional().nullable(),

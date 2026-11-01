@@ -394,6 +394,76 @@ async function run() {
     assert(completed!.status === "COMPLETED", "Should be COMPLETED");
     console.log(`  ✅ COMPLETED`);
 
+    // ─── A4b: SA-aware offer creation ───
+    log("A4b: Trader creates offer with TRADER SA + RESELLER claim");
+    const buyerOffer = await WholesaleOfferService.createOffer(buyerBiz.id, {
+      masterId: master.id,
+      supplyActivityId: buyerSA.id,
+      wholesalePrice: 55,
+      minOrderQty: 1,
+      unit: "PIECE",
+      claimType: "RESELLER",
+      tiers: [],
+      variants: [{ masterVariantId: masterVariantS.id, stock: 10 }],
+    });
+    cleanupList.push({ model: "wholesaleOfferTier", where: { offerId: buyerOffer.id } });
+    cleanupList.push({ model: "wholesaleOfferVariant", where: { offerId: buyerOffer.id } });
+    cleanupList.push({ model: "wholesaleOffer", where: { id: buyerOffer.id } });
+    assert(buyerOffer.supplyActivityId === buyerSA.id, "Buyer offer SA should be buyerSA");
+    assert(buyerOffer.claimType === "RESELLER", `Claim should be RESELLER, got ${buyerOffer.claimType}`);
+    console.log(`  ✅ Buyer offer: id=${buyerOffer.id}, SA=${buyerSA.id}, claim=RESELLER`);
+
+    log("A4b: Wrong claimType for TRADER SA (should fail)");
+    let wrongClaimBlocked = false;
+    try {
+      await WholesaleOfferService.createOffer(buyerBiz.id, {
+        masterId: master.id,
+        supplyActivityId: buyerSA.id,
+        wholesalePrice: 60, minOrderQty: 1, unit: "PIECE",
+        claimType: "MANUFACTURER",
+        tiers: [],
+        variants: [{ masterVariantId: masterVariantS.id, stock: 5 }],
+      });
+    } catch (e: any) {
+      if (e.message.includes("RESELLER") || e.message.includes("حسب هوية")) wrongClaimBlocked = true;
+    }
+    assert(wrongClaimBlocked, "Wrong claimType should be blocked");
+    console.log(`  ✅ Wrong claimType blocked`);
+
+    log("A4b: Cross-business SA (should fail)");
+    let crossSABlocked = false;
+    try {
+      await WholesaleOfferService.createOffer(buyerBiz.id, {
+        masterId: master.id,
+        supplyActivityId: sellerSA.id,
+        wholesalePrice: 60, minOrderQty: 1, unit: "PIECE",
+        claimType: "MANUFACTURER",
+        tiers: [],
+        variants: [{ masterVariantId: masterVariantS.id, stock: 5 }],
+      });
+    } catch (e: any) {
+      if (e.message.includes("غير موجود") || e.message.includes("لا تنتمي")) crossSABlocked = true;
+    }
+    assert(crossSABlocked, "Cross-business SA should be blocked");
+    console.log(`  ✅ Cross-business SA blocked`);
+
+    log("A4b: COMPANY SA without ownership (should fail)");
+    let companyOfferBlocked = false;
+    try {
+      await WholesaleOfferService.createOffer(buyerBiz.id, {
+        masterId: master.id,
+        supplyActivityId: companySA.id,
+        wholesalePrice: 70, minOrderQty: 1, unit: "PIECE",
+        claimType: "DISTRIBUTOR",
+        tiers: [],
+        variants: [{ masterVariantId: masterVariantS.id, stock: 5 }],
+      });
+    } catch (e: any) {
+      if (e.message.includes("منتجاتك الخاصة") || e.message.includes("بصفتك")) companyOfferBlocked = true;
+    }
+    assert(companyOfferBlocked, "COMPANY SA without ownership should be blocked");
+    console.log(`  ✅ COMPANY SA offer without ownership blocked`);
+
     // ─── Ledger test (after delivery) ───
     log("Verify SALE ledger transaction created at DELIVERY");
     const saleTx = await prisma.ledgerTransaction.findFirst({
