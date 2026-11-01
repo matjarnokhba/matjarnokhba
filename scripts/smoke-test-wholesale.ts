@@ -9,6 +9,7 @@ import { prisma } from "../lib/prisma";
 import { WholesaleOrderService } from "../services/wholesale-order.service";
 import { ProductMasterService } from "../services/product-master.service";
 import { WholesaleOfferService } from "../services/wholesale-offer.service";
+import { WholesaleReturnService } from "../services/wholesale-return.service";
 
 const TS = Date.now();
 const TAG = `smoke-${TS}`;
@@ -21,6 +22,9 @@ async function cleanup(collected: Cleanup) {
   console.log("\n[CLEANUP] Removing test data (leaf → root)...");
   // Correct deletion order — children before parents
   const ORDER = [
+    "wholesaleReturnStatusHistory",
+    "wholesaleReturnItem",
+    "wholesaleReturnRequest",
     "productLineage",
     "ledgerTransaction",
     "wholesaleOrderStatusHistory",
@@ -373,6 +377,130 @@ async function run() {
     assert(Number(sellerAcct3!.balance) === 0, `seller balance should be 0, got ${sellerAcct3!.balance}`);
     console.log(`  ✅ fully paid, balances settled: buyer=0, seller=0`);
 
+    // ─── Returns test ───
+    log("Create return request (5 units, reason DAMAGED)");
+    const returnOrderItem = await prisma.wholesaleOrderItem.findFirst({ where: { orderId: order.id } });
+    assert(returnOrderItem, "Order item missing");
+    const returnReq = await WholesaleReturnService.createReturn({
+      orderId: order.id,
+      buyerBusinessId: buyerBiz.id,
+      userId: buyerUser.id,
+      reason: "DAMAGED",
+      reasonDetails: "3 units arrived damaged",
+      items: [{ orderItemId: returnOrderItem!.id, quantity: 5 }],
+    });
+    cleanupList.push({ model: "wholesaleReturnStatusHistory", where: { returnId: returnReq.id } });
+    cleanupList.push({ model: "wholesaleReturnItem", where: { returnId: returnReq.id } });
+    cleanupList.push({ model: "wholesaleReturnRequest", where: { id: returnReq.id } });
+    assert(returnReq.status === "REQUESTED", "Return should be REQUESTED");
+    assert(Number(returnReq.totalAmount) === 190, `Total should be 190, got ${returnReq.totalAmount}`);
+    const buyerInvAfterReq = await prisma.wholesaleInventory.findFirst({
+      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
+    });
+    assert(buyerInvAfterReq!.quantity === 15, "Inventory should be unchanged at REQUESTED");
+    console.log(`  ✅ return #${returnReq.id}: REQUESTED, 190 MAD, inventory unchanged`);
+
+    log("Verify over-quantity return is blocked");
+    let overReturnBlocked = false;
+    try {
+      await WholesaleReturnService.createReturn({
+        orderId: order.id,
+        buyerBusinessId: buyerBiz.id,
+        userId: buyerUser.id,
+        reason: "OTHER",
+        items: [{ orderItemId: returnOrderItem!.id, quantity: 15 }],
+      });
+    } catch (e: any) {
+      if (e.message.includes("لا يمكن إرجاع")) overReturnBlocked = true;
+    }
+    assert(overReturnBlocked, "Over-quantity return should be blocked");
+    console.log(`  ✅ over-quantity blocked`);
+
+    log("Verify buyer cannot approve own return");
+    let buyerApproveBlocked = false;
+    try {
+      await WholesaleReturnService.approveReturn(returnReq.id, buyerBiz.id, buyerUser.id);
+    } catch (e: any) {
+      if (e.message.includes("غير مصرح")) buyerApproveBlocked = true;
+    }
+    assert(buyerApproveBlocked, "Buyer should not be able to approve");
+    console.log(`  ✅ buyer approve blocked`);
+
+    log("Seller approves (full amount 190)");
+    const approvedRet = await WholesaleReturnService.approveReturn(returnReq.id, sellerBiz.id, sellerUser.id);
+    assert(approvedRet.status === "APPROVED", "Should be APPROVED");
+    assert(Number(approvedRet.approvedAmount) === 190, "Approved amount should be 190");
+    console.log(`  ✅ APPROVED, amount=190`);
+
+    log("Verify cancel-after-approve is blocked");
+    let cancelAfterApproveBlocked = false;
+    try {
+      await WholesaleReturnService.cancelReturn(returnReq.id, buyerBiz.id, buyerUser.id);
+    } catch (e: any) {
+      cancelAfterApproveBlocked = true;
+    }
+    assert(cancelAfterApproveBlocked, "Cancel after approve should be blocked");
+    console.log(`  ✅ cancel-after-approve blocked`);
+
+    log("Seller receives return (restock + buyer decrement + lineage)");
+    await WholesaleReturnService.receiveReturn(returnReq.id, sellerBiz.id, sellerUser.id);
+    const buyerInvAfterRecv = await prisma.wholesaleInventory.findFirst({
+      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
+    });
+    const sellerStockAfterRecv = await prisma.wholesaleOfferVariant.findFirst({
+      where: { offerId: offer.id, masterVariantId: masterVariantS.id },
+    });
+    assert(buyerInvAfterRecv!.quantity === 10, `buyer qty should be 10, got ${buyerInvAfterRecv!.quantity}`);
+    assert(sellerStockAfterRecv!.stock === 50, `seller stock should be 50, got ${sellerStockAfterRecv!.stock}`);
+    const returnLineage = await prisma.productLineage.findFirst({
+      where: { masterVariantId: masterVariantS.id, transferType: "RETURN" },
+    });
+    assert(returnLineage, "RETURN lineage missing");
+    assert(returnLineage!.quantity === 5, "Return lineage qty should be 5");
+    console.log(`  ✅ RECEIVED: buyer=10, seller.stock=50, lineage RETURN recorded`);
+
+    log("Seller issues refund (ledger REFUND)");
+    await WholesaleReturnService.refundReturn(returnReq.id, sellerBiz.id, sellerUser.id);
+    const refundLedger = await prisma.ledgerTransaction.findFirst({
+      where: {
+        type: "REFUND",
+        amount: 190,
+        debtorBusinessId: buyerBiz.id,
+        creditorBusinessId: sellerBiz.id,
+        status: "CONFIRMED",
+      },
+    });
+    assert(refundLedger, "REFUND ledger transaction missing");
+    const buyerBalAfterRefund = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: buyerBiz.id, counterpartyBusinessId: sellerBiz.id } },
+    });
+    const sellerBalAfterRefund = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: sellerBiz.id, counterpartyBusinessId: buyerBiz.id } },
+    });
+    assert(Number(buyerBalAfterRefund!.balance) === 190, `buyer balance should be +190, got ${buyerBalAfterRefund!.balance}`);
+    assert(Number(sellerBalAfterRefund!.balance) === -190, `seller balance should be -190, got ${sellerBalAfterRefund!.balance}`);
+    console.log(`  ✅ REFUNDED: buyer.balance=+190 (seller owes), seller.balance=-190, ledger REFUND`);
+
+    log("Create 2nd return for 3 units, then cancel it");
+    const returnReq2 = await WholesaleReturnService.createReturn({
+      orderId: order.id,
+      buyerBusinessId: buyerBiz.id,
+      userId: buyerUser.id,
+      reason: "OTHER",
+      items: [{ orderItemId: returnOrderItem!.id, quantity: 3 }],
+    });
+    cleanupList.push({ model: "wholesaleReturnStatusHistory", where: { returnId: returnReq2.id } });
+    cleanupList.push({ model: "wholesaleReturnItem", where: { returnId: returnReq2.id } });
+    cleanupList.push({ model: "wholesaleReturnRequest", where: { id: returnReq2.id } });
+    await WholesaleReturnService.cancelReturn(returnReq2.id, buyerBiz.id, buyerUser.id);
+    const cancelled = await prisma.wholesaleReturnRequest.findUnique({ where: { id: returnReq2.id } });
+    assert(cancelled!.status === "CANCELLED", "Should be CANCELLED");
+    const buyerInvAfterCancel = await prisma.wholesaleInventory.findFirst({
+      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
+    });
+    assert(buyerInvAfterCancel!.quantity === 10, "Inventory should still be 10 after cancel");
+    console.log(`  ✅ 2nd return CANCELLED, inventory unchanged (10)`);
+
     // ─── Retail Import test ───
     log("Setup: create Seller for buyer + link to buyerBiz");
     const buyerSeller = await prisma.seller.create({
@@ -417,28 +545,17 @@ async function run() {
     const wsInvAfter = await prisma.wholesaleInventory.findFirst({
       where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
     });
-    assert(wsInvAfter!.quantity === 5, `wholesale inventory should be 5, got ${wsInvAfter!.quantity}`);
-    console.log(`  ✅ retail qty=10, wholesale qty=5`);
+    assert(wsInvAfter!.quantity === 0, `wholesale inventory should be 0, got ${wsInvAfter!.quantity}`);
+    console.log(`  ✅ retail qty=10, wholesale qty=0`);
 
-    log("Import remaining 5 units to same retail variant");
-    await RetailImportService.importToRetail({
-      businessId: buyerBiz.id,
-      masterVariantId: masterVariantS.id,
-      quantity: 5,
-      retailPrice: 65,
-    });
-    const wsInvFinal = await prisma.wholesaleInventory.findFirst({
-      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
-    });
-    assert(wsInvFinal!.quantity === 0, `wholesale qty should be 0, got ${wsInvFinal!.quantity}`);
     const retailInvFinal = await prisma.inventory.findUnique({
       where: { variantId: importResult.variantId },
     });
-    assert(retailInvFinal!.quantity === 15, `retail qty should be 15, got ${retailInvFinal!.quantity}`);
-    console.log(`  ✅ retail qty=15, wholesale qty=0`);
+    assert(retailInvFinal!.quantity === 10, `retail qty should be 10, got ${retailInvFinal!.quantity}`);
+    console.log(`  ✅ retail final qty=10, wholesale qty=0`);
 
     // ─── Verify lineage chain ───
-    log("Verify lineage chain (INITIAL_CREATION → WHOLESALE_SALE → RETAIL_IMPORT ×2)");
+    log("Verify lineage chain (INITIAL_CREATION → WHOLESALE_SALE → RETURN → RETAIL_IMPORT)");
     const chain = await prisma.productLineage.findMany({
       where: { masterVariantId: masterVariantS.id },
       orderBy: { createdAt: "asc" },
@@ -446,9 +563,9 @@ async function run() {
     assert(chain.length === 4, `Chain should have 4 records, got ${chain.length}`);
     assert(chain[0].transferType === "INITIAL_CREATION", "First should be INITIAL_CREATION");
     assert(chain[1].transferType === "WHOLESALE_SALE", "Second should be WHOLESALE_SALE");
-    assert(chain[2].transferType === "RETAIL_IMPORT", "Third should be RETAIL_IMPORT");
+    assert(chain[2].transferType === "RETURN", "Third should be RETURN");
     assert(chain[3].transferType === "RETAIL_IMPORT", "Fourth should be RETAIL_IMPORT");
-    console.log(`  ✅ chain complete: INITIAL_CREATION → WHOLESALE_SALE → RETAIL_IMPORT ×2`);
+    console.log(`  ✅ chain complete: INITIAL_CREATION → WHOLESALE_SALE → RETURN → RETAIL_IMPORT`);
 
     // ─── All passed ───
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
