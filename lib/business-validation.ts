@@ -5,8 +5,16 @@ export const businessTypeSchema = z.enum([
   "WHOLESALE_TRADER",
 ]);
 
+export const supplyActivityTypeSchema = z.enum([
+  "FACTORY",
+  "COMPANY",
+  "SUPPLIER",
+  "IMPORTER",
+]);
+
 export const businessCreateSchema = z.object({
   type: businessTypeSchema,
+  supplyActivityType: supplyActivityTypeSchema.optional().nullable(),
   name: z.string().trim().min(2).max(200),
   legalName: z.string().trim().max(200).optional().nullable(),
   description: z.string().trim().max(2000).optional().nullable(),

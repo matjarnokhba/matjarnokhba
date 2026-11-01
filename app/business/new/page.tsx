@@ -4,6 +4,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Building2, Store, ArrowLeft } from "lucide-react";
 
+const SUPPLY_SUBTYPES = [
+  { value: "FACTORY", label: "مصنع", desc: "إنتاج وتصنيع" },
+  { value: "COMPANY", label: "شركة", desc: "بيع بالجملة" },
+  { value: "SUPPLIER", label: "مورد", desc: "توريد منتجات" },
+  { value: "IMPORTER", label: "مستورد", desc: "استيراد" },
+];
+
 const TYPES = [
   { value: "INDEPENDENT_SUPPLIER", label: "مورد مستقل", Icon: Building2, desc: "شركة أو مصنع أو مورد أو مستورد" },
   { value: "WHOLESALE_TRADER", label: "تاجر جملة", Icon: Store, desc: "شراء وبيع بالجملة" },
@@ -18,6 +25,7 @@ export default function NewBusinessPage() {
   const [sellers, setSellers] = useState<Seller[]>([]);
 
   const [type, setType] = useState("");
+  const [supplyActivityType, setSupplyActivityType] = useState("");
   const [name, setName] = useState("");
   const [legalName, setLegalName] = useState("");
   const [city, setCity] = useState("");
@@ -48,6 +56,9 @@ export default function NewBusinessPage() {
     if (!type) return setError("اختر نوع النشاط");
     if (name.trim().length < 2) return setError("الاسم التجاري مطلوب");
     if (!city.trim() || !phone.trim()) return setError("المدينة والهاتف مطلوبان");
+    if (type === "INDEPENDENT_SUPPLIER" && !supplyActivityType) {
+      return setError("اختر نوع النشاط التجاري");
+    }
     if (type === "WHOLESALE_TRADER" && !linkedSellerId) {
       return setError("تاجر الجملة يحتاج متجر تجزئة مربوط");
     }
@@ -55,6 +66,9 @@ export default function NewBusinessPage() {
     setLoading(true);
     try {
       const body: any = { type, name: name.trim(), city: city.trim(), phone: phone.trim() };
+      if (type === "INDEPENDENT_SUPPLIER" && supplyActivityType) {
+        body.supplyActivityType = supplyActivityType;
+      }
       if (legalName.trim()) body.legalName = legalName.trim();
       if (email.trim()) body.email = email.trim();
       if (address.trim()) body.address = address.trim();
@@ -107,6 +121,29 @@ export default function NewBusinessPage() {
             })}
           </div>
         </div>
+
+        {type === "INDEPENDENT_SUPPLIER" && (
+          <div className="rounded-xl bg-white border p-5 space-y-4">
+            <h2 className="font-semibold">نوع النشاط التجاري</h2>
+            <p className="text-sm text-gray-600">حدد ما إذا كنت مصنعاً أو شركة أو مورداً أو مستورداً</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {SUPPLY_SUBTYPES.map((st) => {
+                const sel = supplyActivityType === st.value;
+                return (
+                  <button
+                    type="button"
+                    key={st.value}
+                    onClick={() => setSupplyActivityType(st.value)}
+                    className={`rounded-lg border p-3 text-center transition-colors ${sel ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}
+                  >
+                    <p className="font-medium text-sm">{st.label}</p>
+                    <p className="text-xs text-gray-500 mt-1">{st.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl bg-white border p-5 space-y-4">
           <h2 className="font-semibold">المعلومات الأساسية</h2>

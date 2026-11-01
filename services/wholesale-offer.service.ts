@@ -51,6 +51,14 @@ export const WholesaleOfferService = {
       if (!biz || biz.deletedAt) throw new Error("النشاط غير موجود");
       if (biz.status !== "VERIFIED") throw new Error("النشاط غير موثق");
 
+      // A3: fetch default supply activity
+      const defaultSA = await tx.supplyActivity.findFirst({
+        where: { businessId, deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (!defaultSA) throw new Error("النشاط لا يملك هوية تجارية — يرجى التواصل مع الإدارة");
+
       const master = await tx.productMaster.findFirst({
         where: { id: input.masterId, deletedAt: null },
         include: { variants: true },
@@ -95,6 +103,7 @@ export const WholesaleOfferService = {
       const offer = await tx.wholesaleOffer.create({
         data: {
           businessId,
+          supplyActivityId: defaultSA.id,
           masterId: input.masterId,
           wholesalePrice: input.wholesalePrice,
           retailPrice: input.retailPrice ?? null,

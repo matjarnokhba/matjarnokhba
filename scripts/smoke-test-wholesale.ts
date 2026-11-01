@@ -42,6 +42,7 @@ async function cleanup(collected: Cleanup) {
     "product",
     "ledgerAccount",
     "businessMember",
+    "supplyActivity",
     "seller",
     "business",
     "user",
@@ -130,6 +131,18 @@ async function run() {
       },
     });
     cleanupList.push({ model: "business", where: { id: sellerBiz.id } });
+    const sellerSA = await prisma.supplyActivity.create({
+      data: {
+        businessId: sellerBiz.id,
+        type: "FACTORY",
+        status: "VERIFIED",
+        name: sellerBiz.name,
+        slug: `${TAG}-factory-sa`,
+        city: sellerBiz.city,
+        verifiedAt: new Date(),
+      },
+    });
+    cleanupList.push({ model: "supplyActivity", where: { id: sellerSA.id } });
     const sellerMember = await prisma.businessMember.create({
       data: { businessId: sellerBiz.id, userId: sellerUser.id, role: "OWNER" },
     });
@@ -148,6 +161,18 @@ async function run() {
       },
     });
     cleanupList.push({ model: "business", where: { id: buyerBiz.id } });
+    const buyerSA = await prisma.supplyActivity.create({
+      data: {
+        businessId: buyerBiz.id,
+        type: "TRADER",
+        status: "VERIFIED",
+        name: buyerBiz.name,
+        slug: `${TAG}-trader-sa`,
+        city: buyerBiz.city,
+        verifiedAt: new Date(),
+      },
+    });
+    cleanupList.push({ model: "supplyActivity", where: { id: buyerSA.id } });
     const buyerMember = await prisma.businessMember.create({
       data: { businessId: buyerBiz.id, userId: buyerUser.id, role: "OWNER" },
     });
@@ -233,7 +258,9 @@ async function run() {
     assert(offer.claimVerified === true, "Factory should auto-verify MANUFACTURER claim");
     assert(offer.status === "DRAFT", "Offer should start as DRAFT");
     assert(offer.variants.length === 2, "Offer should have 2 variants");
+    assert(offer.supplyActivityId === sellerSA.id, `Offer.supplyActivityId should be ${sellerSA.id}, got ${offer.supplyActivityId}`);
     console.log(`  offer: ${offer.id}, total stock: 100, auto-verified: ✅`);
+    console.log(`  ✅ supplyActivityId = ${sellerSA.id} (linked correctly)`);
 
     // ─── Activate offer ───
     log("Activate offer");

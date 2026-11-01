@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { businessCreateSchema } from "@/lib/business-validation";
 import { slugifyBusiness, ensureUniqueBusinessSlug } from "@/lib/business-slug";
+import { slugifySupplyActivity, ensureUniqueSupplyActivitySlug } from "@/lib/supply-activity-slug";
 
 export async function GET() {
   try {
@@ -65,6 +66,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // A3: INDEPENDENT_SUPPLIER requires supplyActivityType
+    if (data.type === "INDEPENDENT_SUPPLIER" && !data.supplyActivityType) {
+      return NextResponse.json(
+        { success: false, message: "يجب تحديد نوع النشاط التجاري (مصنع/شركة/مورد/مستورد)" },
+        { status: 400 }
+      );
+    }
+    if (data.type === "WHOLESALE_TRADER" && data.supplyActivityType) {
+      return NextResponse.json(
+        { success: false, message: "نوع النشاط الفرعي غير مطلوب لتجار الجملة" },
+        { status: 400 }
+      );
+    }
+
     let initialStatus: "PENDING" | "VERIFIED" = "PENDING";
     let verifiedAt: Date | null = null;
 
@@ -111,6 +126,28 @@ export async function POST(request: Request) {
 
       await tx.businessMember.create({
         data: { businessId: biz.id, userId: current.user.id, role: "OWNER" },
+      });
+
+      // A3: auto-create default SupplyActivity
+      const saType = data.type === "WHOLESALE_TRADER" ? "TRADER" : data.supplyActivityType!;
+      const saBase = slugifySupplyActivity(data.name);
+      const saSlug = await ensureUniqueSupplyActivitySlug(saBase, tx);
+      await tx.supplyActivity.create({
+        data: {
+          businessId: biz.id,
+          type: saType as any,
+          status: initialStatus as any,
+          name: biz.name,
+          slug: saSlug,
+          legalName: biz.legalName,
+          description: biz.description,
+          logo: biz.logo,
+          commercialRegister: biz.commercialRegister,
+          taxId: biz.taxId,
+          city: biz.city,
+          address: biz.address,
+          verifiedAt,
+        },
       });
 
       return biz;
