@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ArrowLeft, Package, ShoppingBag, Users, FileText, ShieldCheck, ShieldAlert, Clock } from "lucide-react";
+import { Loader2, ArrowLeft, Package, ShoppingBag, Users, FileText, ShieldCheck, ShieldAlert, Clock, ShoppingCart, Warehouse, BookOpen, ChevronLeft } from "lucide-react";
 
 type Business = {
   id: number;
@@ -99,6 +99,43 @@ export default function BusinessOverviewPage() {
           <Users className="h-8 w-8 text-orange-500 mb-3" />
           <p className="text-2xl font-bold">{business.members.length}</p>
           <p className="text-sm text-gray-600">عضو</p>
+        </div>
+      </div>
+
+      {/* Quick sections navigation */}
+      <div>
+        <h2 className="font-semibold mb-3">الأقسام</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <Link href={`/business/${business.id}/masters`} className="rounded-xl bg-white border p-4 hover:shadow-md transition-shadow group">
+            <Package className="h-7 w-7 text-purple-500 mb-2" />
+            <p className="font-medium text-sm">المنتجات</p>
+            <p className="text-xs text-gray-500 mt-1">{business._count.productMasters} منتج</p>
+            <ChevronLeft className="h-4 w-4 text-gray-400 mt-2 group-hover:text-orange-500" />
+          </Link>
+          <Link href={`/business/${business.id}/offers`} className="rounded-xl bg-white border p-4 hover:shadow-md transition-shadow group">
+            <ShoppingBag className="h-7 w-7 text-amber-500 mb-2" />
+            <p className="font-medium text-sm">العروض</p>
+            <p className="text-xs text-gray-500 mt-1">{business._count.wholesaleOffers} عرض</p>
+            <ChevronLeft className="h-4 w-4 text-gray-400 mt-2 group-hover:text-orange-500" />
+          </Link>
+          <Link href={`/business/${business.id}/orders?side=buyer`} className="rounded-xl bg-white border p-4 hover:shadow-md transition-shadow group">
+            <ShoppingCart className="h-7 w-7 text-blue-500 mb-2" />
+            <p className="font-medium text-sm">الطلبات</p>
+            <p className="text-xs text-gray-500 mt-1">مشتريات ومبيعات</p>
+            <ChevronLeft className="h-4 w-4 text-gray-400 mt-2 group-hover:text-orange-500" />
+          </Link>
+          <Link href={`/business/${business.id}/inventory`} className="rounded-xl bg-white border p-4 hover:shadow-md transition-shadow group">
+            <Warehouse className="h-7 w-7 text-indigo-500 mb-2" />
+            <p className="font-medium text-sm">المخزون</p>
+            <p className="text-xs text-gray-500 mt-1">مخزون الجملة</p>
+            <ChevronLeft className="h-4 w-4 text-gray-400 mt-2 group-hover:text-orange-500" />
+          </Link>
+          <Link href={`/business/${business.id}/ledger`} className="rounded-xl bg-white border p-4 hover:shadow-md transition-shadow group">
+            <BookOpen className="h-7 w-7 text-green-500 mb-2" />
+            <p className="font-medium text-sm">الدفتر</p>
+            <p className="text-xs text-gray-500 mt-1">الحسابات والديون</p>
+            <ChevronLeft className="h-4 w-4 text-gray-400 mt-2 group-hover:text-orange-500" />
+          </Link>
         </div>
       </div>
 
