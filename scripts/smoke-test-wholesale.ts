@@ -304,16 +304,82 @@ async function run() {
     assert(completed!.status === "COMPLETED", "Should be COMPLETED");
     console.log(`  ✅ COMPLETED`);
 
+    // ─── Retail Import test ───
+    log("Setup: create Seller for buyer + link to buyerBiz");
+    const buyerSeller = await prisma.seller.create({
+      data: {
+        userId: buyerUser.id,
+        storeName: `${TAG} Retail Store`,
+        slug: `${TAG}-retail`,
+        isVerified: true,
+        status: "ACTIVE",
+      },
+    });
+    cleanupList.push({ model: "seller", where: { id: buyerSeller.id } });
+    await prisma.business.update({
+      where: { id: buyerBiz.id },
+      data: { linkedSellerId: buyerSeller.id },
+    });
+    console.log(`  buyerSeller: ${buyerSeller.id}, linked to buyerBiz`);
+
+    log("Import 10 units to retail (retailPrice: 65)");
+    const { RetailImportService } = await import("../services/retail-import.service");
+    const importResult = await RetailImportService.importToRetail({
+      businessId: buyerBiz.id,
+      masterVariantId: masterVariantS.id,
+      quantity: 10,
+      retailPrice: 65,
+    });
+    cleanupList.push({ model: "inventory", where: { variantId: importResult.variantId } });
+    cleanupList.push({ model: "productVariant", where: { id: importResult.variantId } });
+    cleanupList.push({ model: "productImage", where: { productId: importResult.productId } });
+    cleanupList.push({ model: "product", where: { id: importResult.productId } });
+
+    assert(importResult.quantity === 10, "Imported qty should be 10");
+    assert(importResult.productCreated === true, "Product should be created");
+    assert(importResult.variantCreated === true, "Variant should be created");
+    console.log(`  ✅ retail product: ${importResult.productId}, variant: ${importResult.variantId}`);
+
+    // Verify: retail inventory = 10, wholesale inventory dropped to 5
+    const retailInv = await prisma.inventory.findUnique({
+      where: { variantId: importResult.variantId },
+    });
+    assert(retailInv!.quantity === 10, `retail qty should be 10, got ${retailInv!.quantity}`);
+    const wsInvAfter = await prisma.wholesaleInventory.findFirst({
+      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
+    });
+    assert(wsInvAfter!.quantity === 5, `wholesale inventory should be 5, got ${wsInvAfter!.quantity}`);
+    console.log(`  ✅ retail qty=10, wholesale qty=5`);
+
+    log("Import remaining 5 units to same retail variant");
+    await RetailImportService.importToRetail({
+      businessId: buyerBiz.id,
+      masterVariantId: masterVariantS.id,
+      quantity: 5,
+      retailPrice: 65,
+    });
+    const wsInvFinal = await prisma.wholesaleInventory.findFirst({
+      where: { businessId: buyerBiz.id, masterVariantId: masterVariantS.id },
+    });
+    assert(wsInvFinal!.quantity === 0, `wholesale qty should be 0, got ${wsInvFinal!.quantity}`);
+    const retailInvFinal = await prisma.inventory.findUnique({
+      where: { variantId: importResult.variantId },
+    });
+    assert(retailInvFinal!.quantity === 15, `retail qty should be 15, got ${retailInvFinal!.quantity}`);
+    console.log(`  ✅ retail qty=15, wholesale qty=0`);
+
     // ─── Verify lineage chain ───
-    log("Verify lineage chain (INITIAL_CREATION → WHOLESALE_SALE)");
+    log("Verify lineage chain (INITIAL_CREATION → WHOLESALE_SALE → RETAIL_IMPORT ×2)");
     const chain = await prisma.productLineage.findMany({
       where: { masterVariantId: masterVariantS.id },
       orderBy: { createdAt: "asc" },
     });
-    assert(chain.length === 2, `Chain should have 2 records, got ${chain.length}`);
+    assert(chain.length === 4, `Chain should have 4 records, got ${chain.length}`);
     assert(chain[0].transferType === "INITIAL_CREATION", "First should be INITIAL_CREATION");
     assert(chain[1].transferType === "WHOLESALE_SALE", "Second should be WHOLESALE_SALE");
-    console.log(`  ✅ chain complete: INITIAL_CREATION → WHOLESALE_SALE`);
+    assert(chain[2].transferType === "RETAIL_IMPORT", "Third should be RETAIL_IMPORT");
+    assert(chain[3].transferType === "RETAIL_IMPORT", "Fourth should be RETAIL_IMPORT");
+    console.log(`  ✅ chain complete: INITIAL_CREATION → WHOLESALE_SALE → RETAIL_IMPORT ×2`);
 
     // ─── All passed ───
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);

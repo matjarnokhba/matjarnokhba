@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { getBusinessInventory } from "@/lib/lineage";
 import { checkBusinessAccess } from "@/lib/business-access";
@@ -21,8 +22,34 @@ export async function GET(
     if ("error" in access) {
       return NextResponse.json({ success: false, message: access.error }, { status: access.status });
     }
-    const items = await getBusinessInventory(businessId);
-    return NextResponse.json({ success: true, items, count: items.length });
+
+    const [items, biz] = await Promise.all([
+      getBusinessInventory(businessId),
+      prisma.business.findUnique({
+        where: { id: businessId },
+        select: {
+          type: true,
+          linkedSellerId: true,
+          linkedSeller: { select: { id: true, storeName: true, isVerified: true, slug: true } },
+        },
+      }),
+    ]);
+
+    const canImport =
+      biz?.type === "WHOLESALE_TRADER" &&
+      !!biz.linkedSellerId &&
+      biz.linkedSeller?.isVerified === true;
+
+    return NextResponse.json({
+      success: true,
+      items,
+      count: items.length,
+      meta: {
+        businessType: biz?.type,
+        linkedSeller: biz?.linkedSeller ?? null,
+        canImport,
+      },
+    });
   } catch (error) {
     console.error("Business inventory error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
