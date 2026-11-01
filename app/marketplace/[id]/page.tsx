@@ -26,6 +26,9 @@ type Offer = {
 };
 
 type MyBusiness = { id: number; name: string; status: string; type: string };
+const SA_TYPE_LABEL: Record<string, string> = {
+  TRADER: "تاجر جملة", FACTORY: "مصنع", COMPANY: "شركة", SUPPLIER: "مورد", IMPORTER: "مستورد",
+};
 
 export default function OfferDetailPage() {
   const params = useParams();
@@ -155,7 +158,7 @@ export default function OfferDetailPage() {
             )}
           </div>
           <div className="rounded-lg bg-white border p-4 space-y-2 text-sm">
-            <div className="flex items-center gap-2"><Store className="h-4 w-4 text-gray-500" /> <span className="font-medium">{offer.business.name}</span></div>
+            <div className="flex items-center gap-2"><Store className="h-4 w-4 text-gray-500" /> <span className="font-medium">{(offer as any).supplyActivity?.name || offer.business.name}{(offer as any).supplyActivity ? ` (${SA_TYPE_LABEL[(offer as any).supplyActivity.type] || ""})` : ""}</span></div>
             <div className="flex items-center gap-2 text-gray-600"><MapPin className="h-4 w-4" /> {offer.business.city}</div>
             <div className="flex items-center gap-2 text-gray-600"><Clock className="h-4 w-4" /> التجهيز: {offer.leadTimeDays} أيام</div>
             <div className="flex items-center gap-2 text-green-600"><ShieldCheck className="h-4 w-4" /> هوية موثقة</div>

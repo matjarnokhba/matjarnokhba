@@ -22,6 +22,9 @@ const BUSINESS_TYPES = [
   { value: "INDEPENDENT_SUPPLIER", label: "مورد مستقل" },
   { value: "WHOLESALE_TRADER", label: "تاجر جملة" },
 ];
+const SA_TYPE_LABEL: Record<string, string> = {
+  TRADER: "تاجر جملة", FACTORY: "مصنع", COMPANY: "شركة", SUPPLIER: "مورد", IMPORTER: "مستورد",
+};
 
 export default function MarketplacePage() {
   const [search, setSearch] = useState("");
@@ -113,7 +116,7 @@ export default function MarketplacePage() {
                   </div>
                   <div className="flex items-center gap-1 text-xs text-gray-600 border-t pt-2">
                     <Building2 className="h-3 w-3 flex-shrink-0" />
-                    <span className="line-clamp-1">{o.business.name}</span>
+                    <span className="line-clamp-1">{(o as any).supplyActivity?.name || o.business.name}{(o as any).supplyActivity ? ` (${SA_TYPE_LABEL[(o as any).supplyActivity.type] || ""})` : ""}</span>
                     <span className="text-gray-400">·</span>
                     <MapPin className="h-3 w-3 flex-shrink-0" />
                     <span>{o.business.city}</span>

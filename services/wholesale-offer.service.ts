@@ -374,6 +374,7 @@ export const WholesaleOfferService = {
             select: { id: true, name: true, slug: true, type: true, city: true, logo: true, status: true },
           },
           variants: { select: { stock: true, reserved: true, inTransit: true } },
+          supplyActivity: { select: { id: true, name: true, type: true, city: true } },
           tiers: { orderBy: { minQty: "asc" }, take: 3 },
         },
       }),
@@ -388,6 +389,7 @@ export const WholesaleOfferService = {
         id: o.id,
         master: o.master,
         business: o.business,
+        supplyActivity: o.supplyActivity,
         wholesalePrice: Number(o.wholesalePrice),
         retailPrice: o.retailPrice ? Number(o.retailPrice) : null,
         minOrderQty: o.minOrderQty,
@@ -429,6 +431,7 @@ export const WholesaleOfferService = {
             masterVariant: { select: { id: true, sku: true, barcode: true, options: true, optionsHash: true } },
           },
         },
+        supplyActivity: { select: { id: true, name: true, type: true, city: true } },
         tiers: { orderBy: { minQty: "asc" } },
       },
     });

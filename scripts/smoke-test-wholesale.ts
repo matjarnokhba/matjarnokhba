@@ -372,6 +372,9 @@ async function run() {
     assert(found, "Offer not visible in marketplace");
     assert(found!.availableStock === 100, `Available should be 100, got ${found!.availableStock}`);
     console.log(`  ✅ marketplace: ${market.total} results, stock: ${found!.availableStock}`);
+    assert((found as any).supplyActivity?.name, "Marketplace should include supplyActivity.name");
+    assert((found as any).supplyActivity?.type === "FACTORY", `SA type should be FACTORY, got ${(found as any).supplyActivity?.type}`);
+    console.log(`  ✅ Marketplace SA: ${(found as any).supplyActivity.name} (${(found as any).supplyActivity.type})`);
 
     // ─── Create order ───
     log("Create order (buyer → seller, qty: 15 of variant S)");
