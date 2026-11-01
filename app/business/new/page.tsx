@@ -82,8 +82,16 @@ export default function NewBusinessPage() {
         body: JSON.stringify(body),
       });
       const d = await res.json();
-      if (d.success) router.push(`/business/${d.business.id}`);
-      else setError(d.message || "فشل الإنشاء");
+      if (d.success) {
+        router.push(`/business/${d.business.id}`);
+        return;
+      }
+      if (res.status === 409 && d.existingBusinessId) {
+        setError(d.message || "لديك نشاط تجاري بالفعل — جارٍ التحويل...");
+        setTimeout(() => router.push(`/business/${d.existingBusinessId}`), 2000);
+        return;
+      }
+      setError(d.message || "فشل الإنشاء");
     } catch {
       setError("خطأ في الاتصال");
     } finally {
@@ -120,6 +128,16 @@ export default function NewBusinessPage() {
               );
             })}
           </div>
+          {type === "WHOLESALE_TRADER" && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+              <p className="font-medium">💡 لتاجر الجملة:</p>
+              <ul className="list-disc list-inside mt-1 text-xs space-y-1">
+                <li>يجب أن يكون لديك متجر تجزئة موثق</li>
+                <li>سيتم تفعيل حسابك تلقائياً إذا كان متجرك موثقاً</li>
+                <li>بعد التفعيل، أضف هوياتك الأخرى (مصنعك/شركتك) من صفحة "الهويات"</li>
+              </ul>
+            </div>
+          )}
         </div>
 
         {type === "INDEPENDENT_SUPPLIER" && (

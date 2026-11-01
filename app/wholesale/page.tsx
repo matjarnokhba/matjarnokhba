@@ -99,6 +99,29 @@ export default async function WholesaleLandingPage() {
         </div>
       </section>
 
+      <section className="max-w-6xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl bg-white border-2 border-blue-200 p-6">
+            <h3 className="text-lg font-bold mb-2 text-blue-700">🏭 أنت مصنع / شركة / مورد / مستورد؟</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              سجّل نشاطك للبيع بالجملة. تُعرض منتجاتك للتجار الموثقين. لا تحتاج لمتجر تجزئة.
+            </p>
+            <Link href="/wholesale/register" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700">
+              سجّل كمورد مستقل <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="rounded-xl bg-white border-2 border-orange-200 p-6">
+            <h3 className="text-lg font-bold mb-2 text-orange-700">🏪 أنت تاجر لديه متجر تجزئة؟</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              انضم من حسابك الحالي. اشترِ من المصانع والموردين، وأعد البيع بالجملة.
+            </p>
+            <Link href={current ? "/business/new" : "/register"} className="inline-flex items-center gap-2 rounded-lg bg-orange-500 text-white px-4 py-2 text-sm hover:bg-orange-600">
+              {current ? "انضم كتاجر جملة" : "سجّل كتاجر أولاً"} <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className="max-w-6xl mx-auto px-6 py-12">
         <h2 className="text-2xl font-bold text-center mb-2">ماذا يقدم سوق الجملة؟</h2>
         <p className="text-center text-gray-600 mb-10">منظومة تجارية متكاملة، ليست مجرد قائمة منتجات</p>
@@ -144,8 +167,11 @@ export default async function WholesaleLandingPage() {
             <Link href="/marketplace" className="rounded-lg bg-white text-orange-600 px-8 py-3 font-medium hover:bg-orange-50 inline-flex items-center justify-center gap-2">
               تصفح السوق الآن <ArrowRight className="h-4 w-4" />
             </Link>
+            <Link href="/wholesale/register" className="rounded-lg border-2 border-white px-8 py-3 font-medium hover:bg-white/10 inline-flex items-center justify-center">
+              انضم كمورد مستقل
+            </Link>
             <Link href={current ? "/business/new" : "/register"} className="rounded-lg border-2 border-white px-8 py-3 font-medium hover:bg-white/10 inline-flex items-center justify-center">
-              {current ? "أضف نشاطاً" : "أنشئ حساباً"}
+              {current ? "انضم كتاجر جملة" : "أنشئ حساباً"}
             </Link>
           </div>
         </div>
