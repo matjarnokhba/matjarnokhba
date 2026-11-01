@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Building2, Package, ShoppingBag } from "lucide-react";
+import {  Shield, Building2, Package, ShoppingBag , Layers } from "lucide-react";
 
 const TABS = [
   { href: "/admin/wholesale", label: "نظرة عامة", Icon: Shield },

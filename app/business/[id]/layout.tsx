@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import {
   LayoutDashboard, Package, ShoppingBag, ShoppingCart, Warehouse, BookOpen,
+  Building2,
 } from "lucide-react";
 
 const TABS = [
