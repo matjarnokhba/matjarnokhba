@@ -206,6 +206,7 @@ export default function OrderDetailPage() {
             <span className={`rounded-full px-2 py-0.5 text-xs ${st.color}`}>{st.label}</span>
           </div>
           <p className="text-sm text-gray-600">{new Date(order.createdAt).toLocaleString("ar-MA")}</p>
+              <Link href={`/business/${bizId}/orders/${order.id}/invoice`} className="inline-flex items-center gap-1 mt-2 text-xs text-orange-600 hover:underline">🧾 عرض الفاتورة</Link>
         </div>
       </div>
 
