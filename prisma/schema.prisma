@@ -2730,6 +2730,9 @@ model Business {
 
   // P2 back-relations
   productMasters ProductMaster[]
+
+  // P3 back-relations
+  wholesaleOffers WholesaleOffer[]
 }
 
 model BusinessMember {
@@ -2804,6 +2807,9 @@ model ProductMaster {
   @@index([isVerified])
   @@index([status])
   @@index([deletedAt])
+
+  // P3 back-relations
+  wholesaleOffers WholesaleOffer[]
 }
 
 model ProductMasterVariant {
@@ -2822,4 +2828,94 @@ model ProductMasterVariant {
   @@index([masterId])
   @@index([sku])
   @@index([barcode])
+
+  // P3 back-relations
+  wholesaleOfferVariants WholesaleOfferVariant[]
+}
+
+// ═══════════════════════════════════════════
+// P3: WholesaleOffer (B2B listing)
+// ═══════════════════════════════════════════
+
+enum ClaimType {
+  MANUFACTURER
+  DISTRIBUTOR
+  RESELLER
+  IMPORTER
+}
+
+enum OfferStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+model WholesaleOffer {
+  id                  Int          @id @default(autoincrement())
+  businessId          Int
+  masterId            Int
+  wholesalePrice      Decimal      @db.Decimal(10, 2)
+  retailPrice         Decimal?     @db.Decimal(10, 2)
+  minOrderQty         Int          @default(1)
+  maxOrderQty         Int?
+  unit                ProductUnit  @default(PIECE)
+  claimType           ClaimType    @default(MANUFACTURER)
+  claimVerified       Boolean      @default(false)
+  claimProofUrl       String?
+  claimNotes          String?
+  leadTimeDays        Int?         @default(3)
+  status              OfferStatus  @default(DRAFT)
+  isActive            Boolean      @default(false)
+  notes               String?
+  viewsCount          Int          @default(0)
+  ordersCount         Int          @default(0)
+  deletedAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  business Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  master   ProductMaster          @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  tiers    WholesaleOfferTier[]
+  variants WholesaleOfferVariant[]
+
+  @@unique([businessId, masterId])
+  @@index([businessId])
+  @@index([masterId])
+  @@index([status])
+  @@index([isActive])
+  @@index([claimVerified])
+  @@index([deletedAt])
+}
+
+model WholesaleOfferTier {
+  id        Int      @id @default(autoincrement())
+  offerId   Int
+  minQty    Int
+  maxQty    Int?
+  unitPrice Decimal  @db.Decimal(10, 2)
+
+  offer WholesaleOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, minQty])
+  @@index([offerId])
+}
+
+model WholesaleOfferVariant {
+  id                Int      @id @default(autoincrement())
+  offerId           Int
+  masterVariantId   Int
+  stock             Int      @default(0)
+  reserved          Int      @default(0)
+  inTransit         Int      @default(0)
+  lowStockThreshold Int      @default(5)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  offer         WholesaleOffer       @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  masterVariant ProductMasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+
+  @@unique([offerId, masterVariantId])
+  @@index([offerId])
+  @@index([masterVariantId])
 }
