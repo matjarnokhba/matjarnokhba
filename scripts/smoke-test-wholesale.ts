@@ -173,6 +173,42 @@ async function run() {
       },
     });
     cleanupList.push({ model: "supplyActivity", where: { id: buyerSA.id } });
+
+    // ─── A4a: SupplyActivity management ───
+    log("A4a: Trader adds COMPANY supply activity");
+    const { SupplyActivityService } = await import("../services/supply-activity.service");
+    const companySA = await SupplyActivityService.createForTrader(buyerBiz.id, buyerUser.id, {
+      type: "COMPANY",
+      name: `${TAG} Importer Co`,
+      city: buyerBiz.city,
+    });
+    cleanupList.push({ model: "supplyActivity", where: { id: companySA.id } });
+    assert(companySA.type === "COMPANY", "Company SA type should be COMPANY");
+    assert(companySA.status === "PENDING", "New SA should be PENDING");
+    console.log(`  ✅ COMPANY SA created: ${companySA.id}, status PENDING`);
+
+    log("A4a: Trader tries to add TRADER (should fail)");
+    let traderBlocked = false;
+    try {
+      await SupplyActivityService.createForTrader(buyerBiz.id, buyerUser.id, {
+        type: "TRADER" as any, name: "test", city: "x",
+      });
+    } catch (e: any) {
+      if (e.message.includes("TRADER") || e.message.includes("موجود")) traderBlocked = true;
+    }
+    assert(traderBlocked, "Adding TRADER should be blocked");
+    console.log(`  ✅ TRADER addition blocked`);
+
+    log("A4a: List SAs for buyerBiz (expect 2: TRADER + COMPANY)");
+    const saList = await SupplyActivityService.listForBusiness(buyerBiz.id);
+    assert(saList.length === 2, `Should have 2 SAs, got ${saList.length}`);
+    console.log(`  ✅ SA list has 2 items`);
+
+    log("A4a: Admin verifies COMPANY SA");
+    await SupplyActivityService.adminVerify(companySA.id, sellerUser.id, true, null);
+    const verifiedSA = await prisma.supplyActivity.findUnique({ where: { id: companySA.id } });
+    assert(verifiedSA!.status === "VERIFIED", "Company SA should be VERIFIED");
+    console.log(`  ✅ Company SA verified`);
     const buyerMember = await prisma.businessMember.create({
       data: { businessId: buyerBiz.id, userId: buyerUser.id, role: "OWNER" },
     });
