@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { computeOptionsHash } from "@/lib/product-master-validation";
+import { canCreateMasters } from "@/lib/business-type-guards";
 
 function slugify(text: string): string {
   return (
@@ -43,6 +44,11 @@ export type MasterCreateInput = {
 
 export const ProductMasterService = {
   async createMaster(businessId: number, createdByUserId: number, input: MasterCreateInput) {
+    const canCreate = await canCreateMasters(businessId);
+    if (!canCreate.allowed) {
+      throw new Error(canCreate.reason || "لا يمكن إنشاء منتجات");
+    }
+
     return prisma.$transaction(async (tx) => {
       if (input.barcode) {
         const existing = await tx.productMaster.findFirst({

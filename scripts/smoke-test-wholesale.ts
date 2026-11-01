@@ -187,6 +187,26 @@ async function run() {
     assert(companySA.status === "PENDING", "New SA should be PENDING");
     console.log(`  ✅ COMPANY SA created: ${companySA.id}, status PENDING`);
 
+    log("A4c: Trader cannot create master while SA is PENDING");
+    let masterCreateBlockedPending = false;
+    try {
+      const pendingMaster = await ProductMasterService.createMaster(buyerBiz.id, buyerUser.id, {
+        name: `${TAG} Trader Product`,
+        categoryId: category!.id,
+        images: ["https://via.placeholder.com/400"],
+        variants: [{ sku: `${TAG}-TP-PENDING`, options: { size: "S" } }],
+      });
+      cleanupList.push({ model: "productLineage", where: { masterId: pendingMaster.id } });
+      cleanupList.push({ model: "productMasterVariant", where: { masterId: pendingMaster.id } });
+      cleanupList.push({ model: "productMaster", where: { id: pendingMaster.id } });
+    } catch (e: any) {
+      if (e.message.includes("هوية") || e.message.includes("موثق") || e.message.includes("لا يمكن") || e.message.includes("مصنع") || e.message.includes("شركة")) {
+        masterCreateBlockedPending = true;
+      }
+    }
+    assert(masterCreateBlockedPending, "Trader with PENDING non-TRADER SA should be blocked");
+    console.log(`  ✅ Trader master creation blocked (SA PENDING)`);
+
     log("A4a: Trader tries to add TRADER (should fail)");
     let traderBlocked = false;
     try {
@@ -209,6 +229,46 @@ async function run() {
     const verifiedSA = await prisma.supplyActivity.findUnique({ where: { id: companySA.id } });
     assert(verifiedSA!.status === "VERIFIED", "Company SA should be VERIFIED");
     console.log(`  ✅ Company SA verified`);
+
+    log("A4c: Trader can now create master with verified COMPANY SA");
+    const traderMaster = await ProductMasterService.createMaster(buyerBiz.id, buyerUser.id, {
+      name: `${TAG} Trader Product`,
+      categoryId: category!.id,
+      brand: "TraderBrand",
+      images: ["https://via.placeholder.com/400"],
+      variants: [
+        { sku: `${TAG}-TP-S`, options: { size: "S" } },
+        { sku: `${TAG}-TP-M`, options: { size: "M" } },
+      ],
+    });
+    cleanupList.push({ model: "productLineage", where: { masterId: traderMaster.id } });
+    cleanupList.push({ model: "productMasterVariant", where: { masterId: traderMaster.id } });
+    cleanupList.push({ model: "productMaster", where: { id: traderMaster.id } });
+    assert(traderMaster.id, "Trader master should be created");
+    console.log(`  ✅ Trader master: id=${traderMaster.id}`);
+
+    log("A4c: Admin verifies trader's master");
+    await ProductMasterService.adminVerify(traderMaster.id, true, sellerUser.id);
+    const verifiedTraderMaster = await prisma.productMaster.findUnique({ where: { id: traderMaster.id } });
+    assert(verifiedTraderMaster!.isVerified === true, "Trader master should be verified");
+    console.log(`  ✅ Trader master verified`);
+
+    log("A4c: Trader creates offer under COMPANY SA using own master");
+    const traderOffer = await WholesaleOfferService.createOffer(buyerBiz.id, {
+      masterId: traderMaster.id,
+      supplyActivityId: companySA.id,
+      wholesalePrice: 80,
+      minOrderQty: 1,
+      unit: "PIECE",
+      claimType: "DISTRIBUTOR",
+      tiers: [],
+      variants: [{ masterVariantId: traderMaster.variants[0].id, stock: 20 }],
+    });
+    cleanupList.push({ model: "wholesaleOfferTier", where: { offerId: traderOffer.id } });
+    cleanupList.push({ model: "wholesaleOfferVariant", where: { offerId: traderOffer.id } });
+    cleanupList.push({ model: "wholesaleOffer", where: { id: traderOffer.id } });
+    assert(traderOffer.claimType === "DISTRIBUTOR", `Claim DISTRIBUTOR, got ${traderOffer.claimType}`);
+    console.log(`  ✅ Trader offer under COMPANY SA: id=${traderOffer.id}`);
     const buyerMember = await prisma.businessMember.create({
       data: { businessId: buyerBiz.id, userId: buyerUser.id, role: "OWNER" },
     });

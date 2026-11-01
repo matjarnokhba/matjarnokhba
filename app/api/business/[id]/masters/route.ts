@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { productMasterCreateSchema } from "@/lib/product-master-validation";
 import { ProductMasterService } from "@/services/product-master.service";
-import { isWholesaleTrader } from "@/lib/business-type-guards";
+import { canCreateMasters } from "@/lib/business-type-guards";
 
 async function requireBusinessAccess(businessId: number, userId: number) {
   const biz = await prisma.business.findUnique({
@@ -74,9 +74,10 @@ export async function POST(
       return NextResponse.json({ success: false, message: "لا تملك صلاحية إدارة المنتجات" }, { status: 403 });
     }
 
-    if (await isWholesaleTrader(businessId)) {
+    const canCreate = await canCreateMasters(businessId);
+    if (!canCreate.allowed) {
       return NextResponse.json(
-        { success: false, message: "حسابات تجار الجملة لا تنشئ منتجات جديدة" },
+        { success: false, message: canCreate.reason || "لا يمكن إنشاء منتجات" },
         { status: 403 }
       );
     }

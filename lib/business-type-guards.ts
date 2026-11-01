@@ -28,3 +28,27 @@ export async function getBusinessTypeWithSeller(businessId: number): Promise<{
   if (!biz || biz.deletedAt) return null;
   return { type: biz.type, hasLinkedSeller: !!biz.linkedSellerId };
 }
+export async function canCreateMasters(businessId: number): Promise<{
+  allowed: boolean;
+  reason?: string;
+}> {
+  const biz = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { type: true, deletedAt: true, status: true },
+  });
+  if (!biz || biz.deletedAt) return { allowed: false, reason: "النشاط غير موجود" };
+  if (biz.status !== "VERIFIED") return { allowed: false, reason: "النشاط غير موثق" };
+  if (biz.type === "INDEPENDENT_SUPPLIER") return { allowed: true };
+
+  const nonTraderSA = await prisma.supplyActivity.findFirst({
+    where: { businessId, status: "VERIFIED", type: { not: "TRADER" }, deletedAt: null },
+    select: { id: true },
+  });
+  if (!nonTraderSA) {
+    return {
+      allowed: false,
+      reason: "لإنشاء منتجات، يجب إضافة هوية تجارية موثقة (مصنع/شركة/مورد/مستورد) من صفحة الهويات أولاً",
+    };
+  }
+  return { allowed: true };
+}
