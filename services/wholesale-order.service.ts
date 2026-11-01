@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { generateOrderNumber } from "@/lib/wholesale-order-number";
 import { resolveUnitPrice } from "@/lib/wholesale-offer-validation";
 import { recordLineage } from "@/lib/lineage";
+import { LedgerService } from "@/services/ledger.service";
 
 export type CreateOrderItemInput = {
   offerVariantId: number;
@@ -303,9 +304,9 @@ export const WholesaleOrderService = {
   async deliverOrder(orderId: number, actorUserId: number) {
     return prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        Array<{ id: number; status: string; buyerBusinessId: number; sellerBusinessId: number }>
+        Array<{ id: number; status: string; buyerBusinessId: number; sellerBusinessId: number; total: any; orderNumber: string }>
       >`
-        SELECT "id", "status", "buyerBusinessId", "sellerBusinessId" FROM "WholesaleOrder" WHERE "id" = ${orderId} FOR UPDATE
+        SELECT "id", "status", "buyerBusinessId", "sellerBusinessId", "total", "orderNumber" FROM "WholesaleOrder" WHERE "id" = ${orderId} FOR UPDATE
       `;
       if (locked.length === 0) throw new Error("الطلب غير موجود");
       const ord = locked[0];
@@ -368,7 +369,87 @@ export const WholesaleOrderService = {
       await tx.wholesaleOrderStatusHistory.create({
         data: { orderId, fromStatus: "SHIPPED", toStatus: "DELIVERED", changedByUserId: actorUserId },
       });
+
+      // Create SALE ledger transaction (debt created upon ownership transfer)
+      await LedgerService.recordOrderSaleInTx(tx, {
+        orderId,
+        buyerBusinessId: ord.buyerBusinessId,
+        sellerBusinessId: ord.sellerBusinessId,
+        amount: Number(ord.total),
+        createdByUserId: actorUserId,
+        orderNumber: ord.orderNumber,
+      });
+
       return updated;
+    }, { timeout: TX_TIMEOUT });
+  },
+
+  async recordPayment(
+    orderId: number,
+    buyerBusinessId: number,
+    actorUserId: number,
+    amount: number,
+    notes?: string | null
+  ) {
+    return prisma.$transaction(async (tx) => {
+      if (amount <= 0) throw new Error("المبلغ يجب أن يكون موجبًا");
+      const order = await tx.wholesaleOrder.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          buyerBusinessId: true,
+          sellerBusinessId: true,
+          total: true,
+          status: true,
+          orderNumber: true,
+        },
+      });
+      if (!order) throw new Error("الطلب غير موجود");
+      if (order.buyerBusinessId !== buyerBusinessId) {
+        throw new Error("لا يمكنك تسجيل دفعة على طلب لا يخصك");
+      }
+      if (!["DELIVERED", "COMPLETED"].includes(order.status)) {
+        throw new Error("الدفع متاح فقط بعد التسليم");
+      }
+
+      const biz = await tx.business.findUnique({
+        where: { id: buyerBusinessId },
+        select: { ownerUserId: true, status: true, deletedAt: true },
+      });
+      if (!biz || biz.deletedAt) throw new Error("النشاط غير موجود");
+      if (biz.status !== "VERIFIED") throw new Error("النشاط غير موثق");
+      const isOwner = biz.ownerUserId === actorUserId;
+      const member = isOwner ? null : await tx.businessMember.findFirst({
+        where: { businessId: buyerBusinessId, userId: actorUserId, deletedAt: null },
+      });
+      const canPay = isOwner || (member && ["MANAGER", "ACCOUNTANT"].includes(member.role));
+      if (!canPay) throw new Error("صلاحية محاسب مطلوبة");
+
+      const paidAgg = await tx.ledgerTransaction.aggregate({
+        where: {
+          orderId,
+          type: "PAYMENT",
+          status: "CONFIRMED",
+          debtorBusinessId: buyerBusinessId,
+          creditorBusinessId: order.sellerBusinessId,
+        },
+        _sum: { amount: true },
+      });
+      const paid = Number(paidAgg._sum.amount ?? 0);
+      const remaining = Number(order.total) - paid;
+      if (amount > remaining) {
+        throw new Error(`المبلغ يتجاوز الدين المتبقي (${remaining} متبقٍ)`);
+      }
+
+      return LedgerService.recordOrderPaymentInTx(tx, {
+        orderId,
+        buyerBusinessId,
+        sellerBusinessId: order.sellerBusinessId,
+        amount,
+        createdByUserId: actorUserId,
+        orderNumber: order.orderNumber,
+        notes,
+      });
     }, { timeout: TX_TIMEOUT });
   },
 

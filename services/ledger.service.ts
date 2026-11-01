@@ -88,6 +88,77 @@ async function revertFromBalances(
 }
 
 export const LedgerService = {
+  /**
+   * Record SALE transaction for a delivered order.
+   * Must be called INSIDE an existing transaction (delivery atomically creates debt).
+   */
+  async recordOrderSaleInTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      orderId: number;
+      buyerBusinessId: number;
+      sellerBusinessId: number;
+      amount: number;
+      createdByUserId: number;
+      orderNumber: string;
+    }
+  ) {
+    if (params.amount <= 0) throw new Error("المبلغ يجب أن يكون موجبًا");
+    await ensureAccounts(tx, params.buyerBusinessId, params.sellerBusinessId);
+    const created = await tx.ledgerTransaction.create({
+      data: {
+        type: "SALE",
+        status: "CONFIRMED",
+        debtorBusinessId: params.buyerBusinessId,
+        creditorBusinessId: params.sellerBusinessId,
+        amount: params.amount,
+        orderId: params.orderId,
+        notes: `طلب مكتمل ${params.orderNumber}`,
+        createdByUserId: params.createdByUserId,
+        confirmedByUserId: params.createdByUserId,
+        confirmedAt: new Date(),
+      },
+    });
+    await applyToBalances(tx, params.buyerBusinessId, params.sellerBusinessId, "SALE", params.amount);
+    return created;
+  },
+
+  /**
+   * Record PAYMENT transaction for an order.
+   * Must be called INSIDE an existing transaction.
+   */
+  async recordOrderPaymentInTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      orderId: number;
+      buyerBusinessId: number;
+      sellerBusinessId: number;
+      amount: number;
+      createdByUserId: number;
+      orderNumber: string;
+      notes?: string | null;
+    }
+  ) {
+    if (params.amount <= 0) throw new Error("المبلغ يجب أن يكون موجبًا");
+    await ensureAccounts(tx, params.buyerBusinessId, params.sellerBusinessId);
+    const created = await tx.ledgerTransaction.create({
+      data: {
+        type: "PAYMENT",
+        status: "CONFIRMED",
+        debtorBusinessId: params.buyerBusinessId,
+        creditorBusinessId: params.sellerBusinessId,
+        amount: params.amount,
+        orderId: params.orderId,
+        notes: params.notes ?? `دفعة على الطلب ${params.orderNumber}`,
+        createdByUserId: params.createdByUserId,
+        confirmedByUserId: params.createdByUserId,
+        confirmedAt: new Date(),
+      },
+    });
+    await applyToBalances(tx, params.buyerBusinessId, params.sellerBusinessId, "PAYMENT", params.amount);
+    return created;
+  },
+
   async recordInternal(params: {
     type: LedgerTxType;
     debtorBusinessId: number;

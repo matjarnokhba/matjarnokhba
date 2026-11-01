@@ -22,6 +22,7 @@ async function cleanup(collected: Cleanup) {
   // Correct deletion order — children before parents
   const ORDER = [
     "productLineage",
+    "ledgerTransaction",
     "wholesaleOrderStatusHistory",
     "wholesaleOrderItem",
     "wholesaleOrder",
@@ -31,6 +32,7 @@ async function cleanup(collected: Cleanup) {
     "wholesaleInventory",
     "productMasterVariant",
     "productMaster",
+    "ledgerAccount",
     "businessMember",
     "seller",
     "business",
@@ -304,6 +306,68 @@ async function run() {
     const completed = await prisma.wholesaleOrder.findUnique({ where: { id: order.id } });
     assert(completed!.status === "COMPLETED", "Should be COMPLETED");
     console.log(`  ✅ COMPLETED`);
+
+    // ─── Ledger test (after delivery) ───
+    log("Verify SALE ledger transaction created at DELIVERY");
+    const saleTx = await prisma.ledgerTransaction.findFirst({
+      where: { orderId: order.id, type: "SALE", status: "CONFIRMED" },
+    });
+    assert(saleTx, "SALE transaction missing");
+    assert(Number(saleTx!.amount) === Number(order.total), `SALE amount mismatch (${saleTx!.amount} vs ${order.total})`);
+    assert(saleTx!.debtorBusinessId === buyerBiz.id, "Debtor should be buyer");
+    assert(saleTx!.creditorBusinessId === sellerBiz.id, "Creditor should be seller");
+    cleanupList.push({ model: "ledgerTransaction", where: { orderId: order.id } });
+    console.log(`  ✅ SALE ledger: ${saleTx!.amount} MAD`);
+
+    log("Verify buyer ledger balance = -total, seller = +total");
+    const buyerAcct = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: buyerBiz.id, counterpartyBusinessId: sellerBiz.id } },
+    });
+    const sellerAcct = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: sellerBiz.id, counterpartyBusinessId: buyerBiz.id } },
+    });
+    assert(buyerAcct, "Buyer ledger account missing");
+    assert(sellerAcct, "Seller ledger account missing");
+    assert(Number(buyerAcct!.balance) === -Number(order.total), `buyer balance should be -${order.total}, got ${buyerAcct!.balance}`);
+    assert(Number(sellerAcct!.balance) === Number(order.total), `seller balance should be +${order.total}, got ${sellerAcct!.balance}`);
+    cleanupList.push({ model: "ledgerAccount", where: { businessId: buyerBiz.id } });
+    cleanupList.push({ model: "ledgerAccount", where: { businessId: sellerBiz.id } });
+    console.log(`  ✅ balances: buyer=${buyerAcct!.balance}, seller=${sellerAcct!.balance}`);
+
+    log("Buyer records partial payment (100 MAD)");
+
+    const payment1 = await WholesaleOrderService.recordPayment(order.id, buyerBiz.id, buyerUser.id, 100, "دفعة أولى");
+    assert(Number(payment1.amount) === 100, "Payment 1 amount should be 100");
+    const buyerAcct2 = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: buyerBiz.id, counterpartyBusinessId: sellerBiz.id } },
+    });
+    const expectedBalance = -Number(order.total) + 100;
+    assert(Number(buyerAcct2!.balance) === expectedBalance, `buyer balance should be ${expectedBalance}, got ${buyerAcct2!.balance}`);
+    console.log(`  ✅ paid 100, buyer balance: ${buyerAcct2!.balance}`);
+
+    log("Verify overpayment is blocked");
+    const overAmount = Number(order.total) - 100 + 1;
+    let overBlocked = false;
+    try {
+      await WholesaleOrderService.recordPayment(order.id, buyerBiz.id, buyerUser.id, overAmount, "زائد");
+    } catch (e: any) {
+      if (e.message.includes("يتجاوز الدين")) overBlocked = true;
+    }
+    assert(overBlocked, "Overpayment should be blocked");
+    console.log(`  ✅ overpayment blocked`);
+
+    log("Buyer pays remaining (${order.total} - 100)");
+    const remaining = Number(order.total) - 100;
+    await WholesaleOrderService.recordPayment(order.id, buyerBiz.id, buyerUser.id, remaining, "الدفعة النهائية");
+    const buyerAcct3 = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: buyerBiz.id, counterpartyBusinessId: sellerBiz.id } },
+    });
+    const sellerAcct3 = await prisma.ledgerAccount.findUnique({
+      where: { businessId_counterpartyBusinessId: { businessId: sellerBiz.id, counterpartyBusinessId: buyerBiz.id } },
+    });
+    assert(Number(buyerAcct3!.balance) === 0, `buyer balance should be 0, got ${buyerAcct3!.balance}`);
+    assert(Number(sellerAcct3!.balance) === 0, `seller balance should be 0, got ${sellerAcct3!.balance}`);
+    console.log(`  ✅ fully paid, balances settled: buyer=0, seller=0`);
 
     // ─── Retail Import test ───
     log("Setup: create Seller for buyer + link to buyerBiz");
