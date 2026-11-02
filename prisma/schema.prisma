@@ -403,11 +403,11 @@ model User {
   @@index([email])
   @@index([deletedAt])
 
-
-
-
-
-
+  // ─── Wholesale relations (M1.1) ───
+  businessOwner           BusinessOwner?
+  businessUnitMemberships BusinessUnitMember[]
+  masterProductsCreated   MasterProduct[] @relation("MasterProductCreatedBy")
+  masterProductsApproved  MasterProduct[] @relation("MasterProductApprovedBy")
 }
 
 model Address {
@@ -2567,3 +2567,386 @@ model ProductSpecification {
 // CATALOG v3 — Unified Product Identity
 // ============================================
 
+
+
+// ═══════════════════════════════════════════════════════════
+// WHOLESALE SYSTEM — M1.1: Identity, Product, Activity
+// ═══════════════════════════════════════════════════════════
+
+enum OwnerType {
+  INDIVIDUAL
+  COMPANY
+  COOPERATIVE
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  UNREGISTERED
+  NOT_REQUIRED
+  PENDING_VERIFICATION
+}
+
+enum BusinessType {
+  FACTORY
+  SHOP
+  BRANCH
+  IMPORTER
+  WHOLESALER
+  DISTRIBUTOR
+}
+
+enum BusinessUnitStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum MemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum MerchantProductStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum LocationType {
+  WAREHOUSE
+  SHOP_FLOOR
+  TRANSIT
+}
+
+enum InventoryAccountType {
+  RETAIL
+  WHOLESALE
+  QUARANTINE
+  DAMAGED
+}
+
+enum MasterProductStatus {
+  PENDING_REVIEW
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model BusinessOwner {
+  id                  Int                @id @default(autoincrement())
+  userId              Int                @unique
+  type                OwnerType          @default(INDIVIDUAL)
+  displayName         String
+  identityVerifiedAt  DateTime?
+  identityDocumentUrl String?
+  verificationStatus  VerificationStatus @default(PENDING)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  legalEntities    LegalEntity[]
+  businessUnits    BusinessUnit[]
+  accountingGroups AccountingGroup[]
+
+  @@index([verificationStatus])
+}
+
+model LegalEntity {
+  id                 Int                @id @default(autoincrement())
+  ownerId            Int
+  name               String
+  registrationNumber String?            @unique
+  taxId              String?            @unique
+  status             RegistrationStatus @default(UNREGISTERED)
+  country            String?
+  address            String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  owner         BusinessOwner  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  businessUnits BusinessUnit[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+model BusinessUnit {
+  id                  Int                  @id @default(autoincrement())
+  ownerId             Int
+  legalEntityId       Int?
+  accountingGroupId   Int?
+  name                String
+  slug                String               @unique
+  type                BusinessType
+  activityType        String?
+  description         String?
+  logo                String?
+  status              BusinessUnitStatus   @default(ACTIVE)
+  capabilities        Json                 @default("[]")
+  registrationStatus  RegistrationStatus   @default(UNREGISTERED)
+  verificationStatus  VerificationStatus   @default(PENDING)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+
+  owner              BusinessOwner       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  legalEntity        LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  accountingGroup    AccountingGroup?    @relation(fields: [accountingGroupId], references: [id], onDelete: SetNull)
+  members            BusinessUnitMember[]
+  merchantProducts   MerchantProduct[]
+  inventoryLocations InventoryLocation[]
+
+  @@index([ownerId, status])
+  @@index([type, status])
+  @@index([accountingGroupId])
+  @@index([verificationStatus])
+}
+
+model BusinessUnitMember {
+  id             Int        @id @default(autoincrement())
+  businessUnitId Int
+  userId         Int
+  role           MemberRole @default(STAFF)
+  permissions    Json       @default("[]")
+  isActive       Boolean    @default(true)
+  invitedAt      DateTime   @default(now())
+  joinedAt       DateTime?
+  deletedAt      DateTime?
+
+  businessUnit BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessUnitId, userId])
+  @@index([userId, isActive])
+  @@index([businessUnitId, role])
+}
+
+model AccountingGroup {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int
+  name      String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner         BusinessOwner  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  businessUnits BusinessUnit[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId, isPrimary])
+}
+
+model MerchantProduct {
+  id                     Int                   @id @default(autoincrement())
+  businessUnitId         Int
+  masterId               Int
+  displayName            String
+  displayImages          String[]              @default([])
+  displayDescription     String?
+  retailPrice            Decimal               @db.Decimal(10, 2)
+  status                 MerchantProductStatus @default(DRAFT)
+  isFromWholesale        Boolean               @default(false)
+  sourceWholesaleOrderId Int?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  deletedAt              DateTime?
+
+  businessUnit BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master       MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  variants     MerchantVariant[]
+  sellingUnits SellingUnit[]
+
+  @@unique([businessUnitId, masterId])
+  @@index([businessUnitId, status])
+  @@index([masterId])
+  @@index([isFromWholesale])
+}
+
+model MerchantVariant {
+  id                Int      @id @default(autoincrement())
+  merchantProductId Int
+  masterVariantId   Int?
+  displayAttributes Json     @default("[]")
+  baseUnitPrice     Decimal  @db.Decimal(10, 2)
+  sku               String
+  barcode           String?
+  isDefault         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  merchantProduct MerchantProduct @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
+  masterVariant   MasterVariant?  @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+
+  @@unique([merchantProductId, sku])
+  @@index([merchantProductId, isDefault])
+  @@index([barcode])
+}
+
+model SellingUnit {
+  id                Int       @id @default(autoincrement())
+  merchantProductId Int
+  name              String
+  conversionFactor  Int
+  price             Decimal   @db.Decimal(10, 2)
+  isActive          Boolean   @default(true)
+  validFrom         DateTime  @default(now())
+  validTo           DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchantProduct MerchantProduct @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantProductId, name, validFrom])
+  @@index([merchantProductId, isActive])
+}
+
+model InventoryLocation {
+  id             Int          @id @default(autoincrement())
+  businessUnitId Int
+  name           String
+  type           LocationType
+  address        String?
+  city           String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  businessUnit BusinessUnit       @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  accounts     InventoryAccount[]
+
+  @@index([businessUnitId, isActive])
+  @@index([type])
+}
+
+model InventoryAccount {
+  id             Int                   @id @default(autoincrement())
+  locationId     Int
+  businessUnitId Int
+  type           InventoryAccountType
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  location InventoryLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, type])
+  @@index([businessUnitId, type])
+}
+
+model MasterProduct {
+  id               Int                 @id @default(autoincrement())
+  masterCode       String              @unique @default(uuid())
+  barcode          String?             @unique
+  qrCode           String?             @unique
+  name             String
+  brand            String?
+  description      String?
+  categoryId       Int
+  images           String[]            @default([])
+  status           MasterProductStatus @default(PENDING_REVIEW)
+  createdByUserId  Int
+  approvedByUserId Int?
+  approvedAt       DateTime?
+  version          Int                 @default(1)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  deletedAt        DateTime?
+
+  category         MasterCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdByUser    User                   @relation("MasterProductCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedByUser   User?                  @relation("MasterProductApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  variants         MasterVariant[]
+  versions         MasterProductVersion[]
+  merchantProducts MerchantProduct[]
+
+  @@index([categoryId, status])
+  @@index([barcode])
+  @@index([qrCode])
+  @@index([status])
+}
+
+model MasterVariant {
+  id             Int      @id @default(autoincrement())
+  masterId       Int
+  sku            String?
+  barcode        String?
+  qrCode         String?
+  attributes     Json     @default("[]")
+  attributesHash String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  master           MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  merchantVariants MerchantVariant[]
+
+  @@unique([masterId, attributesHash])
+  @@index([barcode])
+  @@index([qrCode])
+  @@index([masterId, isDefault])
+}
+
+model MasterProductVersion {
+  id              Int      @id @default(autoincrement())
+  masterId        Int
+  version         Int
+  snapshot        Json
+  changedByUserId Int
+  changeReason    String?
+  createdAt       DateTime @default(now())
+
+  master MasterProduct @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@unique([masterId, version])
+  @@index([masterId, createdAt])
+}
+
+model MasterCategory {
+  id        Int       @id @default(autoincrement())
+  name      String
+  slug      String    @unique
+  parentId  Int?
+  isLeaf    Boolean   @default(false)
+  order     Int       @default(0)
+  icon      String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  parent   MasterCategory?  @relation("MasterCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children MasterCategory[] @relation("MasterCategoryTree")
+  products MasterProduct[]
+
+  @@index([parentId, order])
+  @@index([isLeaf, isActive])
+}
+
+model OperationAuditLog {
+  id             Int      @id @default(autoincrement())
+  userId         Int?
+  businessUnitId Int?
+  action         String
+  entityType     String
+  entityId       Int
+  before         Json?
+  after          Json?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([businessUnitId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+}
