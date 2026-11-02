@@ -408,6 +408,9 @@ model User {
   businessUnitMemberships BusinessUnitMember[]
   masterProductsCreated   MasterProduct[] @relation("MasterProductCreatedBy")
   masterProductsApproved  MasterProduct[] @relation("MasterProductApprovedBy")
+
+  // ─── M1.2 back-relations ───
+  wholesaleOffersApproved WholesaleOffer[] @relation("WholesaleOfferApprovedBy")
 }
 
 model Address {
@@ -2710,6 +2713,9 @@ model BusinessUnit {
   @@index([type, status])
   @@index([accountingGroupId])
   @@index([verificationStatus])
+
+  // ─── M1.2 back-relations ───
+  offers WholesaleOffer[]
 }
 
 model BusinessUnitMember {
@@ -2842,6 +2848,12 @@ model InventoryAccount {
 
   @@unique([locationId, type])
   @@index([businessUnitId, type])
+
+  // ─── M1.2 back-relations ───
+  balances     InventoryBalance[]
+  ledgers      InventoryLedger[]
+  batches      InventoryBatch[]
+  reservations StockReservation[]
 }
 
 model MasterProduct {
@@ -2874,6 +2886,9 @@ model MasterProduct {
   @@index([barcode])
   @@index([qrCode])
   @@index([status])
+
+  // ─── M1.2 back-relations ───
+  offers WholesaleOffer[]
 }
 
 model MasterVariant {
@@ -2895,6 +2910,9 @@ model MasterVariant {
   @@index([barcode])
   @@index([qrCode])
   @@index([masterId, isDefault])
+
+  // ─── M1.2 back-relations ───
+  offerVariants WholesaleOfferVariant[]
 }
 
 model MasterProductVersion {
@@ -2949,4 +2967,317 @@ model OperationAuditLog {
   @@index([businessUnitId, createdAt])
   @@index([entityType, entityId])
   @@index([action, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════
+// WHOLESALE SYSTEM — M1.2: Offer, Order, Inventory
+// ═══════════════════════════════════════════════════════════
+
+enum WholesaleOfferStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  REJECTED
+  OUT_OF_STOCK
+  SUSPENDED
+  ARCHIVED
+}
+
+enum OfferReviewLevel {
+  AUTO
+  MANUAL
+  TRUSTED
+}
+
+enum OfferClaimType {
+  MANUFACTURER
+  DISTRIBUTOR
+  IMPORTER
+  RESELLER
+}
+
+enum WholesaleOrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+  DISPUTED
+}
+
+enum WholesalePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  REFUNDED
+}
+
+enum WholesaleFulfillmentStatus {
+  PENDING
+  PREPARING
+  READY
+  SHIPPED
+  DELIVERED
+}
+
+enum InventoryMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_IN
+  RETURN_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+  DAMAGE
+  RESERVATION_HOLD
+  RESERVATION_RELEASE
+}
+
+enum StockReservationStage {
+  TEMP
+  CONFIRMED
+}
+
+enum StockReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum InventoryBatchSourceType {
+  PURCHASE
+  RETURN
+  TRANSFER
+  OPENING_BALANCE
+}
+
+model WholesaleOffer {
+  id                Int                  @id @default(autoincrement())
+  businessUnitId    Int
+  masterId          Int
+  wholesalePrice    Decimal              @db.Decimal(10, 2)
+  minOrderQty       Int                  @default(1)
+  maxOrderQty       Int?
+  status            WholesaleOfferStatus @default(DRAFT)
+  reviewLevel       OfferReviewLevel     @default(MANUAL)
+  claimType         OfferClaimType
+  claimVerified     Boolean              @default(false)
+  claimProofUrl     String?
+  claimNotes        String?
+  approvedByUserId  Int?
+  approvedAt        DateTime?
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  businessUnit   BusinessUnit             @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master         MasterProduct            @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  approvedByUser User?                    @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  variants       WholesaleOfferVariant[]
+  orderItems     WholesaleOrderItem[]
+
+  @@unique([businessUnitId, masterId])
+  @@index([masterId, status])
+  @@index([status, deletedAt])
+  @@index([businessUnitId, status])
+}
+
+model WholesaleOfferVariant {
+  id              Int      @id @default(autoincrement())
+  offerId         Int
+  masterVariantId Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  offer         WholesaleOffer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  masterVariant MasterVariant          @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+  tiers         WholesaleOfferTier[]
+
+  @@unique([offerId, masterVariantId])
+  @@index([offerId])
+}
+
+model WholesaleOfferTier {
+  id        Int      @id @default(autoincrement())
+  variantId Int
+  minQty    Int
+  maxQty    Int?
+  unitPrice Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variant WholesaleOfferVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, minQty])
+  @@index([variantId])
+}
+
+model WholesaleOrderGroup {
+  id                  Int      @id @default(autoincrement())
+  buyerBusinessUnitId Int
+  groupNumber         String   @unique
+  totalAmount         Decimal  @db.Decimal(12, 2)
+  status              String   @default("PENDING")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  orders WholesaleOrder[]
+
+  @@index([buyerBusinessUnitId, createdAt])
+  @@index([status])
+}
+
+model WholesaleOrder {
+  id                   Int                        @id @default(autoincrement())
+  groupId              Int?
+  orderNumber          String                     @unique
+  sellerBusinessUnitId Int
+  buyerBusinessUnitId  Int
+  subtotal             Decimal                    @db.Decimal(12, 2)
+  discount             Decimal                    @db.Decimal(10, 2) @default(0)
+  shippingCost         Decimal                    @db.Decimal(10, 2) @default(0)
+  total                Decimal                    @db.Decimal(12, 2)
+  status               WholesaleOrderStatus       @default(PENDING)
+  paymentStatus        WholesalePaymentStatus     @default(UNPAID)
+  fulfillmentStatus    WholesaleFulfillmentStatus @default(PENDING)
+  notes                String?
+  expectedShipDate     DateTime?
+  confirmedAt          DateTime?
+  shippedAt            DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  cancellationReason   String?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  group WholesaleOrderGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  items WholesaleOrderItem[]
+
+  @@index([sellerBusinessUnitId, status])
+  @@index([buyerBusinessUnitId, status])
+  @@index([groupId])
+  @@index([status, createdAt])
+  @@index([orderNumber])
+}
+
+model WholesaleOrderItem {
+  id                Int      @id @default(autoincrement())
+  orderId           Int
+  offerId           Int?
+  masterVariantId   Int
+  merchantVariantId Int?
+  productName       String
+  variantAttributes Json     @default("[]")
+  quantity          Int
+  sellingUnit       String
+  conversionFactor  Int      @default(1)
+  unitPrice         Decimal  @db.Decimal(10, 2)
+  subtotal          Decimal  @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+
+  order WholesaleOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  offer WholesaleOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([offerId])
+  @@index([masterVariantId])
+}
+
+model InventoryLedger {
+  id                 Int                   @id @default(autoincrement())
+  merchantVariantId  Int
+  inventoryAccountId Int
+  inventoryBatchId   Int?
+  businessUnitId     Int
+  type               InventoryMovementType
+  quantity           Int
+  referenceType      String
+  referenceId        Int
+  notes              String?
+  createdByUserId    Int?
+  createdAt          DateTime              @default(now())
+
+  inventoryAccount InventoryAccount @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
+  inventoryBatch   InventoryBatch?  @relation(fields: [inventoryBatchId], references: [id], onDelete: SetNull)
+
+  @@index([merchantVariantId, inventoryAccountId, createdAt])
+  @@index([inventoryBatchId])
+  @@index([businessUnitId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model InventoryBalance {
+  id                 Int      @id @default(autoincrement())
+  merchantVariantId  Int
+  inventoryAccountId Int
+  quantity           Int      @default(0)
+  lastLedgerId       Int?
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+
+  inventoryAccount InventoryAccount @relation(fields: [inventoryAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantVariantId, inventoryAccountId])
+  @@index([inventoryAccountId])
+}
+
+model InventoryBatch {
+  id                 Int                       @id @default(autoincrement())
+  merchantVariantId  Int
+  inventoryAccountId Int
+  sourceType         InventoryBatchSourceType
+  sourceReferenceId  Int?
+  quantityReceived   Int
+  quantityRemaining  Int
+  unitCost           Decimal                   @db.Decimal(10, 4)
+  receivedAt         DateTime                  @default(now())
+  createdAt          DateTime                  @default(now())
+
+  inventoryAccount InventoryAccount           @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
+  ledgerEntries    InventoryLedger[]
+  allocations      InventoryBatchAllocation[]
+
+  @@index([merchantVariantId, inventoryAccountId, receivedAt])
+  @@index([sourceType, sourceReferenceId])
+}
+
+model InventoryBatchAllocation {
+  id                Int      @id @default(autoincrement())
+  batchId           Int
+  inventoryLedgerId Int
+  quantityConsumed  Int
+  unitCostSnapshot  Decimal  @db.Decimal(10, 4)
+  createdAt         DateTime @default(now())
+
+  batch InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryLedgerId, batchId])
+  @@index([batchId])
+  @@index([inventoryLedgerId])
+}
+
+model StockReservation {
+  id                 Int                    @id @default(autoincrement())
+  merchantVariantId  Int
+  inventoryAccountId Int
+  quantity           Int
+  stage              StockReservationStage  @default(TEMP)
+  status             StockReservationStatus @default(ACTIVE)
+  expiresAt          DateTime?
+  referenceType      String
+  referenceId        Int
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  inventoryAccount InventoryAccount @relation(fields: [inventoryAccountId], references: [id], onDelete: Cascade)
+
+  @@index([merchantVariantId, inventoryAccountId, status])
+  @@index([expiresAt, status])
+  @@index([referenceType, referenceId])
 }
