@@ -39,7 +39,6 @@ type AdminSidebarProps = {
 const NAV_ITEMS = [
   { href: "/admin/handover", label: "استلام من المستودع", icon: Banknote, exact: false },
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard, exact: true },
-  { href: "/admin/wholesale", label: "إدارة سوق الجملة", icon: ShoppingBag, exact: false },
   { href: "/admin/notifications", label: "الإشعارات", icon: Bell, exact: false },
   { href: "/admin/sellers", label: "التجار", icon: Store, exact: false },
   { href: "/admin/zones", label: "المناطق", icon: MapPin, exact: false },
