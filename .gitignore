@@ -50,3 +50,6 @@ prisma/migrations.backup/
 
 # Temporary backups
 *.bak-*
+
+# Backups (never commit)
+_backup_*/
