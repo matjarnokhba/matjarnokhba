@@ -403,30 +403,11 @@ model User {
   @@index([email])
   @@index([deletedAt])
 
-  // P1 back-relations
-  ownedBusinesses      Business[]         @relation("BusinessOwner")
-  verifiedBusinesses   Business[]         @relation("BusinessVerifier")
-  businessMemberships  BusinessMember[]   @relation("BusinessMembership")
-  reviewedBusinessDocs BusinessDocument[] @relation("BusinessDocumentReviewer")
 
-  // P2 back-relations
-  verifiedProductMasters ProductMaster[] @relation("ProductMasterVerifier")
 
-  // P4 back-relations
-  placedWholesaleOrders          WholesaleOrder[]              @relation("WholesaleOrderPlacer")
-  changedWholesaleOrderStatuses  WholesaleOrderStatusHistory[] @relation("WholesaleOrderStatusChanger")
 
-  // P13 ledger back-relations
-  createdLedgerTransactions    LedgerTransaction[] @relation("LedgerTransactionCreator")
-  confirmedLedgerTransactions  LedgerTransaction[] @relation("LedgerTransactionConfirmer")
 
-  // P24 back-relations
-  requestedWholesaleReturns         WholesaleReturnRequest[]       @relation("ReturnRequester")
-  changedWholesaleReturnStatuses    WholesaleReturnStatusHistory[] @relation("ReturnStatusChanger")
 
-  // A1 back-relations
-  verifiedSupplyActivities SupplyActivity[] @relation("SupplyActivityVerifier")
-  reviewedSupplyActivityDocuments SupplyActivityDocument[] @relation("SupplyActivityDocumentReviewer")
 }
 
 model Address {
@@ -571,7 +552,6 @@ model Seller {
   editLogs             ProductEditLog[]
   attributeValues      CategoryAttributeValue[]
   fulfillmentItems     FulfillmentItem[]
-  orderItems           OrderItem[]                 @relation("OrderItemSeller")
   collectionZoneId     Int?
   collectionZone       Zone?                       @relation("SellerCollectionZone", fields: [collectionZoneId], references: [id], onDelete: SetNull)
   storeSales           StoreSale[]
@@ -587,8 +567,8 @@ model Seller {
   @@index([isVerified])
   @@index([collectionZoneId])
 
-  // P1 back-relations
-  linkedBusiness Business? @relation("BusinessLinkedSeller")
+
+  orderItems OrderItem[] @relation("OrderItemSeller")
 }
 
 // ============================================
@@ -625,8 +605,6 @@ model Category {
   @@index([isActive])
   @@index([deletedAt])
 
-  // P2 back-relations
-  productMasters ProductMaster[]
 }
 
 model Product {
@@ -674,7 +652,6 @@ model Product {
   images     ProductImage[]
   options    ProductOption[]
   variants   ProductVariant[]
-  orderItems OrderItem[]
   reviews    Review[]
   editLogs   ProductEditLog[]
   favorites  Favorite[]
@@ -686,11 +663,7 @@ model Product {
   @@index([status])
   @@index([deletedAt])
 
-  // P2: link to canonical master
-  masterId Int?
-  master   ProductMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
-
-  @@index([masterId])
+  orderItems OrderItem[]
 }
 
 model ProductImage {
@@ -754,7 +727,6 @@ model ProductVariant {
   product        Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
   optionValues   ProductVariantOptionValue[]
   inventory      Inventory?
-  orderItems     OrderItem[]
   storeSaleItems StoreSaleItem[]
 
   @@unique([productId, optionsHash])
@@ -763,6 +735,8 @@ model ProductVariant {
   @@index([productId])
   @@index([sellerId])
   @@index([sku])
+
+  orderItems OrderItem[]
 }
 
 model ProductVariantOptionValue {
@@ -912,7 +886,6 @@ model OrderItem {
   variant          ProductVariant?   @relation(fields: [variantId], references: [id], onDelete: SetNull)
   seller           Seller?           @relation("OrderItemSeller", fields: [sellerId], references: [id], onDelete: Restrict)
   reviews          Review[]
-  returnItems      ReturnItem[]
   shipmentItems    ShipmentItem[]    @relation("OrderItemShipmentItems")
   fulfillmentItems FulfillmentItem[]
 
@@ -920,6 +893,8 @@ model OrderItem {
   @@index([productId])
   @@index([variantId])
   @@index([sellerId])
+
+  returnItems ReturnItem[]
 }
 
 model OrderStatusHistory {
@@ -1042,9 +1017,6 @@ model ReturnItem {
 
   returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
   orderItem     OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-
-  @@unique([returnId, orderItemId])
-  @@index([orderItemId])
 }
 
 model Review {
@@ -1068,7 +1040,6 @@ model Review {
   @@unique([productId, userId])
   @@index([productId])
   @@index([userId])
-  @@index([orderItemId])
   @@index([deletedAt])
 }
 
@@ -1344,9 +1315,7 @@ model MultiVendorTriggerMetrics {
   @@index([periodEnd])
 }
 
-// ═══════════════════════════════════════════
 // Product Edit Log — سجل تعديلات المنتجات
-// ═══════════════════════════════════════════
 model ProductEditLog {
   id                 Int       @id @default(autoincrement())
   productId          Int
@@ -1526,9 +1495,7 @@ model LoyaltyReward {
   @@index([createdAt])
 }
 
-// ═══════════════════════════════════════════
 // DYNAMIC ATTRIBUTES SYSTEM
-// ═══════════════════════════════════════════
 
 enum AttributeValueStatus {
   PENDING
@@ -1588,9 +1555,7 @@ model CategoryAttributeValue {
   @@index([attributeId, status])
 }
 
-// ═══════════════════════════════════════════
 // FAVORITES
-// ═══════════════════════════════════════════
 model Favorite {
   id        Int      @id @default(autoincrement())
   userId    Int
@@ -1606,9 +1571,7 @@ model Favorite {
   @@index([userId, createdAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 82 — REFERRAL SYSTEM
-// ═══════════════════════════════════════════
 
 model Referral {
   id         Int      @id @default(autoincrement())
@@ -1629,9 +1592,7 @@ model Referral {
   @@index([rewardedAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 83 — DELIVERY PERSON SYSTEM
-// ═══════════════════════════════════════════
 
 model DeliveryPerson {
   id                   Int                  @id @default(autoincrement())
@@ -1670,9 +1631,7 @@ model DeliveryPerson {
   @@index([deletedAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 84 — DELIVERY ATTEMPTS LOG
-// ═══════════════════════════════════════════
 
 model DeliveryAttempt {
   id               Int                 @id @default(autoincrement())
@@ -1699,9 +1658,7 @@ model DeliveryAttempt {
   @@index([createdAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 85 — PERMISSIONS SYSTEM
-// ═══════════════════════════════════════════
 
 /// الصلاحية الواحدة — مثل: CREATE_SHIPMENT
 model Permission {
@@ -1736,9 +1693,7 @@ model UserPermission {
   @@index([userId, revokedAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 86 — SHIPMENT SYSTEM
-// ═══════════════════════════════════════════
 
 model Shipment {
   id             Int    @id @default(autoincrement())
@@ -1819,14 +1774,11 @@ model ShipmentItem {
   @@unique([fulfillmentItemId])
   @@index([shipmentId])
   @@index([orderId])
-  @@index([orderItemId])
   @@index([sellerId])
   @@index([fulfillmentItemId])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 87 — FULFILLMENT SYSTEM
-// ═══════════════════════════════════════════
 
 model FulfillmentItem {
   id                    Int               @id @default(autoincrement())
@@ -1865,9 +1817,6 @@ model FulfillmentItem {
   warehouseReceipts    WarehouseReceipt[]
   shipmentItems        ShipmentItem[]
   collectionBatchItems CollectionBatchItem[]
-
-  @@unique([orderItemId])
-  @@index([orderItemId])
   @@index([sellerId])
   @@index([status])
   @@index([sellerId, status])
@@ -1892,9 +1841,7 @@ model FulfillmentStatusHistory {
   @@index([createdAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 88 — COLLECTION SYSTEM
-// ═══════════════════════════════════════════
 
 model CollectionAssignment {
   id               Int              @id @default(autoincrement())
@@ -1940,9 +1887,7 @@ model CollectionAssignmentItem {
   @@index([sellerId])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 89 — WAREHOUSE SYSTEM
-// ═══════════════════════════════════════════
 
 model WarehouseReceipt {
   id                Int                    @id @default(autoincrement())
@@ -1968,9 +1913,7 @@ model WarehouseReceipt {
   @@index([createdAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 90 — GROUPING DECISIONS
-// ═══════════════════════════════════════════
 
 model ShipmentGroupingDecision {
   id               Int              @id @default(autoincrement())
@@ -1989,9 +1932,7 @@ model ShipmentGroupingDecision {
   @@index([decidedAt])
 }
 
-// ═══════════════════════════════════════════
 // SECTION 91 — DELIVERY ASSIGNMENTS
-// ═══════════════════════════════════════════
 
 model DeliveryAssignment {
   id               Int                      @id @default(autoincrement())
@@ -2020,9 +1961,7 @@ model DeliveryAssignment {
   @@index([assignedAt])
 }
 
-// ═══════════════════════════════════════════
 // Collection Batch — دفعة جمع
-// ═══════════════════════════════════════════
 
 enum CollectionBatchStatus {
   IN_TRANSIT
@@ -2075,9 +2014,7 @@ model CollectionBatchItem {
   @@index([batchId])
 }
 
-// ═══════════════════════════════════════════
 // Assembly System — D.1
-// ═══════════════════════════════════════════
 
 model AssemblyFile {
   id           Int            @id @default(autoincrement())
@@ -2131,9 +2068,7 @@ model AssemblyItem {
   @@index([shipmentId])
 }
 
-// ═══════════════════════════════════════════
 // Zones — D.2
-// ═══════════════════════════════════════════
 
 model Zone {
   id          Int      @id @default(autoincrement())
@@ -2159,9 +2094,7 @@ model Zone {
   @@index([isActive])
 }
 
-// ═══════════════════════════════════════════
 // Return Shipment — E.1
-// ═══════════════════════════════════════════
 
 model ReturnShipment {
   id           Int                  @id @default(autoincrement())
@@ -2218,9 +2151,7 @@ model ReturnShipment {
   @@index([status, createdAt])
 }
 
-// ═══════════════════════════════════════════
 // Geography — Cities & Districts
-// ═══════════════════════════════════════════
 
 model City {
   id         Int      @id @default(autoincrement())
@@ -2266,9 +2197,7 @@ model District {
   @@index([cityId, isActive])
 }
 
-// ═══════════════════════════════════════════
 // Store POS (نقطة البيع في المحل)
-// ═══════════════════════════════════════════
 
 model StoreSale {
   id            Int      @id @default(autoincrement())
@@ -2301,9 +2230,7 @@ model StoreSaleItem {
   @@index([storeSaleId])
 }
 
-// ═══════════════════════════════════════════
 // Wallet (محفظة التاجر)
-// ═══════════════════════════════════════════
 
 enum WalletTransactionType {
   ONLINE_SALE_EARNING
@@ -2332,9 +2259,7 @@ model WalletTransaction {
   @@index([createdAt])
 }
 
-// ═══════════════════════════════════════════
 // Withdrawal Request (طلبات سحب الأرباح)
-// ═══════════════════════════════════════════
 
 model WithdrawalRequest {
   id          Int       @id @default(autoincrement())
@@ -2352,9 +2277,7 @@ model WithdrawalRequest {
   @@index([status])
 }
 
-// ═══════════════════════════════════════════
 // Subscription Logs (سجل الاشتراكات)
-// ═══════════════════════════════════════════
 
 model SubscriptionLog {
   id        Int      @id @default(autoincrement())
@@ -2383,9 +2306,7 @@ model CustomerWalletTransaction {
   @@index([userId])
 }
 
-// ═══════════════════════════════════════════
 // Unified Wallet & Cash Management
-// ═══════════════════════════════════════════
 
 enum WalletOwnerType {
   SELLER
@@ -2426,8 +2347,6 @@ model WalletTransactionUnified {
   createdAt   DateTime @default(now())
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
-  @@index([walletId])
 }
 
 // ═══ تسليم الكاش من السائق للمستودع ═══
@@ -2517,9 +2436,7 @@ model DriverLegalNotice {
   @@index([deadlineAt])
 }
 
-// ═══════════════════════════════════════════
 // Refused Handover (السائق → المستودع)
-// ═══════════════════════════════════════════
 model RefusedHandoverBatch {
   id            Int       @id @default(autoincrement())
   batchCode     String    @unique
@@ -2552,9 +2469,7 @@ model RefusedHandoverItem {
   @@index([batchId])
 }
 
-// ═══════════════════════════════════════════
 // Seller Return (المستودع → التاجر)
-// ═══════════════════════════════════════════
 model SellerReturnBatch {
   id            Int       @id @default(autoincrement())
   batchNumber   String    @unique
@@ -2646,735 +2561,9 @@ model ProductSpecification {
   @@index([numericValue])
 }
 
-
-
 // ============================================
-
-
-
-
-
-
-
-
-
-
 
 // ============================================
 // CATALOG v3 — Unified Product Identity
 // ============================================
 
-
-
-
-// ═══════════════════════════════════════════
-// P1: Business entity (B2B)
-// ═══════════════════════════════════════════
-
-enum BusinessType {
-  INDEPENDENT_SUPPLIER
-  WHOLESALE_TRADER
-}
-
-enum BusinessStatus {
-  PENDING
-  VERIFIED
-  SUSPENDED
-  REJECTED
-}
-
-enum BusinessMemberRole {
-  OWNER
-  MANAGER
-  SALES
-  ACCOUNTANT
-  INVENTORY
-}
-
-enum BusinessDocumentType {
-  COMMERCIAL_REGISTER
-  TAX_CERT
-  ID_CARD
-  PATENTE
-  OTHER
-}
-
-enum BusinessDocumentStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-model Business {
-  id                 Int              @id @default(autoincrement())
-  type               BusinessType
-  status             BusinessStatus   @default(PENDING)
-  name               String
-  legalName          String?
-  slug               String           @unique
-  description        String?
-  logo               String?
-  commercialRegister String?
-  taxId              String?
-  city               String
-  address            String?
-  phone              String
-  email              String?
-  ownerUserId        Int
-  linkedSellerId     Int?             @unique
-  verifiedAt         DateTime?
-  verifiedById       Int?
-  rejectionReason    String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  deletedAt          DateTime?
-
-  owner      User              @relation("BusinessOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  verifiedBy User?             @relation("BusinessVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
-  linkedSeller Seller?         @relation("BusinessLinkedSeller", fields: [linkedSellerId], references: [id], onDelete: SetNull)
-  members    BusinessMember[]
-  documents  BusinessDocument[]
-
-  @@index([ownerUserId])
-  @@index([type])
-  @@index([status])
-  @@index([city])
-  @@index([deletedAt])
-
-  // P2 back-relations
-  productMasters ProductMaster[]
-
-  // P3 back-relations
-  wholesaleOffers WholesaleOffer[]
-
-  // P4 back-relations
-  wholesaleOrdersAsBuyer  WholesaleOrder[] @relation("WholesaleBuyer")
-  wholesaleOrdersAsSeller WholesaleOrder[] @relation("WholesaleSeller")
-
-  // P5 back-relations
-  lineagesFrom                   ProductLineage[]     @relation("LineageFrom")
-  lineagesTo                     ProductLineage[]     @relation("LineageTo")
-  wholesaleInventories           WholesaleInventory[] @relation("WholesaleInventoryOwner")
-  wholesaleInventoriesAsSource   WholesaleInventory[] @relation("WholesaleInventoryLastSource")
-
-  // P13 ledger back-relations
-  ledgerAccountsAsOwner        LedgerAccount[]     @relation("LedgerAccountOwner")
-  ledgerAccountsAsCounterparty LedgerAccount[]     @relation("LedgerAccountCounterparty")
-  ledgerDebtsAsDebtor          LedgerTransaction[] @relation("LedgerDebtor")
-  ledgerDebtsAsCreditor        LedgerTransaction[] @relation("LedgerCreditor")
-
-  // P24 back-relations
-  returnsAsBuyer  WholesaleReturnRequest[] @relation("ReturnBuyer")
-  returnsAsSeller WholesaleReturnRequest[] @relation("ReturnSeller")
-
-  // A1 back-relations
-  supplyActivities SupplyActivity[]
-}
-
-model BusinessMember {
-  id          Int                @id @default(autoincrement())
-  businessId  Int
-  userId      Int
-  role        BusinessMemberRole @default(OWNER)
-  permissions Json?
-  createdAt   DateTime           @default(now())
-  deletedAt   DateTime?
-
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user     User     @relation("BusinessMembership", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([businessId, userId])
-  @@index([userId])
-  @@index([businessId])
-}
-
-model BusinessDocument {
-  id              Int                    @id @default(autoincrement())
-  businessId      Int
-  type            BusinessDocumentType
-  url             String
-  notes           String?
-  status          BusinessDocumentStatus @default(PENDING)
-  reviewedById    Int?
-  reviewedAt      DateTime?
-  rejectionReason String?
-  createdAt       DateTime               @default(now())
-
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  reviewedBy User?    @relation("BusinessDocumentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-
-  @@index([businessId])
-  @@index([status])
-}
-
-// ═══════════════════════════════════════════
-// P2: ProductMaster (canonical B2B product)
-// ═══════════════════════════════════════════
-
-model ProductMaster {
-  id                  Int       @id @default(autoincrement())
-  createdByBusinessId Int
-  categoryId          Int
-  name                String
-  slug                String    @unique
-  brand               String?
-  description         String?
-  images              String[]
-  barcode             String?   @unique
-  qrCode              String?   @unique
-  specifications      Json?
-  isVerified          Boolean   @default(false)
-  verifiedAt          DateTime?
-  verifiedById        Int?
-  status              String    @default("ACTIVE")
-  deletedAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-
-  createdByBusiness Business               @relation(fields: [createdByBusinessId], references: [id], onDelete: Restrict)
-  category          Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  verifiedBy        User?                  @relation("ProductMasterVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
-  variants          ProductMasterVariant[]
-  retailCopies      Product[]
-
-  @@index([createdByBusinessId])
-  @@index([categoryId])
-  @@index([brand])
-  @@index([isVerified])
-  @@index([status])
-  @@index([deletedAt])
-
-  // P3 back-relations
-  wholesaleOffers WholesaleOffer[]
-
-  // P4 back-relations
-  orderItems WholesaleOrderItem[]
-
-  // P5 back-relations
-  lineages              ProductLineage[]
-  wholesaleInventories  WholesaleInventory[]
-
-  // P24 back-relations
-  wholesaleReturnItems WholesaleReturnItem[]
-}
-
-model ProductMasterVariant {
-  id          Int      @id @default(autoincrement())
-  masterId    Int
-  sku         String?
-  barcode     String?  @unique
-  options     Json?
-  optionsHash String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  master ProductMaster @relation(fields: [masterId], references: [id], onDelete: Cascade)
-
-  @@unique([masterId, optionsHash])
-  @@index([masterId])
-  @@index([sku])
-  @@index([barcode])
-
-  // P3 back-relations
-  wholesaleOfferVariants WholesaleOfferVariant[]
-
-  // P4 back-relations
-  orderItems WholesaleOrderItem[]
-
-  // P5 back-relations
-  lineages              ProductLineage[]
-  wholesaleInventories  WholesaleInventory[]
-
-  // P24 back-relations
-  wholesaleReturnItems WholesaleReturnItem[]
-}
-
-// ═══════════════════════════════════════════
-// P3: WholesaleOffer (B2B listing)
-// ═══════════════════════════════════════════
-
-enum ClaimType {
-  MANUFACTURER
-  DISTRIBUTOR
-  RESELLER
-  IMPORTER
-}
-
-enum OfferStatus {
-  DRAFT
-  ACTIVE
-  PAUSED
-  CLOSED
-}
-
-model WholesaleOffer {
-  id                  Int          @id @default(autoincrement())
-  businessId          Int
-  masterId            Int
-  wholesalePrice      Decimal      @db.Decimal(10, 2)
-  retailPrice         Decimal?     @db.Decimal(10, 2)
-  minOrderQty         Int          @default(1)
-  maxOrderQty         Int?
-  unit                ProductUnit  @default(PIECE)
-  claimType           ClaimType    @default(MANUFACTURER)
-  claimVerified       Boolean      @default(false)
-  claimProofUrl       String?
-  claimNotes          String?
-  leadTimeDays        Int?         @default(3)
-  status              OfferStatus  @default(DRAFT)
-  isActive            Boolean      @default(false)
-  notes               String?
-  viewsCount          Int          @default(0)
-  ordersCount         Int          @default(0)
-  deletedAt           DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-
-  business Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  supplyActivityId Int?
-  supplyActivity   SupplyActivity? @relation(fields: [supplyActivityId], references: [id], onDelete: SetNull)
-  master   ProductMaster          @relation(fields: [masterId], references: [id], onDelete: Cascade)
-  tiers    WholesaleOfferTier[]
-  variants WholesaleOfferVariant[]
-
-  @@unique([businessId, masterId])
-  @@index([businessId])
-  @@index([masterId])
-  @@index([status])
-  @@index([isActive])
-  @@index([claimVerified])
-  @@index([deletedAt])
-  @@index([supplyActivityId])
-
-  // P4 back-relations
-  orderItems WholesaleOrderItem[]
-}
-
-model WholesaleOfferTier {
-  id        Int      @id @default(autoincrement())
-  offerId   Int
-  minQty    Int
-  maxQty    Int?
-  unitPrice Decimal  @db.Decimal(10, 2)
-
-  offer WholesaleOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
-
-  @@unique([offerId, minQty])
-  @@index([offerId])
-}
-
-model WholesaleOfferVariant {
-  id                Int      @id @default(autoincrement())
-  offerId           Int
-  masterVariantId   Int
-  stock             Int      @default(0)
-  reserved          Int      @default(0)
-  inTransit         Int      @default(0)
-  lowStockThreshold Int      @default(5)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  offer         WholesaleOffer       @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  masterVariant ProductMasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-
-  @@unique([offerId, masterVariantId])
-  @@index([offerId])
-  @@index([masterVariantId])
-
-  // P4 back-relations
-  orderItems WholesaleOrderItem[]
-}
-
-// ═══════════════════════════════════════════
-// P4: WholesaleOrder (B2B lifecycle)
-// ═══════════════════════════════════════════
-
-enum WholesaleOrderStatus {
-  DRAFT
-  PENDING
-  ACCEPTED
-  PREPARING
-  SHIPPED
-  DELIVERED
-  COMPLETED
-  REJECTED
-  CANCELLED
-}
-
-model WholesaleOrder {
-  id                  Int                   @id @default(autoincrement())
-  orderNumber         String                @unique
-  buyerBusinessId     Int
-  sellerBusinessId    Int
-  buyerUserId         Int
-  status              WholesaleOrderStatus  @default(PENDING)
-  subtotal            Decimal               @db.Decimal(10, 2)
-  shippingCost        Decimal               @db.Decimal(10, 2) @default(0)
-  discountAmount      Decimal               @db.Decimal(10, 2) @default(0)
-  total               Decimal               @db.Decimal(10, 2)
-  currency            String                @default("MAD")
-  notes               String?
-  rejectionReason     String?
-  cancellationReason  String?
-  trackingNumber      String?
-  shippingCarrier     String?
-  acceptedAt          DateTime?
-  shippedAt           DateTime?
-  deliveredAt         DateTime?
-  completedAt         DateTime?
-  estimatedDelivery   DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-
-  buyerBusiness  Business    @relation("WholesaleBuyer", fields: [buyerBusinessId], references: [id], onDelete: Restrict)
-  sellerBusiness Business    @relation("WholesaleSeller", fields: [sellerBusinessId], references: [id], onDelete: Restrict)
-  buyerUser      User        @relation("WholesaleOrderPlacer", fields: [buyerUserId], references: [id], onDelete: Restrict)
-  items          WholesaleOrderItem[]
-  statusHistory  WholesaleOrderStatusHistory[]
-
-  @@index([buyerBusinessId])
-  @@index([sellerBusinessId])
-  @@index([buyerUserId])
-  @@index([status])
-  @@index([createdAt])
-  @@index([deliveredAt])
-
-  // P5 back-relations
-  lineages ProductLineage[]
-
-  // P13 back-relations
-  ledgerTransactions LedgerTransaction[]
-
-  // P24 back-relations
-  wholesaleReturns WholesaleReturnRequest[]
-}
-
-model WholesaleOrderItem {
-  id                 Int      @id @default(autoincrement())
-  orderId            Int
-  offerId            Int
-  offerVariantId     Int
-  masterId           Int
-  masterVariantId    Int
-  productName        String
-  sku                String?
-  barcode            String?
-  options            Json?
-  quantity           Int
-  unitPrice          Decimal  @db.Decimal(10, 2)
-  subtotal           Decimal  @db.Decimal(10, 2)
-  deliveredQuantity  Int?
-  notes              String?
-
-  order         WholesaleOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  offer         WholesaleOffer        @relation(fields: [offerId], references: [id], onDelete: Restrict)
-  offerVariant  WholesaleOfferVariant @relation(fields: [offerVariantId], references: [id], onDelete: Restrict)
-  master        ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  masterVariant ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-
-  @@index([orderId])
-  @@index([offerId])
-  @@index([offerVariantId])
-  @@index([masterId])
-  @@index([masterVariantId])
-
-  // P5 back-relations
-  lineages ProductLineage[]
-
-  // P24 back-relations
-  returnItems WholesaleReturnItem[]
-}
-
-model WholesaleOrderStatusHistory {
-  id               Int                    @id @default(autoincrement())
-  orderId          Int
-  fromStatus       WholesaleOrderStatus?
-  toStatus         WholesaleOrderStatus
-  changedByUserId  Int
-  notes            String?
-  createdAt        DateTime               @default(now())
-
-  order          WholesaleOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  changedByUser  User           @relation("WholesaleOrderStatusChanger", fields: [changedByUserId], references: [id], onDelete: Restrict)
-
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-// ═══════════════════════════════════════════
-// P5: ProductLineage + WholesaleInventory
-// ═══════════════════════════════════════════
-
-enum LineageTransferType {
-  INITIAL_CREATION
-  WHOLESALE_SALE
-  INTERNAL_TRANSFER
-  RETAIL_IMPORT
-  RETURN
-}
-
-model ProductLineage {
-  id               Int                 @id @default(autoincrement())
-  masterId         Int
-  masterVariantId  Int
-  fromBusinessId   Int?
-  toBusinessId     Int
-  orderId          Int?
-  orderItemId      Int?
-  quantity         Int
-  unitPrice        Decimal             @db.Decimal(10, 2)
-  currency         String              @default("MAD")
-  transferType     LineageTransferType
-  notes            String?
-  createdAt        DateTime            @default(now())
-
-  master         ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  masterVariant  ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-  fromBusiness   Business?             @relation("LineageFrom", fields: [fromBusinessId], references: [id], onDelete: SetNull)
-  toBusiness     Business              @relation("LineageTo", fields: [toBusinessId], references: [id], onDelete: Restrict)
-  order          WholesaleOrder?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  orderItem      WholesaleOrderItem?   @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
-
-  @@index([masterId])
-  @@index([masterVariantId])
-  @@index([fromBusinessId])
-  @@index([toBusinessId])
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-model WholesaleInventory {
-  id                    Int      @id @default(autoincrement())
-  businessId            Int
-  masterId              Int
-  masterVariantId       Int
-  quantity              Int      @default(0)
-  quantityReserved      Int      @default(0)
-  lastUnitCost          Decimal  @db.Decimal(10, 2) @default(0)
-  lastSourceBusinessId  Int?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  business            Business              @relation("WholesaleInventoryOwner", fields: [businessId], references: [id], onDelete: Cascade)
-  master              ProductMaster         @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  masterVariant       ProductMasterVariant  @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-  lastSourceBusiness  Business?             @relation("WholesaleInventoryLastSource", fields: [lastSourceBusinessId], references: [id], onDelete: SetNull)
-
-  @@unique([businessId, masterVariantId])
-  @@index([businessId])
-  @@index([masterId])
-  @@index([masterVariantId])
-}
-
-// ═══════════════════════════════════════════
-// P13: Ledger (per-business-per-counterparty balances)
-// ═══════════════════════════════════════════
-
-enum LedgerTransactionType {
-  SALE
-  PAYMENT
-  REFUND
-  ADJUSTMENT
-}
-
-enum LedgerTransactionStatus {
-  CONFIRMED
-  PENDING
-  REJECTED
-}
-
-model LedgerAccount {
-  id                     Int       @id @default(autoincrement())
-  businessId             Int
-  counterpartyBusinessId Int
-  balance                Decimal   @db.Decimal(12, 2) @default(0)
-  currency               String    @default("MAD")
-  lastActivityAt         DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-
-  business     Business @relation("LedgerAccountOwner", fields: [businessId], references: [id], onDelete: Cascade)
-  counterparty Business @relation("LedgerAccountCounterparty", fields: [counterpartyBusinessId], references: [id], onDelete: Cascade)
-
-  @@unique([businessId, counterpartyBusinessId])
-  @@index([businessId])
-  @@index([counterpartyBusinessId])
-}
-
-model LedgerTransaction {
-  id                 Int                     @id @default(autoincrement())
-  type               LedgerTransactionType
-  status             LedgerTransactionStatus @default(CONFIRMED)
-  debtorBusinessId   Int
-  creditorBusinessId Int
-  amount             Decimal                 @db.Decimal(12, 2)
-  currency           String                  @default("MAD")
-  orderId            Int?
-  externalRef        String?
-  notes              String?
-  createdByUserId    Int
-  confirmedByUserId  Int?
-  confirmedAt        DateTime?
-  rejectionReason    String?
-  createdAt          DateTime                @default(now())
-
-  debtor     Business        @relation("LedgerDebtor", fields: [debtorBusinessId], references: [id], onDelete: Restrict)
-  creditor   Business        @relation("LedgerCreditor", fields: [creditorBusinessId], references: [id], onDelete: Restrict)
-  order      WholesaleOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  createdBy  User            @relation("LedgerTransactionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  confirmedBy User?          @relation("LedgerTransactionConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([debtorBusinessId])
-  @@index([creditorBusinessId])
-  @@index([orderId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// ═══════════════════════════════════════════
-// P24: Wholesale Returns & Disputes
-// ═══════════════════════════════════════════
-
-enum WholesaleReturnStatus {
-  REQUESTED
-  APPROVED
-  REJECTED
-  RECEIVED
-  REFUNDED
-  CANCELLED
-}
-
-model WholesaleReturnRequest {
-  id                Int                   @id @default(autoincrement())
-  returnNumber      String                @unique
-  orderId           Int
-  buyerBusinessId   Int
-  sellerBusinessId  Int
-  requestedByUserId Int
-  reason            String
-  reasonDetails     String?
-  status            WholesaleReturnStatus @default(REQUESTED)
-  totalAmount       Decimal               @db.Decimal(12, 2)
-  approvedAmount    Decimal?              @db.Decimal(12, 2)
-  sellerNotes       String?
-  rejectionReason   String?
-  approvedAt        DateTime?
-  receivedAt        DateTime?
-  refundedAt        DateTime?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-
-  order          WholesaleOrder                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  buyerBusiness  Business                        @relation("ReturnBuyer", fields: [buyerBusinessId], references: [id], onDelete: Restrict)
-  sellerBusiness Business                        @relation("ReturnSeller", fields: [sellerBusinessId], references: [id], onDelete: Restrict)
-  requestedBy    User                            @relation("ReturnRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
-  items          WholesaleReturnItem[]
-  statusHistory  WholesaleReturnStatusHistory[]
-
-  @@index([orderId])
-  @@index([buyerBusinessId])
-  @@index([sellerBusinessId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model WholesaleReturnItem {
-  id              Int      @id @default(autoincrement())
-  returnId        Int
-  orderItemId     Int
-  masterId        Int
-  masterVariantId Int
-  quantity        Int
-  unitPrice       Decimal  @db.Decimal(12, 2)
-  subtotal        Decimal  @db.Decimal(12, 2)
-  condition       String?
-  notes           String?
-
-  returnRequest WholesaleReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  orderItem     WholesaleOrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  master        ProductMaster          @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  masterVariant ProductMasterVariant   @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-
-  @@index([returnId])
-  @@index([orderItemId])
-  @@index([masterVariantId])
-}
-
-model WholesaleReturnStatusHistory {
-  id              Int                    @id @default(autoincrement())
-  returnId        Int
-  fromStatus      WholesaleReturnStatus?
-  toStatus        WholesaleReturnStatus
-  changedByUserId Int
-  notes           String?
-  createdAt       DateTime               @default(now())
-
-  returnRequest WholesaleReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  changedByUser User                   @relation("ReturnStatusChanger", fields: [changedByUserId], references: [id], onDelete: Restrict)
-
-  @@index([returnId])
-  @@index([createdAt])
-}
-
-// ═══════════════════════════════════════════
-// A1: SupplyActivity
-// ═══════════════════════════════════════════
-
-enum SupplyActivityType {
-  FACTORY
-  COMPANY
-  SUPPLIER
-  IMPORTER
-  TRADER
-}
-
-model SupplyActivity {
-  id                 Int                 @id @default(autoincrement())
-  businessId         Int
-  type               SupplyActivityType
-  status             BusinessStatus      @default(PENDING)
-  name               String
-  slug               String              @unique
-  legalName          String?
-  description        String?
-  logo               String?
-  commercialRegister String?
-  taxId              String?
-  city               String
-  address            String?
-  verifiedAt         DateTime?
-  verifiedById       Int?
-  rejectionReason    String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  deletedAt          DateTime?
-
-  business     Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  verifiedBy   User?                      @relation("SupplyActivityVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
-  documents    SupplyActivityDocument[]
-  offers       WholesaleOffer[]
-
-  @@index([businessId])
-  @@index([type])
-  @@index([status])
-  @@index([deletedAt])
-}
-
-model SupplyActivityDocument {
-  id               Int                    @id @default(autoincrement())
-  supplyActivityId Int
-  type             BusinessDocumentType
-  url              String
-  notes            String?
-  status           BusinessDocumentStatus @default(PENDING)
-  reviewedById     Int?
-  reviewedAt       DateTime?
-  rejectionReason  String?
-  createdAt        DateTime               @default(now())
-
-  supplyActivity SupplyActivity @relation(fields: [supplyActivityId], references: [id], onDelete: Cascade)
-  reviewedBy     User?          @relation("SupplyActivityDocumentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-
-  @@index([supplyActivityId])
-  @@index([status])
-}
