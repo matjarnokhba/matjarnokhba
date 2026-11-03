@@ -411,6 +411,12 @@ model User {
 
   // ─── M1.2 back-relations ───
   wholesaleOffersApproved WholesaleOffer[] @relation("WholesaleOfferApprovedBy")
+
+  // ─── M1.3 back-relations ───
+  ledgerEntriesCreated LedgerEntry[]  @relation("LedgerEntryCreatedBy")
+  creditNotesIssued    CreditNote[]   @relation("CreditNoteIssuer")
+  returnOrdersApproved ReturnOrder[]  @relation("ReturnOrderApprovedBy")
+  returnOrdersRejected ReturnOrder[]  @relation("ReturnOrderRejectedBy")
 }
 
 model Address {
@@ -2716,6 +2722,15 @@ model BusinessUnit {
 
   // ─── M1.2 back-relations ───
   offers WholesaleOffer[]
+
+  // ─── M1.3 back-relations ───
+  ledgerBooks          LedgerBook[]
+  invoicesSent         Invoice[]     @relation("InvoiceSender")
+  invoicesReceived     Invoice[]     @relation("InvoiceReceiver")
+  paymentsMade         Payment[]     @relation("PaymentPayer")
+  settlementsReceived  Settlement[]  @relation("SettlementReceiver")
+  returnOrdersBuyer    ReturnOrder[] @relation("ReturnOrderBuyer")
+  returnOrdersSeller   ReturnOrder[] @relation("ReturnOrderSeller")
 }
 
 model BusinessUnitMember {
@@ -2913,6 +2928,9 @@ model MasterVariant {
 
   // ─── M1.2 back-relations ───
   offerVariants WholesaleOfferVariant[]
+
+  // ─── M1.3 back-relations ───
+  priceComparisons     PriceComparisonCache[]
 }
 
 model MasterProductVersion {
@@ -3164,6 +3182,9 @@ model WholesaleOrder {
   @@index([groupId])
   @@index([status, createdAt])
   @@index([orderNumber])
+
+  // ─── M1.3 back-relations ───
+  returnOrders ReturnOrder[]
 }
 
 model WholesaleOrderItem {
@@ -3187,6 +3208,9 @@ model WholesaleOrderItem {
   @@index([orderId])
   @@index([offerId])
   @@index([masterVariantId])
+
+  // ─── M1.3 back-relations ───
+  returnItems ReturnOrderItem[]
 }
 
 model InventoryLedger {
@@ -3210,6 +3234,9 @@ model InventoryLedger {
   @@index([inventoryBatchId])
   @@index([businessUnitId, createdAt])
   @@index([referenceType, referenceId])
+
+  // ─── M1.3 back-relations ───
+  returnRecord InventoryReturn?
 }
 
 model InventoryBalance {
@@ -3245,6 +3272,10 @@ model InventoryBatch {
 
   @@index([merchantVariantId, inventoryAccountId, receivedAt])
   @@index([sourceType, sourceReferenceId])
+
+  // ─── M1.3 back-relations ───
+  returnItemsSource      ReturnOrderItem[] @relation("ReturnItemSourceBatch")
+  inventoryReturnsSource InventoryReturn[] @relation("InventoryReturnSourceBatch")
 }
 
 model InventoryBatchAllocation {
@@ -3280,4 +3311,437 @@ model StockReservation {
   @@index([merchantVariantId, inventoryAccountId, status])
   @@index([expiresAt, status])
   @@index([referenceType, referenceId])
+}
+
+// ═══════════════════════════════════════════════════════════
+// WHOLESALE SYSTEM — M1.3: Financial, Returns, Prices
+// ═══════════════════════════════════════════════════════════
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum LedgerAccountSubtype {
+  CASH
+  BANK
+  INVENTORY
+  AR
+  AP
+  COMMISSION
+  TAX
+  SALES
+  PURCHASES
+  COGS
+  OTHER
+}
+
+enum WholesaleInvoiceType {
+  SALE
+  PURCHASE
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum WholesaleInvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  VOID
+}
+
+enum PaymentSettlementStatus {
+  PENDING
+  SETTLED
+  DISPUTED
+  CANCELLED
+}
+
+enum PaymentRefundStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+enum CreditNoteReasonCode {
+  RETURN
+  PARTIAL_REFUND
+  DISPUTE
+  OVERPAYMENT
+  OTHER
+}
+
+enum ReturnOrderStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PENDING_SHIPMENT
+  RECEIVED
+  INSPECTED
+  PARTIALLY_ACCEPTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ReturnItemCondition {
+  SELLABLE
+  DAMAGED
+  QUARANTINED
+  REJECTED_RETURN
+}
+
+model LedgerBook {
+  id             Int      @id @default(autoincrement())
+  businessUnitId Int
+  name           String
+  currency       String   @default("MAD")
+  isPrimary      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businessUnit BusinessUnit    @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  accounts     LedgerAccount[]
+  entries      LedgerEntry[]
+  invoices     Invoice[]
+
+  @@unique([businessUnitId, name])
+  @@index([businessUnitId])
+}
+
+model LedgerAccount {
+  id        Int                  @id @default(autoincrement())
+  bookId    Int
+  code      String
+  name      String
+  type      LedgerAccountType
+  subtype   LedgerAccountSubtype
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  book     LedgerBook     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  lines    LedgerLine[]
+  balances AccountBalance[]
+
+  @@unique([bookId, code])
+  @@index([bookId])
+  @@index([type])
+}
+
+model LedgerEntry {
+  id              Int      @id @default(autoincrement())
+  bookId          Int
+  referenceType   String
+  referenceId     Int
+  description     String
+  createdByUserId Int?
+  createdAt       DateTime @default(now())
+
+  book          LedgerBook    @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  createdByUser User?         @relation("LedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  lines         LedgerLine[]
+
+  @@index([bookId])
+  @@index([referenceType])
+  @@index([referenceId])
+}
+
+model LedgerLine {
+  id        Int      @id @default(autoincrement())
+  entryId   Int
+  accountId Int
+  debit     Decimal  @db.Decimal(14, 2) @default(0)
+  credit    Decimal  @db.Decimal(14, 2) @default(0)
+  createdAt DateTime @default(now())
+
+  entry   LedgerEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId])
+}
+
+model AccountBalance {
+  id          Int      @id @default(autoincrement())
+  accountId   Int
+  currency    String   @default("MAD")
+  debitTotal  Decimal  @db.Decimal(14, 2) @default(0)
+  creditTotal Decimal  @db.Decimal(14, 2) @default(0)
+  balance     Decimal  @db.Decimal(14, 2) @default(0)
+  lastLineId  Int?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, currency])
+  @@index([accountId])
+}
+
+model Invoice {
+  id                         Int                    @id @default(autoincrement())
+  bookId                     Int
+  invoiceNumber              String                 @unique
+  invoiceType                WholesaleInvoiceType
+  originalInvoiceId          Int?
+  businessUnitId             Int
+  counterpartyBusinessUnitId Int
+  orderId                    Int?
+  returnOrderId              Int?
+  subtotal                   Decimal                @db.Decimal(14, 2)
+  taxAmount                  Decimal                @db.Decimal(14, 2) @default(0)
+  total                      Decimal                @db.Decimal(14, 2)
+  paidAmount                 Decimal                @db.Decimal(14, 2) @default(0)
+  status                     WholesaleInvoiceStatus @default(DRAFT)
+  issuedAt                   DateTime?
+  dueAt                      DateTime?
+  notes                      String?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  book                 LedgerBook   @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  businessUnit         BusinessUnit @relation("InvoiceSender", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  counterpartyBusiness BusinessUnit @relation("InvoiceReceiver", fields: [counterpartyBusinessUnitId], references: [id], onDelete: Restrict)
+  originalInvoice      Invoice?     @relation("InvoiceCorrection", fields: [originalInvoiceId], references: [id], onDelete: SetNull)
+  corrections          Invoice[]    @relation("InvoiceCorrection")
+  creditNote           CreditNote?
+  creditNoteOriginal   CreditNote[] @relation("CreditNoteOriginal")
+  allocations          PaymentAllocation[]
+
+  @@index([businessUnitId])
+  @@index([counterpartyBusinessUnitId])
+  @@index([originalInvoiceId])
+  @@index([invoiceType])
+  @@index([status])
+}
+
+model CreditNote {
+  id                Int                   @id @default(autoincrement())
+  invoiceId         Int                   @unique
+  originalInvoiceId Int
+  returnOrderId     Int?
+  amount            Decimal               @db.Decimal(14, 2)
+  reasonCode        CreditNoteReasonCode
+  reasonText        String?
+  issuedByUserId    Int?
+  issuedAt          DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  originalInvoice Invoice      @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  returnOrder     ReturnOrder? @relation(fields: [returnOrderId], references: [id], onDelete: SetNull)
+  issuedByUser    User?        @relation("CreditNoteIssuer", fields: [issuedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([originalInvoiceId])
+  @@index([returnOrderId])
+}
+
+model Payment {
+  id                         Int      @id @default(autoincrement())
+  groupId                    Int?
+  paymentNumber              String   @unique
+  businessUnitId             Int
+  counterpartyBusinessUnitId Int?
+  amount                     Decimal  @db.Decimal(14, 2)
+  currency                   String   @default("MAD")
+  method                     String
+  status                     String   @default("CONFIRMED")
+  paidAt                     DateTime @default(now())
+  notes                      String?
+  createdByUserId            Int?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  group        PaymentGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  businessUnit BusinessUnit       @relation("PaymentPayer", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  allocations  PaymentAllocation[]
+  refunds      Refund[]
+  settlement   Settlement?
+
+  @@index([businessUnitId])
+  @@index([counterpartyBusinessUnitId])
+  @@index([groupId])
+  @@index([status])
+}
+
+model PaymentAllocation {
+  id              Int      @id @default(autoincrement())
+  paymentId       Int
+  invoiceId       Int
+  allocatedAmount Decimal  @db.Decimal(14, 2)
+  refundedAmount  Decimal  @db.Decimal(14, 2) @default(0)
+  createdAt       DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model PaymentGroup {
+  id                    Int      @id @default(autoincrement())
+  groupNumber           String   @unique
+  businessUnitId        Int
+  totalAmount           Decimal  @db.Decimal(14, 2)
+  status                String   @default("PENDING")
+  referenceOrderGroupId Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  payments Payment[]
+
+  @@index([businessUnitId])
+  @@index([referenceOrderGroupId])
+}
+
+model Settlement {
+  id              Int                     @id @default(autoincrement())
+  paymentId       Int                     @unique
+  businessUnitId  Int
+  amount          Decimal                 @db.Decimal(14, 2)
+  status          PaymentSettlementStatus @default(PENDING)
+  settledAt       DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  businessUnit BusinessUnit @relation("SettlementReceiver", fields: [businessUnitId], references: [id], onDelete: Restrict)
+
+  @@index([businessUnitId])
+  @@index([status])
+}
+
+model Refund {
+  id                  Int                 @id @default(autoincrement())
+  refundNumber        String              @unique
+  paymentId           Int
+  paymentAllocationId Int?
+  amount              Decimal             @db.Decimal(14, 2)
+  method              String
+  status              PaymentRefundStatus @default(PENDING)
+  reason              String?
+  processedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([status])
+}
+
+model ReturnOrder {
+  id                   Int               @id @default(autoincrement())
+  returnNumber         String            @unique
+  originalOrderId      Int
+  buyerBusinessUnitId  Int
+  sellerBusinessUnitId Int
+  status               ReturnOrderStatus @default(REQUESTED)
+  reason               String
+  expectedRefundAmount Decimal?          @db.Decimal(14, 2)
+  approvedRefundAmount Decimal?          @db.Decimal(14, 2)
+  approvedByUserId     Int?
+  approvedAt           DateTime?
+  rejectedByUserId     Int?
+  rejectedAt           DateTime?
+  rejectionReason      String?
+  completedAt          DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  originalOrder      WholesaleOrder  @relation(fields: [originalOrderId], references: [id], onDelete: Restrict)
+  buyerBusinessUnit  BusinessUnit    @relation("ReturnOrderBuyer", fields: [buyerBusinessUnitId], references: [id], onDelete: Restrict)
+  sellerBusinessUnit BusinessUnit    @relation("ReturnOrderSeller", fields: [sellerBusinessUnitId], references: [id], onDelete: Restrict)
+  approvedByUser     User?           @relation("ReturnOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedByUser     User?           @relation("ReturnOrderRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  items              ReturnOrderItem[]
+  creditNotes        CreditNote[]
+
+  @@index([originalOrderId])
+  @@index([buyerBusinessUnitId])
+  @@index([sellerBusinessUnitId])
+  @@index([status])
+  @@index([returnNumber])
+}
+
+model ReturnOrderItem {
+  id                  Int                 @id @default(autoincrement())
+  returnOrderId       Int
+  originalOrderItemId Int
+  quantityRequested   Int
+  quantityReceived    Int                 @default(0)
+  quantityAccepted    Int                 @default(0)
+  condition           ReturnItemCondition @default(SELLABLE)
+  sourceBatchId       Int?
+  notes               String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  returnOrder       ReturnOrder       @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
+  originalOrderItem WholesaleOrderItem @relation(fields: [originalOrderItemId], references: [id], onDelete: Restrict)
+  inventoryReturns  InventoryReturn[]
+  sourceBatch       InventoryBatch?   @relation("ReturnItemSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
+  @@index([returnOrderId])
+  @@index([originalOrderItemId])
+  @@index([sourceBatchId])
+}
+
+model InventoryReturn {
+  id                Int                 @id @default(autoincrement())
+  returnOrderItemId Int
+  inventoryLedgerId Int                 @unique
+  sourceBatchId     Int?
+  condition         ReturnItemCondition
+  quantity          Int
+  createdAt         DateTime            @default(now())
+
+  returnOrderItem ReturnOrderItem @relation(fields: [returnOrderItemId], references: [id], onDelete: Cascade)
+  inventoryLedger InventoryLedger @relation(fields: [inventoryLedgerId], references: [id], onDelete: Restrict)
+  sourceBatch     InventoryBatch? @relation("InventoryReturnSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
+  @@index([returnOrderItemId])
+  @@index([sourceBatchId])
+}
+
+model PriceComparisonCache {
+  id                  Int      @id @default(autoincrement())
+  masterVariantId     Int
+  sellingUnitId       Int
+  tierMinQty          Int
+  tierMaxQty          Int?
+  lowestPrice         Decimal  @db.Decimal(14, 2)
+  lowestPriceOfferId  Int?
+  eligibleOffersCount Int
+  threshold5Percent   Decimal  @db.Decimal(14, 2)
+  threshold10Percent  Decimal  @db.Decimal(14, 2)
+  calculatedAt        DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  masterVariant MasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([masterVariantId, sellingUnitId, tierMinQty])
+  @@index([masterVariantId])
+  @@index([calculatedAt])
+}
+
+model PriceAlertSetting {
+  id               Int      @id @default(autoincrement())
+  masterCategoryId Int?
+  businessUnitType String?
+  thresholdPercent Decimal  @db.Decimal(5, 2) @default(5.0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([masterCategoryId])
+  @@index([isActive])
 }
