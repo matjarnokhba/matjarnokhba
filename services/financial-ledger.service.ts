@@ -105,14 +105,15 @@ export const FinancialLedgerService = {
   /**
    * Ensure a LedgerBook exists for a business unit (creates + seeds accounts if needed).
    */
-  async ensureBook(businessUnitId: number, userId?: number): Promise<number> {
-    const existing = await prisma.ledgerBook.findFirst({
+  async ensureBook(businessUnitId: number, userId?: number, outerTx?: any): Promise<number> {
+    const db = outerTx ?? prisma;
+    const existing = await db.ledgerBook.findFirst({
       where: { businessUnitId, isPrimary: true, isActive: true },
       select: { id: true },
     });
     if (existing) return existing.id;
 
-    const created = await prisma.$transaction(async (tx) => {
+    const runner = async (tx: any) => {
       const book = await tx.ledgerBook.create({
         data: {
           businessUnitId,
@@ -151,8 +152,13 @@ export const FinancialLedgerService = {
       });
 
       return book;
-    });
+    };
 
+    if (outerTx) {
+      const book = await runner(outerTx);
+      return book.id;
+    }
+    const created = await prisma.$transaction(runner);
     return created.id;
   },
 
@@ -198,7 +204,7 @@ export const FinancialLedgerService = {
    * Validates: sum(debits) = sum(credits), each line has exactly one side.
    * Updates AccountBalance for each affected account.
    */
-  async postEntry(input: PostEntryInput): Promise<number> {
+  async postEntry(input: PostEntryInput, outerTx?: any): Promise<number> {
     if (!input.lines || input.lines.length === 0) {
       throw new ValidationError("القيد يجب أن يحتوي على سطر واحد على الأقل");
     }
@@ -236,7 +242,7 @@ export const FinancialLedgerService = {
 
     const book = await getBookOrThrow(input.bookId);
 
-    return prisma.$transaction(async (tx) => {
+    const runner = async (tx: any) => {
       // Verify all accounts belong to book
       const accountIds = [...new Set(normalized.map((l) => l.accountId))];
       const accounts = await tx.ledgerAccount.findMany({
@@ -343,7 +349,10 @@ export const FinancialLedgerService = {
       });
 
       return entry.id;
-    });
+    };
+
+    if (outerTx) return runner(outerTx);
+    return prisma.$transaction(runner);
   },
 
   /**
@@ -352,7 +361,8 @@ export const FinancialLedgerService = {
   async reverseEntry(
     entryId: number,
     reason: string,
-    userId?: number
+    userId?: number,
+    outerTx?: any
   ): Promise<number> {
     if (!reason || reason.trim().length < 3) {
       throw new ValidationError("سبب الإلغاء مطلوب");
@@ -381,7 +391,7 @@ export const FinancialLedgerService = {
     }
 
     // Create reversing entry
-    const reversing = await prisma.$transaction(async (tx) => {
+    const runner = async (tx: any) => {
       const newEntry = await tx.ledgerEntry.create({
         data: {
           bookId: original.bookId,
@@ -462,8 +472,11 @@ export const FinancialLedgerService = {
       });
 
       return newEntry;
-    });
+    };
 
+    const reversing = outerTx
+      ? await runner(outerTx)
+      : await prisma.$transaction(runner);
     return reversing.id;
   },
 
