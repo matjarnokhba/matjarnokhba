@@ -263,15 +263,26 @@ export const BusinessUnitService = {
       throw new ConflictError("المستخدم عضو بالفعل في هذا النشاط");
     }
 
-    const member = await prisma.businessUnitMember.create({
-      data: {
-        businessUnitId,
-        userId: input.userId,
-        role: input.role,
-        permissions: input.permissions as any,
-        isActive: true,
-      },
-    });
+    const member = existing
+      ? await prisma.businessUnitMember.update({
+          where: { id: existing.id },
+          data: {
+            role: input.role,
+            permissions: input.permissions as any,
+            isActive: true,
+            deletedAt: null,
+            joinedAt: new Date(),
+          },
+        })
+      : await prisma.businessUnitMember.create({
+          data: {
+            businessUnitId,
+            userId: input.userId,
+            role: input.role,
+            permissions: input.permissions as any,
+            isActive: true,
+          },
+        });
 
     await logWholesaleAction(null, {
       userId,
