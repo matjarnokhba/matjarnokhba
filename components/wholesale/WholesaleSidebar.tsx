@@ -34,7 +34,7 @@ const NAV_ITEMS = [
     label: "الطلبات",
     enabled: true,
   },
-  { href: "/wholesale/inventory", icon: Package, label: "المخزون", enabled: false },
+  { href: "/wholesale/inventory", icon: Package, label: "المخزون", enabled: true },
   { href: "/wholesale/financial", icon: Wallet, label: "المالية", enabled: false },
   {
     href: "/wholesale/settings",
