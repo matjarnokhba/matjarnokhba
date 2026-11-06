@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/ui/cn";
 
 export interface PageHeaderProps {
-  title: string;
-  description?: string;
+  title: ReactNode;
+  description?: ReactNode;
   action?: ReactNode;
   breadcrumbs?: ReactNode;
   className?: string;
