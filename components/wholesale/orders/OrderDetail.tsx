@@ -11,8 +11,10 @@ import {
   Receipt,
   Info,
   AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
@@ -315,6 +317,26 @@ export function OrderDetail({
               )}
             </dl>
           </Card>
+
+          {isBuyer && currentStatus === "DELIVERED" && (
+            <Card>
+              <h3 className="mb-2 text-sm font-bold text-gray-900">
+                إرجاع المنتجات
+              </h3>
+              <p className="mb-3 text-xs text-gray-500">
+                يمكنك إرجاع منتجات من هذا الطلب إذا كانت هناك مشكلة.
+              </p>
+              <Link href={`/wholesale/returns/new?orderId=${order.id}`}>
+                <Button
+                  variant="outline"
+                  fullWidth
+                  iconLeft={<RotateCcw className="h-4 w-4" />}
+                >
+                  طلب إرجاع
+                </Button>
+              </Link>
+            </Card>
+          )}
 
           <OrderActions
             orderId={order.id}

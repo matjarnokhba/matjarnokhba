@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   RotateCcw,
   ArrowLeft,
+  Plus,
   Calendar,
   Building2,
   ShoppingCart,
@@ -130,6 +131,13 @@ export function ReturnsList({
       <PageHeader
         title="المرتجعات"
         description="طلبات الإرجاع التي أرسلتها أو استلمتها"
+        action={
+          <Link href="/wholesale/returns/new">
+            <Button iconLeft={<Plus className="h-4 w-4" />}>
+              طلب إرجاع
+            </Button>
+          </Link>
+        }
       />
 
       {businessUnits.length === 0 ? (
