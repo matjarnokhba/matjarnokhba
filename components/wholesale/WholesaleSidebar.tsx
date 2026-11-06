@@ -32,7 +32,7 @@ const NAV_ITEMS = [
     href: "/wholesale/orders",
     icon: ShoppingCart,
     label: "الطلبات",
-    enabled: false,
+    enabled: true,
   },
   { href: "/wholesale/inventory", icon: Package, label: "المخزون", enabled: false },
   { href: "/wholesale/financial", icon: Wallet, label: "المالية", enabled: false },
