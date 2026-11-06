@@ -132,6 +132,13 @@ export function formatDateTime(iso: string): string {
   }
 }
 
+export function formatMoney(n: number): string {
+  return n.toLocaleString("ar-MA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export function computePriceForQty(
   tiers: Array<{ minQty: number; maxQty: number | null; unitPrice: number }>,
   qty: number
