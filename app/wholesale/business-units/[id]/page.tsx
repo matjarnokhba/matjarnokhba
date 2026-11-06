@@ -36,11 +36,13 @@ export default async function BusinessUnitDetailPage({
 
   if (!bu) notFound();
 
+  const isAdmin =
+    current.user.role === "ADMIN" || current.user.role === "SUPER_ADMIN";
   const isOwner = bu.owner.userId === current.user.id;
   const memberRecord = bu.members.find(
     (m) => m.userId === current.user.id && m.isActive
   );
-  if (!isOwner && !memberRecord) notFound();
+  if (!isOwner && !memberRecord && !isAdmin) notFound();
 
   // Stats
   const [productCount, offerCount, orderCount, inventoryAgg] =

@@ -80,3 +80,14 @@ export const ROLE_LABEL: Record<string, string> = {
 export function getCapLabel(cap: string): string {
   return CAPABILITY_LABEL[cap] ?? cap;
 }
+export function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("ar-MA", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
