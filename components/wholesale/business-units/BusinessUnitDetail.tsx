@@ -13,6 +13,7 @@ import {
   Building2,
   Users,
   Settings,
+  ArrowLeft,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -205,6 +206,40 @@ export function BusinessUnitDetail({
               </div>
             )}
           </Card>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link href={`/wholesale/offers?businessUnitId=${businessUnit.id}`}>
+              <Card className="cursor-pointer transition-shadow hover:shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
+                    <Tag className="h-5 w-5 text-[#ff5c00]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-900">عروض الجملة</p>
+                    <p className="text-xs text-gray-500">
+                      {stats.offerCount} عرض · عرض منتجاتك للتجار
+                    </p>
+                  </div>
+                  <ArrowLeft className="h-4 w-4 text-gray-400" />
+                </div>
+              </Card>
+            </Link>
+            <Link href="/wholesale/offers/new">
+              <Card className="cursor-pointer border-2 border-dashed border-gray-300 transition-colors hover:border-[#ff5c00]">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
+                    <Package className="h-5 w-5 text-gray-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-900">إضافة عرض جديد</p>
+                    <p className="text-xs text-gray-500">
+                      اعرض منتجًا أصليًا للبيع بالجملة
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          </div>
 
           {businessUnit.verificationStatus === "PENDING" && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

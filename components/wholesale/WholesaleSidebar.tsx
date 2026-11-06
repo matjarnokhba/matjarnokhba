@@ -27,7 +27,7 @@ const NAV_ITEMS = [
     label: "الأنشطة التجارية",
     enabled: true,
   },
-  { href: "/wholesale/offers", icon: Tag, label: "عروض الجملة", enabled: false },
+  { href: "/wholesale/offers", icon: Tag, label: "عروض الجملة", enabled: true },
   {
     href: "/wholesale/orders",
     icon: ShoppingCart,
