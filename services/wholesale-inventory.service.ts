@@ -55,7 +55,7 @@ type TransferOutInput = {
   quantity: number;
   referenceType: string;
   referenceId: number;
-  type: "SALE_OUT" | "TRANSFER_OUT" | "DAMAGE" | "ADJUSTMENT";
+  type: "SALE_OUT" | "TRANSFER_OUT" | "RETURN_OUT" | "DAMAGE" | "ADJUSTMENT";
   notes?: string;
   userId?: number;
 };
