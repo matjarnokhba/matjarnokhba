@@ -224,7 +224,7 @@ export function BusinessUnitDetail({
                 </div>
               </Card>
             </Link>
-            <Link href="/wholesale/offers/new">
+            <Link href={`/wholesale/offers/new?businessUnitId=${businessUnit.id}`}>
               <Card className="cursor-pointer border-2 border-dashed border-gray-300 transition-colors hover:border-[#ff5c00]">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
