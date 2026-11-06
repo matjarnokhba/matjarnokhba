@@ -2750,6 +2750,9 @@ model BusinessUnit {
 
   // ─── M5.3 Ledger ───
   ledgerContacts   LedgerContact[] @relation("BULedgerContacts")
+
+  // ─── M5.4 Transfers ───
+  inventoryTransfers InventoryTransfer[]
 }
 
 model BusinessUnitMember {
@@ -3822,4 +3825,25 @@ model LedgerContactEntry {
   @@index([contactId, createdAt])
   @@index([referenceType, referenceId])
   @@index([createdByUserId])
+}
+// ═══════════════════════════════════════════════════════════
+// WHOLESALE — Inventory Transfers (M5.4)
+// ═══════════════════════════════════════════════════════════
+
+model InventoryTransfer {
+  id                Int      @id @default(autoincrement())
+  transferNumber    String   @unique
+  businessUnitId    Int
+  merchantVariantId Int
+  fromAccountId     Int
+  toAccountId       Int
+  quantity          Int
+  notes             String?
+  createdByUserId   Int
+  createdAt         DateTime @default(now())
+
+  businessUnit BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+
+  @@index([businessUnitId, createdAt])
+  @@index([merchantVariantId])
 }

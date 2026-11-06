@@ -457,7 +457,7 @@ export const WholesaleInventoryService = {
         inventoryAccountId: input.inventoryAccountId,
         inventoryBatchId: batch.id,
         businessUnitId: input.businessUnitId,
-        type: "PURCHASE_IN",
+        type: (input.sourceType === "TRANSFER" ? "TRANSFER_IN" : input.sourceType === "RETURN" ? "RETURN_IN" : "PURCHASE_IN") as any,
         quantity: input.quantity,
         referenceType: input.referenceType,
         referenceId: input.referenceId,
