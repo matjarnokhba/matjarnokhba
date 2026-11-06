@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Building2,
+  ShoppingBag,
   Tag,
   ShoppingCart,
   Package,
@@ -26,6 +27,12 @@ const NAV_ITEMS = [
     href: "/wholesale/business-units",
     icon: Building2,
     label: "الأنشطة التجارية",
+    enabled: true,
+  },
+  {
+    href: "/wholesale/marketplace",
+    icon: ShoppingBag,
+    label: "سوق الجملة",
     enabled: true,
   },
   { href: "/wholesale/offers", icon: Tag, label: "عروض الجملة", enabled: true },
