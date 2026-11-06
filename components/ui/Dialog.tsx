@@ -14,8 +14,8 @@ const sizeClasses = {
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
-  title: string;
-  description?: string;
+  title: ReactNode;
+  description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   size?: keyof typeof sizeClasses;
