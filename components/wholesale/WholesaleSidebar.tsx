@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Settings,
   ShoppingBasket,
+  BookOpen,
   Bell,
   Store,
   LogOut,
@@ -49,6 +50,12 @@ const NAV_ITEMS = [
     href: "/wholesale/notifications",
     icon: Bell,
     label: "الإشعارات",
+    enabled: true,
+  },
+  {
+    href: "/wholesale/ledger",
+    icon: BookOpen,
+    label: "دفتر الديون",
     enabled: true,
   },
   {
