@@ -2747,6 +2747,9 @@ model BusinessUnit {
   settlementsReceived  Settlement[]  @relation("SettlementReceiver")
   returnOrdersBuyer    ReturnOrder[] @relation("ReturnOrderBuyer")
   returnOrdersSeller   ReturnOrder[] @relation("ReturnOrderSeller")
+
+  // ─── M5.3 Ledger ───
+  ledgerContacts   LedgerContact[] @relation("BULedgerContacts")
 }
 
 model BusinessUnitMember {
@@ -3760,4 +3763,63 @@ model PriceAlertSetting {
 
   @@index([masterCategoryId])
   @@index([isActive])
+}
+
+// ═══════════════════════════════════════════════════════════
+// WHOLESALE LEDGER — Debt Book (M5.3)
+// ═══════════════════════════════════════════════════════════
+
+enum LedgerEntryType {
+  GAVE        // "أعطيته" — balance increases (they owe us)
+  TOOK        // "أخذت منه" — balance decreases (we owe them)
+  SETTLEMENT  // direct balance adjustment (no direction)
+}
+
+model LedgerContact {
+  id              Int       @id @default(autoincrement())
+  businessUnitId  Int
+  name            String
+  contactType     String    @default("EXTERNAL")  // PLATFORM_TRADER | EXTERNAL | EMPLOYEE | SUPPLIER
+  linkedUserId    Int?
+  linkedBUId      Int?
+  phone           String?
+  email           String?
+  notes           String?
+  openingBalance  Decimal   @default(0) @db.Decimal(12, 2)
+  currentBalance  Decimal   @default(0) @db.Decimal(12, 2)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  businessUnit BusinessUnit         @relation("BULedgerContacts", fields: [businessUnitId], references: [id], onDelete: Cascade)
+  entries      LedgerContactEntry[]
+
+  @@index([businessUnitId, isActive])
+  @@index([businessUnitId, deletedAt])
+  @@index([linkedUserId])
+  @@index([linkedBUId])
+}
+
+model LedgerContactEntry {
+  id              Int             @id @default(autoincrement())
+  contactId       Int
+  type            LedgerEntryType
+  amount          Decimal         @db.Decimal(12, 2)
+  balanceBefore   Decimal         @db.Decimal(12, 2)
+  balanceAfter    Decimal         @db.Decimal(12, 2)
+  entryDate       DateTime        @default(now())
+  description     String
+  referenceType   String?         // MANUAL | WHOLESALE_ORDER | WHOLESALE_RETURN | PAYMENT
+  referenceId     Int?
+  attachmentUrl   String?
+  createdByUserId Int
+  createdAt       DateTime        @default(now())
+
+  contact LedgerContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, entryDate])
+  @@index([contactId, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([createdByUserId])
 }
