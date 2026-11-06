@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Eye,
   Building2,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -18,6 +19,7 @@ import { Empty } from "@/components/ui/Empty";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { cn } from "@/lib/ui/cn";
 import { VariantDetailDialog } from "./VariantDetailDialog";
+import { TransferDialog } from "./TransferDialog";
 import {
   ACCOUNT_TYPE_LABEL,
   ACCOUNT_TYPE_VARIANT,
@@ -57,6 +59,7 @@ export function InventoryPage({
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
     null
   );
+  const [transferRow, setTransferRow] = useState<BalanceRow | null>(null);
 
   const handleBUChange = (newBUId: string) => {
     router.push(`/wholesale/inventory?businessUnitId=${newBUId}`);
@@ -300,16 +303,29 @@ export function InventoryPage({
                           {formatNumber(r.available)}
                         </td>
                         <td className="px-3 py-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openVariantDetail(r.merchantVariantId)
-                            }
-                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-[#ff5c00]"
-                            aria-label="عرض التفاصيل"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {r.available > 0 && accounts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setTransferRow(r)}
+                                className="rounded p-1 text-gray-400 hover:bg-orange-50 hover:text-[#ff5c00]"
+                                aria-label="تحويل مخزون"
+                                title="تحويل إلى حساب آخر"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openVariantDetail(r.merchantVariantId)
+                              }
+                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-[#ff5c00]"
+                              aria-label="عرض التفاصيل"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -413,6 +429,24 @@ export function InventoryPage({
         businessUnitId={initialBusinessUnitId}
         merchantVariantId={selectedVariantId}
       />
+
+      {transferRow && (
+        <TransferDialog
+          open={true}
+          onClose={() => setTransferRow(null)}
+          businessUnitId={initialBusinessUnitId}
+          accounts={accounts}
+          merchantVariantId={transferRow.merchantVariantId}
+          sourceAccountId={transferRow.inventoryAccountId}
+          productName={transferRow.productName}
+          sku={transferRow.sku}
+          maxQuantity={transferRow.available}
+          onSuccess={() => {
+            setTransferRow(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
