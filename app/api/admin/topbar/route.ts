@@ -56,6 +56,33 @@ export async function GET() {
       }),
     ]);
 
+    // ═══ Wholesale counts ═══
+    const [
+      wholesaleMastersPending,
+      wholesaleOffersPending,
+      wholesaleBUsPending,
+      wholesaleReturnsPending,
+    ] = await Promise.all([
+      prisma.masterProduct.count({
+        where: { status: "PENDING_REVIEW", deletedAt: null },
+      }),
+      prisma.wholesaleOffer.count({
+        where: { status: "PENDING_REVIEW", deletedAt: null },
+      }),
+      prisma.businessUnit.count({
+        where: {
+          verificationStatus: "PENDING",
+          deletedAt: null,
+          status: "ACTIVE",
+        },
+      }),
+      prisma.returnOrder.count({
+        where: {
+          status: { in: ["REQUESTED", "PENDING_SHIPMENT"] as any },
+        },
+      }),
+    ]);
+
     return NextResponse.json({
       success: true,
       counts: {
@@ -67,6 +94,10 @@ export async function GET() {
         withdrawalsPending,
         legalNoticesActive,
         handoverPending,
+        wholesaleMastersPending,
+        wholesaleOffersPending,
+        wholesaleBUsPending,
+        wholesaleReturnsPending,
       },
       notificationsList: unreadList,
     });

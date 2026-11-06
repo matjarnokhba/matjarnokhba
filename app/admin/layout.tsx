@@ -63,6 +63,30 @@ export default async function AdminLayout({
       href: "/admin/handover",
       icon: "handover" as const,
     },
+    {
+      countKey: "wholesaleMastersPending",
+      label: "منتجات جملة بانتظار المراجعة",
+      href: "/admin/wholesale/master-products?status=PENDING_REVIEW",
+      icon: "products" as const,
+    },
+    {
+      countKey: "wholesaleOffersPending",
+      label: "عروض جملة بانتظار المراجعة",
+      href: "/admin/wholesale/offers?status=PENDING_REVIEW",
+      icon: "products" as const,
+    },
+    {
+      countKey: "wholesaleBUsPending",
+      label: "أنشطة جملة بانتظار التحقق",
+      href: "/admin/wholesale/business-units?verification=PENDING",
+      icon: "sellers" as const,
+    },
+    {
+      countKey: "wholesaleReturnsPending",
+      label: "مرتجعات جملة نشطة",
+      href: "/admin/wholesale/returns",
+      icon: "returns" as const,
+    },
   ];
 
   return (

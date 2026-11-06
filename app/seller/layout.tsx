@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SessionService } from "@/services/session.service";
 import SellerSidebar from "@/components/seller/SellerSidebar";
 import RoleTopBar from "@/components/layout/RoleTopBar";
+import { WholesaleQuickAccess } from "@/components/wholesale/WholesaleQuickAccess";
 
 export default async function SellerLayout({
   children,
@@ -77,6 +78,18 @@ export default async function SellerLayout({
       href: "/seller/returns-batches",
       icon: "batches" as const,
     },
+    {
+      countKey: "wholesaleOrdersIncoming",
+      label: "طلبات جملة واردة",
+      href: "/wholesale/orders?direction=seller",
+      icon: "orders" as const,
+    },
+    {
+      countKey: "wholesaleReturnsPending",
+      label: "مرتجعات جملة",
+      href: "/wholesale/returns?direction=seller",
+      icon: "returns" as const,
+    },
   ];
 
   return (
@@ -97,6 +110,7 @@ export default async function SellerLayout({
       <main className="min-w-0 overflow-x-hidden pt-14 lg:mr-64">
         {children}
       </main>
+      <WholesaleQuickAccess />
     </div>
   );
 }

@@ -55,6 +55,51 @@ export async function GET() {
       }),
     ]);
 
+    // ═══ Wholesale counts (if user has wholesale BUs) ═══
+    let wholesaleOrdersIncoming = 0;
+    let wholesaleReturnsPending = 0;
+    try {
+      const [wholeOwner, wholeMembers] = await Promise.all([
+        prisma.businessOwner.findUnique({
+          where: { userId },
+          select: {
+            businessUnits: {
+              where: { deletedAt: null, status: "ACTIVE" },
+              select: { id: true },
+            },
+          },
+        }),
+        prisma.businessUnitMember.findMany({
+          where: { userId, isActive: true, deletedAt: null },
+          select: { businessUnitId: true },
+        }),
+      ]);
+      const wholeBUIds = [
+        ...(wholeOwner?.businessUnits.map((b) => b.id) ?? []),
+        ...wholeMembers.map((m) => m.businessUnitId),
+      ];
+      if (wholeBUIds.length > 0) {
+        const [oCount, rCount] = await Promise.all([
+          prisma.wholesaleOrder.count({
+            where: {
+              sellerBusinessUnitId: { in: wholeBUIds },
+              status: "PENDING",
+            },
+          }),
+          prisma.returnOrder.count({
+            where: {
+              sellerBusinessUnitId: { in: wholeBUIds },
+              status: "REQUESTED",
+            },
+          }),
+        ]);
+        wholesaleOrdersIncoming = oCount;
+        wholesaleReturnsPending = rCount;
+      }
+    } catch (e) {
+      // Silently ignore — no wholesale access
+    }
+
     return NextResponse.json({
       success: true,
       counts: {
@@ -64,6 +109,8 @@ export async function GET() {
         returnsToConfirm,
         batchesToConfirm,
         productsPendingOwnerApproval,
+        wholesaleOrdersIncoming,
+        wholesaleReturnsPending,
       },
       notificationsList: unreadList,
     });
