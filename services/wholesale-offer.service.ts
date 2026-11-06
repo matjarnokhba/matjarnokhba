@@ -6,6 +6,7 @@ import {
   ValidationError,
 } from "@/lib/wholesale/errors";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
+import { NotificationService } from "./notification.service";
 import {
   assertBusinessUnitCapability,
   assertBusinessUnitPermission,
@@ -462,6 +463,14 @@ export const WholesaleOfferService = {
           reviewLevel: "MANUAL",
         },
       });
+      await NotificationService.createForBU({
+        businessUnitId: offer.businessUnitId,
+        type: "WHOLESALE_OFFER_APPROVED",
+        title: "تم اعتماد عرضك",
+        message: `تم اعتماد عرض "${offer.master.name}" — ظاهر الآن في سوق الجملة`,
+        link: `/wholesale/offers/${offerId}`,
+        severity: "SUCCESS",
+      }, tx);
       await logWholesaleAction(tx, {
         userId: adminUserId,
         businessUnitId: offer.businessUnitId,
@@ -484,6 +493,14 @@ export const WholesaleOfferService = {
         where: { id: offerId },
         data: { status: "REJECTED", notes: reason.trim() },
       });
+      await NotificationService.createForBU({
+        businessUnitId: offer.businessUnitId,
+        type: "WHOLESALE_OFFER_REJECTED",
+        title: "تم رفض عرضك",
+        message: `تم رفض عرض "${offer.master.name}". السبب: ${reason.trim()}`,
+        link: `/wholesale/offers/${offerId}`,
+        severity: "WARNING",
+      }, tx);
       await logWholesaleAction(tx, {
         userId: adminUserId,
         businessUnitId: offer.businessUnitId,

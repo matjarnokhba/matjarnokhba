@@ -9,6 +9,7 @@ import { logWholesaleAction } from "@/lib/wholesale/audit";
 import { getBusinessUnitContext } from "@/lib/wholesale/context";
 import { WholesaleInventoryService } from "./wholesale-inventory.service";
 import { WholesaleInvoiceService } from "./wholesale-invoice.service";
+import { NotificationService } from "./notification.service";
 
 // ═══ Types ═══
 type ReturnItemCondition = "SELLABLE" | "DAMAGED" | "QUARANTINED" | "REJECTED_RETURN";
@@ -226,6 +227,15 @@ export const WholesaleReturnService = {
       },
     });
 
+    await NotificationService.createForBU({
+      businessUnitId: order.sellerBusinessUnitId,
+      type: "WHOLESALE_RETURN_REQUESTED",
+      title: "طلب إرجاع جديد",
+      message: `طلب إرجاع ${returnNumber} بقيمة ${round2(expectedRefundAmount).toFixed(2)} د.م`,
+      link: `/wholesale/returns/${created.id}`,
+      severity: "WARNING",
+    }, tx);
+
     return created.id;
   },
 
@@ -247,6 +257,14 @@ export const WholesaleReturnService = {
         approvedAt: new Date(),
       },
     });
+    await NotificationService.createForBU({
+      businessUnitId: returnOrder.buyerBusinessUnitId,
+      type: "WHOLESALE_RETURN_APPROVED",
+      title: "تم قبول طلب الإرجاع",
+      message: `تم قبول طلب ${returnOrder.returnNumber} — يمكنك إرسال المنتجات`,
+      link: `/wholesale/returns/${returnId}`,
+      severity: "SUCCESS",
+    }, tx);
 
     await logWholesaleAction(tx, {
       userId,
@@ -279,6 +297,14 @@ export const WholesaleReturnService = {
         rejectionReason: reason.trim(),
       },
     });
+    await NotificationService.createForBU({
+      businessUnitId: returnOrder.buyerBusinessUnitId,
+      type: "WHOLESALE_RETURN_REJECTED",
+      title: "تم رفض طلب الإرجاع",
+      message: `تم رفض ${returnOrder.returnNumber}. السبب: ${reason.trim()}`,
+      link: `/wholesale/returns/${returnId}`,
+      severity: "WARNING",
+    }, tx);
 
     await logWholesaleAction(tx, {
       userId,
@@ -652,6 +678,14 @@ export const WholesaleReturnService = {
         completedAt: new Date(),
       },
     });
+    await NotificationService.createForBU({
+      businessUnitId: returnOrder.buyerBusinessUnitId,
+      type: "WHOLESALE_RETURN_COMPLETED",
+      title: "تم إكمال المرتجع",
+      message: `تم إكمال ${returnOrder.returnNumber}. المبلغ المعتمد: ${round2(totalAcceptedValue).toFixed(2)} د.م`,
+      link: `/wholesale/returns/${returnId}`,
+      severity: "SUCCESS",
+    }, tx);
 
     await logWholesaleAction(tx, {
       userId,

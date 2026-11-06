@@ -7,6 +7,7 @@ import {
   ForbiddenError,
 } from "@/lib/wholesale/errors";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
+import { NotificationService } from "./notification.service";
 
 type AttributeInput = { name: string; value: string };
 
@@ -193,7 +194,7 @@ export const MasterProductService = {
   async approve(adminUserId: number, masterId: number): Promise<void> {
     const m = await prisma.masterProduct.findUnique({
       where: { id: masterId },
-      select: { id: true, status: true, deletedAt: true },
+      select: { id: true, status: true, deletedAt: true, name: true, createdByUserId: true },
     });
     if (!m || m.deletedAt) throw new NotFoundError("MasterProduct", masterId);
     if (m.status === "ACTIVE") {
@@ -209,6 +210,14 @@ export const MasterProductService = {
           approvedAt: new Date(),
         },
       });
+      await NotificationService.create({
+        userId: m.createdByUserId,
+        type: "WHOLESALE_MASTER_APPROVED",
+        title: "تم اعتماد منتجك الأصلي",
+        message: `تم اعتماد "${m.name}" — يمكنك عرضه بالجملة الآن`,
+        link: `/wholesale/master-products/${masterId}`,
+        severity: "SUCCESS",
+      }, tx);
       await logWholesaleAction(tx, {
         userId: adminUserId,
         action: "master_product.approved",
@@ -225,7 +234,7 @@ export const MasterProductService = {
     }
     const m = await prisma.masterProduct.findUnique({
       where: { id: masterId },
-      select: { id: true, deletedAt: true },
+      select: { id: true, deletedAt: true, name: true, createdByUserId: true },
     });
     if (!m || m.deletedAt) throw new NotFoundError("MasterProduct", masterId);
 
@@ -234,6 +243,14 @@ export const MasterProductService = {
         where: { id: masterId },
         data: { status: "ARCHIVED" },
       });
+      await NotificationService.create({
+        userId: m.createdByUserId,
+        type: "WHOLESALE_MASTER_REJECTED",
+        title: "تم رفض منتجك الأصلي",
+        message: `تم رفض "${m.name}". السبب: ${reason.trim()}`,
+        link: `/wholesale/master-products/${masterId}`,
+        severity: "WARNING",
+      }, tx);
       await logWholesaleAction(tx, {
         userId: adminUserId,
         action: "master_product.rejected",
@@ -314,7 +331,7 @@ export const MasterProductService = {
   async suspend(adminUserId: number, masterId: number, reason: string): Promise<void> {
     const m = await prisma.masterProduct.findUnique({
       where: { id: masterId },
-      select: { id: true, deletedAt: true },
+      select: { id: true, deletedAt: true, name: true, createdByUserId: true },
     });
     if (!m || m.deletedAt) throw new NotFoundError("MasterProduct", masterId);
 
@@ -337,7 +354,7 @@ export const MasterProductService = {
   async restore(adminUserId: number, masterId: number): Promise<void> {
     const m = await prisma.masterProduct.findUnique({
       where: { id: masterId },
-      select: { id: true, deletedAt: true },
+      select: { id: true, deletedAt: true, name: true, createdByUserId: true },
     });
     if (!m || m.deletedAt) throw new NotFoundError("MasterProduct", masterId);
 

@@ -9,6 +9,7 @@ import {
   generateUniqueBusinessUnitSlug,
 } from "@/lib/wholesale/slug";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
+import { NotificationService } from "./notification.service";
 import {
   getBusinessUnitContext,
   type BusinessUnitAccessContext,
@@ -379,12 +380,24 @@ export const BusinessUnitService = {
   ): Promise<void> {
     const bu = await prisma.businessUnit.findUnique({
       where: { id: businessUnitId },
+      include: { owner: { select: { userId: true } } },
     });
     if (!bu) throw new NotFoundError("BusinessUnit", businessUnitId);
 
     await prisma.businessUnit.update({
       where: { id: businessUnitId },
       data: { verificationStatus: status },
+    });
+
+    await NotificationService.create({
+      userId: bu.owner.userId,
+      type: status === "VERIFIED" ? "WHOLESALE_BU_VERIFIED" : "WHOLESALE_BU_REJECTED",
+      title: status === "VERIFIED" ? "تم توثيق نشاطك" : "تم رفض توثيق نشاطك",
+      message: status === "VERIFIED"
+        ? `تم توثيق "${bu.name}" بنجاح — يمكنك الآن عرض منتجاتك بالجملة`
+        : `تم رفض توثيق "${bu.name}". يرجى التواصل مع الدعم لمعرفة السبب.`,
+      link: `/wholesale/business-units/${businessUnitId}`,
+      severity: status === "VERIFIED" ? "SUCCESS" : "WARNING",
     });
 
     await logWholesaleAction(null, {

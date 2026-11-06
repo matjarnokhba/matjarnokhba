@@ -16,6 +16,7 @@ import {
   generateWholesaleOrderNumber,
 } from "@/lib/wholesale/order-number";
 import { WholesaleInventoryService } from "./wholesale-inventory.service";
+import { NotificationService } from "./notification.service";
 
 type CreateItemInput = {
   offerId: number;
@@ -406,6 +407,14 @@ export const WholesaleOrderService = {
             entityId: order.id,
             after: { orderNumber, total: sellerSubtotal },
           });
+          await NotificationService.createForBU({
+            businessUnitId: sellerBUId,
+            type: "WHOLESALE_ORDER_RECEIVED",
+            title: "طلب جملة جديد",
+            message: `وصل طلب جديد ${orderNumber} بقيمة ${sellerSubtotal.toFixed(2)} د.م`,
+            link: `/wholesale/orders/${order.id}?direction=seller`,
+            severity: "INFO",
+          }, tx);
         }
 
         await tx.wholesaleOrderGroup.update({
@@ -440,6 +449,14 @@ export const WholesaleOrderService = {
         where: { id: orderId },
         data: { status: "CONFIRMED", confirmedAt: new Date() },
       });
+      await NotificationService.createForBU({
+        businessUnitId: isSeller ? order.buyerBusinessUnitId : order.sellerBusinessUnitId,
+        type: "WHOLESALE_ORDER_CONFIRMED",
+        title: "تم تأكيد الطلب",
+        message: `تم تأكيد طلب ${order.orderNumber}`,
+        link: `/wholesale/orders/${orderId}`,
+        severity: "SUCCESS",
+      }, tx);
       await logWholesaleAction(tx, {
         userId,
         businessUnitId: isSeller
@@ -480,6 +497,14 @@ export const WholesaleOrderService = {
           cancellationReason: reason.trim(),
         },
       });
+      await NotificationService.createForBU({
+        businessUnitId: isSeller ? order.buyerBusinessUnitId : order.sellerBusinessUnitId,
+        type: "WHOLESALE_ORDER_CANCELLED",
+        title: "تم إلغاء الطلب",
+        message: `تم إلغاء طلب ${order.orderNumber}. السبب: ${reason.trim()}`,
+        link: `/wholesale/orders/${orderId}`,
+        severity: "WARNING",
+      }, tx);
       await logWholesaleAction(tx, {
         userId,
         businessUnitId: isSeller
@@ -553,6 +578,14 @@ export const WholesaleOrderService = {
           shippedAt: new Date(),
         },
       });
+      await NotificationService.createForBU({
+        businessUnitId: order.buyerBusinessUnitId,
+        type: "WHOLESALE_ORDER_SHIPPED",
+        title: "طلبك في الطريق",
+        message: `تم شحن طلب ${order.orderNumber}`,
+        link: `/wholesale/orders/${orderId}`,
+        severity: "INFO",
+      }, tx);
       await logWholesaleAction(tx, {
         userId,
         businessUnitId: order.sellerBusinessUnitId,
@@ -657,6 +690,14 @@ export const WholesaleOrderService = {
             deliveredAt: new Date(),
           },
         });
+        await NotificationService.createForBU({
+          businessUnitId: order.sellerBusinessUnitId,
+          type: "WHOLESALE_ORDER_DELIVERED",
+          title: "تم استلام الطلب",
+          message: `استلم المشتري طلب ${order.orderNumber}`,
+          link: `/wholesale/orders/${order.id}?direction=seller`,
+          severity: "SUCCESS",
+        }, tx);
 
         if (order.groupId) {
           const remaining = await tx.wholesaleOrder.count({

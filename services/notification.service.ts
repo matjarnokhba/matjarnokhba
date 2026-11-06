@@ -73,6 +73,33 @@ export const NotificationService = {
     }
   },
 
+  // ═══ Create for BU owner (resolves owner.userId) ═══
+  async createForBU(
+    data: {
+      businessUnitId: number;
+      type: NotificationType;
+      title: string;
+      message: string;
+      link?: string | null;
+      metadata?: any;
+      category?: string;
+      severity?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
+    },
+    tx?: any
+  ): Promise<void> {
+    const db = tx ?? prisma;
+    try {
+      const bu = await db.businessUnit.findUnique({
+        where: { id: data.businessUnitId },
+        select: { owner: { select: { userId: true } } },
+      });
+      if (!bu?.owner.userId) return;
+      await this.create({ ...data, userId: bu.owner.userId }, tx);
+    } catch (err) {
+      console.error("NotificationService.createForBU failed:", err);
+    }
+  },
+
   // كل إشعارات المستخدم
   async getByUser(userId: number, limit = 20) {
     return prisma.notification.findMany({
