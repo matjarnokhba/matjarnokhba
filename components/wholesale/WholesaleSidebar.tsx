@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Settings,
   ShoppingBasket,
+  Bell,
   Store,
   LogOut,
   Menu,
@@ -42,6 +43,12 @@ const NAV_ITEMS = [
     href: "/wholesale/cart",
     icon: ShoppingBasket,
     label: "السلة",
+    enabled: true,
+  },
+  {
+    href: "/wholesale/notifications",
+    icon: Bell,
+    label: "الإشعارات",
     enabled: true,
   },
   {
