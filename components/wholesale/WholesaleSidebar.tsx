@@ -13,6 +13,7 @@ import {
   Wallet,
   RotateCcw,
   Settings,
+  ShoppingBasket,
   Store,
   LogOut,
   Menu,
@@ -20,6 +21,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
+import { useWholesaleCart } from "@/lib/hooks/useWholesaleCart";
 
 const NAV_ITEMS = [
   { href: "/wholesale", icon: LayoutDashboard, label: "الرئيسية", enabled: true },
@@ -36,6 +38,12 @@ const NAV_ITEMS = [
     enabled: true,
   },
   { href: "/wholesale/offers", icon: Tag, label: "عروض الجملة", enabled: true },
+  {
+    href: "/wholesale/cart",
+    icon: ShoppingBasket,
+    label: "السلة",
+    enabled: true,
+  },
   {
     href: "/wholesale/orders",
     icon: ShoppingCart,
@@ -64,6 +72,7 @@ export interface WholesaleSidebarProps {
 }
 
 export function WholesaleSidebar({ userName, hasRetailStore }: WholesaleSidebarProps) {
+  const { totalItems, isHydrated } = useWholesaleCart();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
@@ -98,6 +107,8 @@ export function WholesaleSidebar({ userName, hasRetailStore }: WholesaleSidebarP
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
+          const isCart = item.href === "/wholesale/cart";
+          const cartBadge = isCart && isHydrated ? totalItems : 0;
           const isActive =
             pathname === item.href ||
             (item.href !== "/wholesale" && pathname.startsWith(item.href + "/"));
@@ -130,6 +141,11 @@ export function WholesaleSidebar({ userName, hasRetailStore }: WholesaleSidebarP
             >
               <Icon className="h-4 w-4" />
               <span>{item.label}</span>
+              {cartBadge > 0 && (
+                <span className="mr-auto rounded-full bg-[#ff5c00] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {cartBadge}
+                </span>
+              )}
             </Link>
           );
         })}

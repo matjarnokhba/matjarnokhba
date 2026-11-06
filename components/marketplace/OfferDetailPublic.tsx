@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Package,
@@ -26,6 +27,8 @@ import {
   formatMoney,
 } from "@/components/wholesale/offers/types";
 import type { PublicOfferDetail, BuyerBU } from "./types";
+import { useWholesaleCart } from "@/lib/hooks/useWholesaleCart";
+import { useToast } from "@/lib/hooks/useToast";
 
 export interface OfferDetailPublicProps {
   offer: PublicOfferDetail;
@@ -45,6 +48,9 @@ export function OfferDetailPublic({
   const [quantity, setQuantity] = useState<string>(
     String(offer.minOrderQty)
   );
+  const router = useRouter();
+  const { toast } = useToast();
+  const { addItem } = useWholesaleCart();
 
   const selectedVariant = offer.variants.find(
     (v) => v.id === selectedVariantId
@@ -317,14 +323,30 @@ export function OfferDetailPublic({
             <Button
               fullWidth
               disabled={!canOrder}
-              iconLeft={<ShoppingCart className="h-4 w-4" />}
               variant="primary"
+              iconLeft={<ShoppingCart className="h-4 w-4" />}
+              onClick={() => {
+                if (!canOrder || !selectedVariant || !computedPrice) return;
+                const qty = parseInt(quantity, 10);
+                addItem({
+                  offerId: offer.id,
+                  masterVariantId: selectedVariant.masterVariantId,
+                  masterName: offer.masterName,
+                  masterImage: offer.masterImage,
+                  sellerName: offer.sellerName,
+                  sellerType: offer.sellerType,
+                  variantAttributes: selectedVariant.attributes,
+                  quantity: qty,
+                  unitPrice: computedPrice.unitPrice,
+                  minOrderQty: offer.minOrderQty,
+                  maxOrderQty: offer.maxOrderQty,
+                });
+                toast("تمت الإضافة إلى السلة", "success");
+                router.push("/wholesale/cart");
+              }}
             >
               إضافة إلى السلة
             </Button>
-            <p className="mt-2 text-center text-[10px] text-gray-500">
-              السلة والدفع — قريبًا
-            </p>
           </Card>
         </div>
       </div>
