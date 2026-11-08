@@ -218,53 +218,75 @@ async function ensureMerchantProductForOffer(
   }
 
   const variantMap = new Map<number, number>();
-  for (const mvId of masterVariantIds) {
-    const existing = await tx.merchantVariant.findFirst({
-      where: { merchantProductId: mp.id, masterVariantId: mvId },
-      select: { id: true },
-    });
 
-    if (existing) {
-      variantMap.set(mvId, existing.id);
-      continue;
+  const existingMVs: Array<{ id: number; masterVariantId: number | null }> =
+    await tx.merchantVariant.findMany({
+      where: { merchantProductId: mp.id, masterVariantId: { in: masterVariantIds } },
+      select: { id: true, masterVariantId: true },
+    });
+  for (const emv of existingMVs) {
+    if (emv.masterVariantId !== null) variantMap.set(emv.masterVariantId, emv.id);
+  }
+
+  const missingIds = masterVariantIds.filter((id) => !variantMap.has(id));
+  if (missingIds.length === 0) return { mpId: mp.id, variantMap };
+
+  type MasterVarInfo = { id: number; sku: string | null; barcode: string | null; attributes: any };
+  const masterVars: MasterVarInfo[] = await tx.masterVariant.findMany({
+    where: { id: { in: missingIds } },
+    select: { id: true, sku: true, barcode: true, attributes: true },
+  });
+  const masterVarById = new Map<number, MasterVarInfo>();
+  for (const mv of masterVars) masterVarById.set(mv.id, mv);
+
+  const allSkus: Array<{ sku: string }> = await tx.merchantVariant.findMany({
+    where: { merchantProductId: mp.id },
+    select: { sku: true },
+  });
+  const usedSkus = new Set<string>(allSkus.map((m) => m.sku));
+
+  const existingDefault = await tx.merchantVariant.findFirst({
+    where: { merchantProductId: mp.id, isDefault: true },
+    select: { id: true },
+  });
+  let hasDefault = !!existingDefault;
+
+  for (const mvId of missingIds) {
+    const masterVariant = masterVarById.get(mvId);
+    if (!masterVariant) continue;
+
+    let sku = masterVariant.sku || `M-${mp.id}-${mvId}`;
+    if (usedSkus.has(sku)) sku = `M-${mp.id}-${mvId}`;
+    let suffix = 1;
+    while (usedSkus.has(sku)) {
+      sku = `M-${mp.id}-${mvId}-${suffix++}`;
+      if (suffix > 100) {
+        sku = `M-${mp.id}-${mvId}-${Math.random().toString(36).substring(2, 8)}`;
+        break;
+      }
     }
-
-    const masterVariant = await tx.masterVariant.findUnique({
-      where: { id: mvId },
-      select: { sku: true, barcode: true, attributes: true },
-    });
-
-    let sku = masterVariant?.sku || `M-${mp.id}-${mvId}`;
-    const collision = await tx.merchantVariant.findFirst({
-      where: { merchantProductId: mp.id, sku },
-      select: { id: true },
-    });
-    if (collision) sku = `M-${mp.id}-${mvId}`;
-
-    const hasDefault = await tx.merchantVariant.findFirst({
-      where: { merchantProductId: mp.id, isDefault: true },
-      select: { id: true },
-    });
+    usedSkus.add(sku);
 
     const newMv = await tx.merchantVariant.create({
       data: {
         merchantProductId: mp.id,
         masterVariantId: mvId,
-        displayAttributes: (masterVariant?.attributes as any) ?? [],
+        displayAttributes: (masterVariant.attributes as any) ?? [],
         baseUnitPrice: wholesalePrice,
         sku,
-        barcode: masterVariant?.barcode ?? null,
+        barcode: masterVariant.barcode ?? null,
         isDefault: !hasDefault,
         isActive: true,
       },
       select: { id: true },
     });
-
+    hasDefault = true;
     variantMap.set(mvId, newMv.id);
   }
 
   return { mpId: mp.id, variantMap };
 }
+
 export const WholesaleOfferService = {
   // ═══ Create offer ═══
   async create(
@@ -404,7 +426,7 @@ export const WholesaleOfferService = {
       });
 
       return offer;
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     return created.id;
   },
