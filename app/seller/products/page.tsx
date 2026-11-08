@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus, Package, Loader2, Edit3, Eye, AlertTriangle, QrCode,
-  Tag, Settings2,
+  Tag, Settings2, ShoppingBag,
 } from "lucide-react";
+import OfferToWholesaleModal from "@/components/seller/OfferToWholesaleModal";
 
 type SellerProduct = {
   id: number;
@@ -33,6 +34,7 @@ export default function SellerProductsPage() {
   const [sellerSlug, setSellerSlug] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [offerModalProductId, setOfferModalProductId] = useState<number | null>(null);
 
   async function loadProducts() {
     setLoading(true);
@@ -165,6 +167,14 @@ export default function SellerProductsPage() {
                     <Link href={`/seller/products/${product.id}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-blue-600 transition hover:bg-blue-50" aria-label="تعديل">
                       <Edit3 className="h-4 w-4" />
                     </Link>
+                    <button
+                      onClick={() => setOfferModalProductId(product.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-emerald-600 transition hover:bg-emerald-50"
+                      aria-label="اعرض بالجملة"
+                      title="اعرض بالجملة"
+                    >
+                      <ShoppingBag className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -172,6 +182,15 @@ export default function SellerProductsPage() {
           })}
         </div>
       )}
-    </div>
+          {offerModalProductId !== null && (
+        <OfferToWholesaleModal
+          productId={offerModalProductId}
+          onClose={() => setOfferModalProductId(null)}
+          onSuccess={(offerId) => {
+            setOfferModalProductId(null);
+            window.location.href = `/wholesale/offers/${offerId}`;
+          }}
+        />
+      )}    </div>
   );
 }
