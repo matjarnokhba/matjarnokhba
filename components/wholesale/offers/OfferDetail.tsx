@@ -15,11 +15,13 @@ import {
   Layers,
   Building2,
   ExternalLink,
+  Store,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { OfferActions } from "./OfferActions";
+import TransferToStoreModal from "./TransferToStoreModal";
 import {
   OFFER_STATUS_LABEL,
   OFFER_STATUS_VARIANT,
@@ -39,6 +41,7 @@ export interface OfferDetailProps {
 
 export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
   const [currentStatus, setCurrentStatus] = useState(offer.status);
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   // Compute price range across all tiers
   const allPrices: number[] = [];
@@ -341,8 +344,40 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
             isOwner={isOwner}
             onStatusChange={setCurrentStatus}
           />
+          {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (
+            <Card>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <h3 className="flex items-center gap-2 text-sm font-bold">
+                    <Store className="h-4 w-4 text-emerald-600" />
+                    نقل إلى المتجر
+                  </h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    انقل مخزون الجملة إلى متجر التجزئة الخاص بك
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(true)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700"
+                >
+                  نقل
+                </button>
+              </div>
+            </Card>
+          )}
         </div>
       </div>
+      {showTransferModal && (
+        <TransferToStoreModal
+          offerId={offer.id}
+          onClose={() => setShowTransferModal(false)}
+          onSuccess={(r) => {
+            setShowTransferModal(false);
+            window.location.href = `/seller/products/${r.productId}`;
+          }}
+        />
+      )}
     </div>
   );
 }
