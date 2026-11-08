@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { logWholesaleAction } from "@/lib/wholesale/audit";
 
 const schema = z.object({
   transfers: z
@@ -291,9 +292,25 @@ export async function POST(
         const remainingQty = remaining._sum.quantity || 0;
         let newStatus = offer.status;
         if (remainingQty === 0 && offer.status === "ACTIVE") {
-          await tx.wholesaleOffer.update({ where: { id: offer.id }, data: { status: "PAUSED" } });
-          newStatus = "PAUSED";
+          await tx.wholesaleOffer.update({ where: { id: offer.id }, data: { status: "OUT_OF_STOCK" } });
+          newStatus = "OUT_OF_STOCK";
         }
+
+        await logWholesaleAction(tx, {
+          userId: current.user.id,
+          businessUnitId: offer.businessUnitId,
+          action: "wholesale_offer.transferred_to_store",
+          entityType: "WholesaleOffer",
+          entityId: offer.id,
+          after: {
+            targetProductId: targetProduct.id,
+            movedCount,
+            totalQty,
+            remainingQty,
+            newStatus,
+            transfers: parsed.data.transfers,
+          },
+        });
 
         return { productId: targetProduct.id, movedCount, totalQty, newStatus, remainingQty };
       },

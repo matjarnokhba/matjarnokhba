@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { logWholesaleAction } from "@/lib/wholesale/audit";
 import { WholesaleOfferService } from "@/services/wholesale-offer.service";
 import {
   getBusinessUnitContext,
@@ -117,19 +118,65 @@ export async function POST(
       }
     }
 
+    // M7.2: Check for existing offer — auto-resume if OUT_OF_STOCK
+    const existingOffer = await prisma.wholesaleOffer.findFirst({
+      where: { businessUnitId, masterId, deletedAt: null },
+      select: { id: true, status: true, merchantProductId: true },
+    });
+
     let offerId: number;
-    try {
-      offerId = await WholesaleOfferService.create(current.user.id, businessUnitId, {
-        masterId,
-        wholesalePrice,
-        minOrderQty,
-        maxOrderQty: maxOrderQty ?? null,
-        claimType: "RESELLER",
-        variants: variantsForOffer,
+    let reactivated = false;
+
+    if (existingOffer) {
+      if (existingOffer.status !== "OUT_OF_STOCK") {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `يوجد عرض سابق بحالة "${existingOffer.status}". أرشفه أو انتظر المراجعة قبل إنشاء عرض جديد.`,
+            existingOfferId: existingOffer.id,
+          },
+          { status: 409 }
+        );
+      }
+      if (!existingOffer.merchantProductId) {
+        return NextResponse.json(
+          { success: false, message: "العرض السابق بلا منتج مقابل — أرشفه وأنشئ عرضًا جديدًا." },
+          { status: 400 }
+        );
+      }
+
+      const existingVariants = await prisma.wholesaleOfferVariant.findMany({
+        where: { offerId: existingOffer.id },
+        select: { masterVariantId: true },
       });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "فشل إنشاء العرض";
-      return NextResponse.json({ success: false, message: msg }, { status: 400 });
+      const existingMVIds = new Set(existingVariants.map((v) => v.masterVariantId));
+      const missing = matched.filter((m) => !existingMVIds.has(m.masterVariantId));
+      if (missing.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `العرض السابق لا يحتوي على كل الخيارات المحددة (مفقود: ${missing.length} خيار). أرشفه وأنشئ عرضًا جديدًا.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      offerId = existingOffer.id;
+      reactivated = true;
+    } else {
+      try {
+        offerId = await WholesaleOfferService.create(current.user.id, businessUnitId, {
+          masterId,
+          wholesalePrice,
+          minOrderQty,
+          maxOrderQty: maxOrderQty ?? null,
+          claimType: "RESELLER",
+          variants: variantsForOffer,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "فشل إنشاء العرض";
+        return NextResponse.json({ success: false, message: msg }, { status: 400 });
+      }
     }
 
     // Ensure InventoryLocation + WHOLESALE account
@@ -199,7 +246,35 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({ success: true, offerId, masterId });
+    if (reactivated) {
+      await prisma.wholesaleOffer.update({
+        where: { id: offerId },
+        data: { status: "ACTIVE" },
+      });
+    }
+
+    await logWholesaleAction(null, {
+      userId: current.user.id,
+      businessUnitId,
+      action: reactivated
+        ? "wholesale_offer.reactivated_from_retail"
+        : "wholesale_offer.created_from_retail",
+      entityType: "WholesaleOffer",
+      entityId: offerId,
+      after: {
+        masterId,
+        wholesalePrice,
+        minOrderQty,
+        maxOrderQty,
+        variantsCount: variantsForOffer.length,
+        transferredQuantities: matched.map((m) => ({
+          masterVariantId: m.masterVariantId,
+          quantity: m.quantity,
+        })),
+      },
+    });
+
+    return NextResponse.json({ success: true, offerId, masterId, reactivated });
   } catch (error) {
     console.error("Offer-to-wholesale error:", error);
     const msg = error instanceof Error ? error.message : "حدث خطأ";
