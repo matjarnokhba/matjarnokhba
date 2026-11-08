@@ -2808,6 +2808,7 @@ model MerchantProduct {
   master       MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
   variants     MerchantVariant[]
   sellingUnits SellingUnit[]
+    wholesaleOffers WholesaleOffer[]
 
   @@unique([businessUnitId, masterId])
   @@index([businessUnitId, status])
@@ -2830,6 +2831,7 @@ model MerchantVariant {
 
   merchantProduct MerchantProduct @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
   masterVariant   MasterVariant?  @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+    wholesaleOfferVariants WholesaleOfferVariant[]
 
   @@unique([merchantProductId, sku])
   @@index([merchantProductId, isDefault])
@@ -3100,6 +3102,7 @@ model WholesaleOffer {
   id                Int                  @id @default(autoincrement())
   businessUnitId    Int
   masterId          Int
+    merchantProductId Int?
   wholesalePrice    Decimal              @db.Decimal(10, 2)
   minOrderQty       Int                  @default(1)
   maxOrderQty       Int?
@@ -3118,6 +3121,7 @@ model WholesaleOffer {
 
   businessUnit   BusinessUnit             @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
   master         MasterProduct            @relation(fields: [masterId], references: [id], onDelete: Restrict)
+    merchantProduct  MerchantProduct?         @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
   approvedByUser User?                    @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
   variants       WholesaleOfferVariant[]
   orderItems     WholesaleOrderItem[]
@@ -3126,21 +3130,25 @@ model WholesaleOffer {
   @@index([masterId, status])
   @@index([status, deletedAt])
   @@index([businessUnitId, status])
+    @@index([merchantProductId])
 }
 
 model WholesaleOfferVariant {
   id              Int      @id @default(autoincrement())
   offerId         Int
   masterVariantId Int
+    merchantVariantId Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   offer         WholesaleOffer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
   masterVariant MasterVariant          @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+    merchantVariant  MerchantVariant?       @relation(fields: [merchantVariantId], references: [id], onDelete: SetNull)
   tiers         WholesaleOfferTier[]
 
   @@unique([offerId, masterVariantId])
   @@index([offerId])
+    @@index([merchantVariantId])
 }
 
 model WholesaleOfferTier {
