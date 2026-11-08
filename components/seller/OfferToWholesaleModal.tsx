@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Loader2, X, Tag, AlertCircle, Store, CheckCircle2, Zap } from "lucide-react";
 
+type DisplayAttribute = { name: string; value: string; order: number };
+
 type PrepareVariant = {
   id: number;
   sku: string;
@@ -10,9 +12,15 @@ type PrepareVariant = {
   price: number;
   isDefault: boolean;
   retailStock: number;
+  displayAttributes: DisplayAttribute[];
   masterVariantId: number | null;
   masterId: number | null;
 };
+
+function formatAttributes(attrs: DisplayAttribute[] | undefined): string {
+  if (!attrs || attrs.length === 0) return "";
+  return attrs.map((a) => `${a.name}: ${a.value}`).join(" · ");
+}
 
 type PrepareData = {
   needsSetup: boolean;
@@ -291,11 +299,14 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
                   const matched = v.masterVariantId !== null;
                   return (
                     <div key={v.id} className={`flex items-center justify-between gap-3 rounded-lg p-2 text-sm ${matched ? "bg-white" : "bg-red-50"}`}>
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{v.sku}</p>
-                          {matched ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-red-500" />}
+                          <p className="font-medium truncate">
+                            {formatAttributes(v.displayAttributes) || v.sku}
+                          </p>
+                          {matched ? <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" /> : <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />}
                         </div>
+                        <p className="text-xs text-gray-400 truncate font-mono">{v.sku}</p>
                         <p className="text-xs text-gray-500">متاح: {v.retailStock}</p>
                       </div>
                       <input
@@ -304,7 +315,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
                         onChange={(e) => setTransferMap({ ...transferMap, [v.id]: e.target.value })}
                         placeholder="0"
                         disabled={!matched}
-                        className="w-24 rounded border p-1.5 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-24 rounded border p-1.5 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed flex-shrink-0"
                       />
                     </div>
                   );

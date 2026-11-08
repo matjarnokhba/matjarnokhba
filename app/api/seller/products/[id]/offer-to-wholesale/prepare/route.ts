@@ -29,6 +29,16 @@ export async function GET(
             price: true,
             isDefault: true,
             inventory: { select: { quantity: true } },
+            optionValues: {
+              select: {
+                optionValue: {
+                  select: {
+                    value: true,
+                    option: { select: { name: true, order: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -74,6 +84,15 @@ export async function GET(
             select: { id: true, masterId: true },
           });
         }
+        const displayAttributes = (v.optionValues || [])
+          .map((ov: any) => ({
+            name: ov.optionValue?.option?.name ?? "",
+            value: ov.optionValue?.value ?? "",
+            order: ov.optionValue?.option?.order ?? 0,
+          }))
+          .filter((a) => a.name && a.value)
+          .sort((a, b) => a.order - b.order);
+
         return {
           id: v.id,
           sku: v.sku,
@@ -81,6 +100,7 @@ export async function GET(
           price: Number(v.price),
           isDefault: v.isDefault,
           retailStock: v.inventory?.quantity ?? 0,
+          displayAttributes,
           masterVariantId: mv?.id ?? null,
           masterId: mv?.masterId ?? null,
         };
