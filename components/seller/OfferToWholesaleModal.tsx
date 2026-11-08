@@ -74,6 +74,31 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     setSetupSubmitting(true);
     setError("");
     try {
+      // Step 1: try to upgrade an existing BU (RETAIL-only) instead of creating duplicate
+      const listRes = await fetch("/api/wholesale/business-units");
+      const listData = await listRes.json();
+      const existingBUs = listData?.items ?? listData?.businessUnits ?? [];
+      const upgradeable = existingBUs.find((bu: any) => {
+        const caps = Array.isArray(bu.capabilities) ? bu.capabilities : [];
+        return caps.includes("RETAIL") && !caps.includes("WHOLESALE_SELL") && bu.status === "ACTIVE";
+      });
+
+      if (upgradeable) {
+        const patchRes = await fetch(`/api/wholesale/business-units/${upgradeable.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            capabilities: [...new Set([...(upgradeable.capabilities || []), "WHOLESALE_BUY", "WHOLESALE_SELL"])],
+          }),
+        });
+        const patchData = await patchRes.json();
+        if (patchRes.ok && patchData.success !== false) {
+          setReloadFlag((f) => f + 1);
+          return;
+        }
+      }
+
+      // Step 2: no upgradeable BU → create new
       const res = await fetch("/api/wholesale/business-units", {
         method: "POST",
         headers: {

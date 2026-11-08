@@ -18,9 +18,10 @@ async function uniqueSku(tx: any, sellerId: number, base: string): Promise<strin
   const clean = (base || "").trim().substring(0, 50) || `SKU-${Date.now()}`;
   let attempt = 0;
   let sku = clean;
+  // Search across ALL variants of this seller (not just product) to respect @@unique([sellerId, sku])
   while (await tx.productVariant.findFirst({ where: { sellerId, sku } })) {
     sku = `${clean.substring(0, 45)}-${++attempt}`;
-    if (attempt > 50) return `SKU-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    if (attempt > 100) return `SKU-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
   }
   return sku;
 }
@@ -209,9 +210,19 @@ export async function POST(
 
           let pv = null;
           if (mv.barcode) {
+            // First: does it exist in the same product?
             pv = await tx.productVariant.findFirst({
               where: { barcode: mv.barcode, productId: targetProduct.id, isActive: true },
             });
+            // If not: check if barcode collides with a different product of this seller
+            if (!pv) {
+              const collision = await tx.productVariant.findFirst({
+                where: { barcode: mv.barcode, sellerId: seller.id, isActive: true },
+              });
+              if (collision) {
+                throw new Error(`الباركود "${mv.barcode}" مسجل بالفعل في منتج آخر — لا يمكن النقل. أزل الباركود أو غيّره.`);
+              }
+            }
           }
           if (!pv && mv.sku) {
             pv = await tx.productVariant.findFirst({
