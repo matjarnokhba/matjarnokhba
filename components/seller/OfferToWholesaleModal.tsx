@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, X, Tag, AlertCircle, Store, CheckCircle2 } from "lucide-react";
+import { Loader2, X, Tag, AlertCircle, Store, CheckCircle2, Zap } from "lucide-react";
 
 type PrepareVariant = {
   id: number;
@@ -36,12 +36,17 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
   const [data, setData] = useState<PrepareData | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [reloadFlag, setReloadFlag] = useState(0);
 
   const [businessUnitId, setBusinessUnitId] = useState<number | null>(null);
   const [wholesalePrice, setWholesalePrice] = useState("");
   const [minOrderQty, setMinOrderQty] = useState("1");
   const [maxOrderQty, setMaxOrderQty] = useState("");
   const [transferMap, setTransferMap] = useState<Record<number, string>>({});
+
+  const [setupName, setSetupName] = useState("نشاط الجملة");
+  const [setupType, setSetupType] = useState("WHOLESALER");
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
 
   useEffect(() => {
     if (!productId) return;
@@ -60,13 +65,41 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
       } catch { setError("خطأ في الاتصال"); }
       finally { setLoading(false); }
     })();
-  }, [productId]);
+  }, [productId, reloadFlag]);
 
   if (!productId) return null;
 
+  async function handleEnableWholesale() {
+    if (!setupName.trim()) { setError("اسم النشاط مطلوب"); return; }
+    setSetupSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/wholesale/business-units", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          name: setupName.trim(),
+          type: setupType,
+          capabilities: ["WHOLESALE_BUY", "WHOLESALE_SELL"],
+        }),
+      });
+      const d = await res.json();
+      const newId = d?.data?.businessUnitId ?? d?.businessUnitId ?? d?.id;
+      if (newId) {
+        setReloadFlag((f) => f + 1);
+      } else {
+        setError(d?.message || "فشل التفعيل");
+      }
+    } catch { setError("خطأ في الاتصال"); }
+    finally { setSetupSubmitting(false); }
+  }
+
   const canSubmit = (): boolean => {
     if (!data || !businessUnitId) return false;
-    if (data.needsSetup || data.hasAmbiguousMaster) return false;
+    if (data.hasAmbiguousMaster) return false;
     if (data.unmatchableVariants.length > 0 && data.matchedCount === 0) return false;
     const price = Number(wholesalePrice);
     if (!price || price <= 0) return false;
@@ -118,13 +151,55 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
         {loading && <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>}
 
         {!loading && data?.needsSetup && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold">لا يوجد نشاط بيع بالجملة</p>
-                <p className="mt-1">أنشئ نشاطًا بصلاحية البيع بالجملة أولًا.</p>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold">تفعيل البيع بالجملة</p>
+                  <p className="mt-1">لنشر هذا العرض، تحتاج نشاطًا تجاريًا بصلاحية البيع بالجملة. أنشئه الآن — يستغرق ثوانٍ.</p>
+                </div>
               </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">اسم النشاط</label>
+              <input
+                type="text"
+                value={setupName}
+                onChange={(e) => setSetupName(e.target.value)}
+                className="w-full rounded-lg border p-2 text-sm"
+                placeholder="مثال: نشاط الجملة"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">نوع النشاط</label>
+              <select
+                value={setupType}
+                onChange={(e) => setSetupType(e.target.value)}
+                className="w-full rounded-lg border p-2 text-sm"
+              >
+                <option value="WHOLESALER">موزع بالجملة</option>
+                <option value="IMPORTER">مستورد</option>
+                <option value="DISTRIBUTOR">موزع</option>
+                <option value="FACTORY">مصنع</option>
+                <option value="SHOP">محل</option>
+              </select>
+            </div>
+
+            {error && <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50">إلغاء</button>
+              <button
+                onClick={handleEnableWholesale}
+                disabled={setupSubmitting}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {setupSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                {setupSubmitting ? "جارٍ التفعيل..." : "تفعيل البيع بالجملة"}
+              </button>
             </div>
           </div>
         )}
