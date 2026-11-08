@@ -22,6 +22,11 @@ type SellerProduct = {
 };
 
 const CURRENCY = "د.م";
+type WholesaleSummary = {
+  wholesaleStock: number;
+  offerId: number | null;
+  offerStatus: string | null;
+};
 
 const STATUS_INFO: Record<string, { label: string; color: string; bg: string }> = {
   ACTIVE: { label: "نشط", color: "text-green-700", bg: "bg-green-100" },
@@ -35,18 +40,22 @@ export default function SellerProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [offerModalProductId, setOfferModalProductId] = useState<number | null>(null);
+  const [wholesaleSummary, setWholesaleSummary] = useState<Record<number, WholesaleSummary>>({});
 
   async function loadProducts() {
     setLoading(true);
     setError("");
     try {
-      const [productsRes, profileRes] = await Promise.all([
+      const [productsRes, profileRes, summaryRes] = await Promise.all([
         fetch("/api/seller/products"),
         fetch("/api/seller/profile"),
+        fetch("/api/seller/products/wholesale-summary"),
       ]);
 
       const data = await productsRes.json();
       const profileData = await profileRes.json();
+      const summaryData = await summaryRes.json();
+      if (summaryData.success) setWholesaleSummary(summaryData.summary || {});
 
       if (!productsRes.ok || !data.success) {
         setError(data.message || "فشل التحميل");
@@ -142,6 +151,17 @@ export default function SellerProductsPage() {
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusInfo.bg} ${statusInfo.color}`}>
                         {statusInfo.label}
                       </span>
+                      {wholesaleSummary[product.id] && (
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          wholesaleSummary[product.id].wholesaleStock > 0
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {wholesaleSummary[product.id].wholesaleStock > 0
+                            ? `جم: ${wholesaleSummary[product.id].wholesaleStock}`
+                            : "نفد جم"}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
                       <span>{product.categoryName}</span>
@@ -168,10 +188,21 @@ export default function SellerProductsPage() {
                       <Edit3 className="h-4 w-4" />
                     </Link>
                     <button
-                      onClick={() => setOfferModalProductId(product.id)}
+                      onClick={() => {
+                        const ws = wholesaleSummary[product.id];
+                        if (ws?.offerId) {
+                          window.location.href = `/wholesale/offers/${ws.offerId}`;
+                        } else {
+                          setOfferModalProductId(product.id);
+                        }
+                      }}
                       className="flex h-9 w-9 items-center justify-center rounded-lg text-emerald-600 transition hover:bg-emerald-50"
                       aria-label="اعرض بالجملة"
-                      title="اعرض بالجملة"
+                      title={
+                        wholesaleSummary[product.id]?.offerId
+                          ? "عرض بالجملة موجود — اضغط للتفاصيل"
+                          : "اعرض بالجملة"
+                      }
                     >
                       <ShoppingBag className="h-4 w-4" />
                     </button>
