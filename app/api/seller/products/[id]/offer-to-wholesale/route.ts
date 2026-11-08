@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -54,12 +55,25 @@ export async function POST(
     const product = await prisma.product.findUnique({
       where: { id: productId },
       include: {
+        images: { orderBy: { order: "asc" } },
+        category: true,
         variants: {
           select: {
             id: true,
             sku: true,
             barcode: true,
+            isDefault: true,
             inventory: { select: { quantity: true } },
+            optionValues: {
+              select: {
+                optionValue: {
+                  select: {
+                    value: true,
+                    option: { select: { name: true, order: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -68,8 +82,8 @@ export async function POST(
       return NextResponse.json({ success: false, message: "المنتج غير موجود" }, { status: 404 });
     }
 
-    // Match all transferQuantities to master variants
-    const matched: Array<{ retailVariantId: number; masterVariantId: number; masterId: number; quantity: number }> = [];
+    // 1. Check inventory and find any existing masterId
+    let masterId: number | null = null;
     for (const t of transferQuantities) {
       const rv = product.variants.find((v) => v.id === t.variantId);
       if (!rv) {
@@ -82,30 +96,77 @@ export async function POST(
         );
       }
 
-      let mv: { id: number; masterId: number } | null = null;
-      if (rv.barcode) {
-        mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode }, select: { id: true, masterId: true } });
+      if (!masterId) {
+        let mv: any = null;
+        if (rv.barcode) mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode } });
+        if (!mv && rv.sku) mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku } });
+        if (mv) masterId = mv.masterId;
       }
-      if (!mv && rv.sku) {
-        mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku }, select: { id: true, masterId: true } });
+    }
+
+    // 2. Auto-create MasterProduct & variants if none found
+    if (!masterId) {
+      const catSlug = (product.category?.name || "general").toLowerCase().replace(/[^\w\s\u0600-\u06FF-]/g, "").replace(/\s+/g, "-").substring(0, 70) || "general";
+      let masterCat = await prisma.masterCategory.findFirst({ where: { slug: catSlug } });
+      if (!masterCat) {
+        masterCat = await prisma.masterCategory.create({
+          data: { name: product.category?.name || "عام", slug: catSlug, isLeaf: true, isActive: true }
+        });
       }
+
+      const newMaster = await prisma.masterProduct.create({
+        data: {
+          name: product.name,
+          description: product.description,
+          brand: product.brand,
+          categoryId: masterCat.id,
+          images: product.images.map((i) => i.url),
+          status: "ACTIVE",
+          approvedAt: new Date(),
+          createdByUserId: current.user.id,
+        }
+      });
+      masterId = newMaster.id;
+
+      for (const rv of product.variants) {
+        const attrs = (rv.optionValues || []).map((ov: any) => ({
+          name: ov.optionValue.option.name,
+          value: ov.optionValue.value,
+          order: ov.optionValue.option.order,
+        })).sort((a: any, b: any) => a.order - b.order);
+
+        const hash = crypto.createHash("sha256").update(JSON.stringify(attrs)).digest("hex");
+
+        await prisma.masterVariant.create({
+          data: {
+            masterId: newMaster.id,
+            sku: rv.sku,
+            barcode: rv.barcode,
+            attributes: attrs,
+            attributesHash: hash,
+            isDefault: rv.isDefault,
+          }
+        });
+      }
+    }
+
+    // 3. Map quantities to the master variants
+    const matched: Array<{ retailVariantId: number; masterVariantId: number; masterId: number; quantity: number }> = [];
+    for (const t of transferQuantities) {
+      const rv = product.variants.find((v) => v.id === t.variantId)!;
+      
+      let mv: any = null;
+      if (rv.barcode) mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode } });
+      if (!mv && rv.sku) mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku } });
+      
       if (!mv) {
         return NextResponse.json(
-          { success: false, message: `الخيار "${rv.sku || rv.id}" لا يطابق أي منتج أصلي — أضف الباركود أو سجل الهوية أولًا` },
-          { status: 400 }
+          { success: false, message: `الخيار "${rv.sku || rv.id}" لا يطابق أي منتج أصلي — حدث خطأ غير متوقع.` },
+          { status: 500 }
         );
       }
       matched.push({ retailVariantId: rv.id, masterVariantId: mv.id, masterId: mv.masterId, quantity: t.quantity });
     }
-
-    const uniqueMasterIds = Array.from(new Set(matched.map((m) => m.masterId)));
-    if (uniqueMasterIds.length !== 1) {
-      return NextResponse.json(
-        { success: false, message: "الخيارات المحددة تنتمي لمنتجات أصلية مختلفة — يجب أن تكون كلها من نفس الهوية" },
-        { status: 400 }
-      );
-    }
-    const masterId = uniqueMasterIds[0];
 
     // Create offer (M6.2 auto-creates MerchantProduct)
     const variantsForOffer: Array<{ masterVariantId: number; tiers: Array<{ minQty: number; maxQty: number | null; unitPrice: number }> }> = [];
