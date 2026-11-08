@@ -181,6 +181,90 @@ async function getOfferOrThrow(offerId: number) {
   return offer;
 }
 
+
+// ═══ M6.2: Ensure MerchantProduct exists for an offer ═══
+async function ensureMerchantProductForOffer(
+  tx: any,
+  businessUnitId: number,
+  masterId: number,
+  wholesalePrice: number,
+  masterVariantIds: number[]
+): Promise<{ mpId: number; variantMap: Map<number, number> }> {
+  let mp = await tx.merchantProduct.findFirst({
+    where: { businessUnitId, masterId, deletedAt: null },
+    select: { id: true },
+  });
+
+  if (!mp) {
+    const master = await tx.masterProduct.findUnique({
+      where: { id: masterId },
+      select: { name: true, images: true, description: true },
+    });
+    if (!master) throw new NotFoundError("MasterProduct", masterId);
+
+    mp = await tx.merchantProduct.create({
+      data: {
+        businessUnitId,
+        masterId,
+        displayName: master.name,
+        displayImages: master.images ?? [],
+        displayDescription: master.description,
+        retailPrice: wholesalePrice,
+        status: "DRAFT",
+        isFromWholesale: false,
+      },
+      select: { id: true },
+    });
+  }
+
+  const variantMap = new Map<number, number>();
+  for (const mvId of masterVariantIds) {
+    const existing = await tx.merchantVariant.findFirst({
+      where: { merchantProductId: mp.id, masterVariantId: mvId },
+      select: { id: true },
+    });
+
+    if (existing) {
+      variantMap.set(mvId, existing.id);
+      continue;
+    }
+
+    const masterVariant = await tx.masterVariant.findUnique({
+      where: { id: mvId },
+      select: { sku: true, barcode: true, attributes: true },
+    });
+
+    let sku = masterVariant?.sku || `M-${mp.id}-${mvId}`;
+    const collision = await tx.merchantVariant.findFirst({
+      where: { merchantProductId: mp.id, sku },
+      select: { id: true },
+    });
+    if (collision) sku = `M-${mp.id}-${mvId}`;
+
+    const hasDefault = await tx.merchantVariant.findFirst({
+      where: { merchantProductId: mp.id, isDefault: true },
+      select: { id: true },
+    });
+
+    const newMv = await tx.merchantVariant.create({
+      data: {
+        merchantProductId: mp.id,
+        masterVariantId: mvId,
+        displayAttributes: (masterVariant?.attributes as any) ?? [],
+        baseUnitPrice: wholesalePrice,
+        sku,
+        barcode: masterVariant?.barcode ?? null,
+        isDefault: !hasDefault,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    variantMap.set(mvId, newMv.id);
+  }
+
+  return { mpId: mp.id, variantMap };
+}
 export const WholesaleOfferService = {
   // ═══ Create offer ═══
   async create(
@@ -254,10 +338,20 @@ export const WholesaleOfferService = {
         : "PENDING_REVIEW";
 
     const created = await prisma.$transaction(async (tx) => {
+      // M6.2: Ensure MerchantProduct exists and link variants
+      const { mpId, variantMap } = await ensureMerchantProductForOffer(
+        tx,
+        businessUnitId,
+        input.masterId,
+        input.wholesalePrice,
+        input.variants.map((v) => v.masterVariantId)
+      );
+
       const offer = await tx.wholesaleOffer.create({
         data: {
           businessUnitId,
           masterId: input.masterId,
+          merchantProductId: mpId,
           wholesalePrice: input.wholesalePrice,
           minOrderQty: input.minOrderQty,
           maxOrderQty: input.maxOrderQty ?? null,
@@ -278,6 +372,7 @@ export const WholesaleOfferService = {
           data: {
             offerId: offer.id,
             masterVariantId: v.masterVariantId,
+            merchantVariantId: variantMap.get(v.masterVariantId) ?? null,
           },
         });
         const sortedTiers = [...v.tiers].sort((a, b) => a.minQty - b.minQty);
@@ -301,6 +396,7 @@ export const WholesaleOfferService = {
         entityId: offer.id,
         after: {
           masterId: input.masterId,
+          merchantProductId: mpId,
           wholesalePrice: input.wholesalePrice,
           status: initialStatus,
           reviewLevel,
