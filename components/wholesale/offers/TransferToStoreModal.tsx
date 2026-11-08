@@ -8,6 +8,7 @@ type PrepareVariant = {
   sku: string;
   barcode: string | null;
   baseUnitPrice: number;
+  displayAttributes: Array<{ name: string; value: string }>;
   wholesaleStock: number;
   retailExists: boolean;
 };
@@ -126,17 +127,22 @@ export default function TransferToStoreModal({ offerId, onClose, onSuccess }: Pr
                 <div className="space-y-2 max-h-64 overflow-y-auto rounded-lg border p-2">
                   {data.variants.map((v) => (
                     <div key={v.merchantVariantId} className="flex items-center justify-between gap-3 rounded-lg bg-white p-2 text-sm">
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{v.sku}</p>
+                          <p className="font-medium truncate">
+                            {v.displayAttributes && v.displayAttributes.length > 0
+                              ? v.displayAttributes.map((a) => `${a.name}: ${a.value}`).join(" · ")
+                              : v.sku}
+                          </p>
                           {v.retailExists ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-green-600">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-green-600 flex-shrink-0">
                               <CheckCircle2 className="h-3 w-3" /> موجود
                             </span>
                           ) : (
-                            <span className="text-[10px] text-gray-500">سيُنشأ</span>
+                            <span className="text-[10px] text-gray-500 flex-shrink-0">سيُنشأ</span>
                           )}
                         </div>
+                        <p className="text-xs text-gray-400 truncate font-mono">{v.sku}</p>
                         <p className="text-xs text-gray-500">مخزون الجملة: {v.wholesaleStock}</p>
                       </div>
                       <input

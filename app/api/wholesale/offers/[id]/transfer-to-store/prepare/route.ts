@@ -97,6 +97,7 @@ export async function GET(
           sku: mv.sku,
           barcode: mv.barcode,
           baseUnitPrice: Number(mv.baseUnitPrice),
+          displayAttributes: (mv.displayAttributes as any[]) || [],
           wholesaleStock: stock,
           retailExists,
         };
