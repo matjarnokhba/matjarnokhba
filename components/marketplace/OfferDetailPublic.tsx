@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,6 +16,8 @@ import {
   Plus,
   Minus,
   Boxes,
+  X,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -42,6 +44,23 @@ export interface OfferDetailPublicProps {
   isOwnOffer: boolean;
 }
 
+type BundlePromptRow = {
+  variantId: number;
+  label: string;
+  needed: number;
+  current: number;
+  delta: number;
+  stock: number;
+  wouldExceed: boolean;
+};
+
+type BundlePrompt = {
+  triggerVariantId: number;
+  triggerLabel: string;
+  newTriggerQty: number;
+  rows: BundlePromptRow[];
+};
+
 export function OfferDetailPublic({
   offer,
   buyerBUs,
@@ -50,15 +69,16 @@ export function OfferDetailPublic({
   const [activeImage, setActiveImage] = useState(0);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [packageFeedback, setPackageFeedback] = useState("");
+  const [bundlePrompt, setBundlePrompt] = useState<BundlePrompt | null>(null);
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
 
-  const maxFor = (variantId: number): number => {
+  const maxFor = useCallback((variantId: number): number => {
     const v = offer.variants.find((x) => x.id === variantId);
     if (!v) return 0;
     return v.availableStock ?? 0;
-  };
+  }, [offer.variants]);
 
   const totalQty = useMemo(() => {
     let sum = 0;
@@ -96,11 +116,14 @@ export function OfferDetailPublic({
       const triggerQty = quantities[rule.triggerVariantId] || 0;
       if (triggerQty === 0) continue;
       const requiredQty = quantities[rule.requiredVariantId] || 0;
-      if (requiredQty < rule.minQuantity) {
+      const neededQty = rule.isMultiplied
+        ? triggerQty * rule.minQuantity
+        : rule.minQuantity;
+      if (requiredQty < neededQty) {
         const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
         const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
         violations.push(
-          `شراء "${fmtAttrs(tv?.attributes)}" يستلزم ${rule.minQuantity} على الأقل من "${fmtAttrs(rv?.attributes)}"`
+          `شراء "${fmtAttrs(tv?.attributes)}" يستلزم ${neededQty} على الأقل من "${fmtAttrs(rv?.attributes)}"${rule.isMultiplied ? ` (${triggerQty}×${rule.minQuantity})` : ""} — لديك: ${requiredQty}`
         );
       }
     }
@@ -113,10 +136,15 @@ export function OfferDetailPublic({
       const triggerQty = quantities[rule.triggerVariantId] || 0;
       if (triggerQty === 0) continue;
       const requiredQty = quantities[rule.requiredVariantId] || 0;
-      if (requiredQty < rule.minQuantity) {
+      const neededQty = rule.isMultiplied
+        ? triggerQty * rule.minQuantity
+        : rule.minQuantity;
+      if (requiredQty < neededQty) {
         const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
         const existing = hints.get(rule.requiredVariantId) || [];
-        existing.push(`مطلوب ≥${rule.minQuantity} بسبب "${fmtAttrs(tv?.attributes)}"`);
+        existing.push(
+          `مطلوب ≥${neededQty} بسبب "${fmtAttrs(tv?.attributes)}"${rule.isMultiplied ? " (نسبة)" : ""}`
+        );
         hints.set(rule.requiredVariantId, existing);
       }
     }
@@ -134,12 +162,85 @@ export function OfferDetailPublic({
     !maxExceeded &&
     bundleViolations.length === 0;
 
+  /**
+   * Compute bundle prompt for incrementing a variant.
+   * Returns null if no rules apply, or a prompt if any delta needed.
+   */
+  function buildBundlePrompt(variantId: number): BundlePrompt | null {
+    const rules = (offer.bundleRules || []).filter(
+      (r) => r.triggerVariantId === variantId
+    );
+    if (rules.length === 0) return null;
+
+    const currentTrigger = quantities[variantId] || 0;
+    const newTriggerQty = currentTrigger + 1;
+    const triggerVar = offer.variants.find((v) => v.id === variantId);
+
+    const rows: BundlePromptRow[] = [];
+    let anyDelta = false;
+
+    for (const rule of rules) {
+      const current = quantities[rule.requiredVariantId] || 0;
+      const needed = rule.isMultiplied
+        ? newTriggerQty * rule.minQuantity
+        : rule.minQuantity;
+      const delta = Math.max(0, needed - current);
+      const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
+      const stock = rv?.availableStock ?? 0;
+      const wouldExceed = current + delta > stock;
+      if (delta > 0) anyDelta = true;
+      rows.push({
+        variantId: rule.requiredVariantId,
+        label: fmtAttrs(rv?.attributes),
+        needed,
+        current,
+        delta,
+        stock,
+        wouldExceed,
+      });
+    }
+
+    if (!anyDelta) return null;
+
+    return {
+      triggerVariantId: variantId,
+      triggerLabel: fmtAttrs(triggerVar?.attributes),
+      newTriggerQty,
+      rows,
+    };
+  }
+
   function increment(variantId: number) {
     const max = maxFor(variantId);
     const cur = quantities[variantId] || 0;
     if (cur >= max) return;
+
+    const prompt = buildBundlePrompt(variantId);
+    if (prompt) {
+      setBundlePrompt(prompt);
+      return;
+    }
+
     setQuantities((p) => ({ ...p, [variantId]: cur + 1 }));
     setPackageFeedback("");
+  }
+
+  function confirmBundlePrompt() {
+    if (!bundlePrompt) return;
+    const next = { ...quantities };
+    next[bundlePrompt.triggerVariantId] = bundlePrompt.newTriggerQty;
+    for (const row of bundlePrompt.rows) {
+      if (row.delta > 0) {
+        next[row.variantId] = row.current + row.delta;
+      }
+    }
+    setQuantities(next);
+    setBundlePrompt(null);
+    setPackageFeedback("");
+  }
+
+  function cancelBundlePrompt() {
+    setBundlePrompt(null);
   }
 
   function decrement(variantId: number) {
@@ -224,6 +325,7 @@ export function OfferDetailPublic({
   }
 
   const selectedCount = Object.values(quantities).filter((q) => q > 0).length;
+  const hasBlockingRow = bundlePrompt?.rows.some((r) => r.wouldExceed) ?? false;
 
   return (
     <div className="space-y-5">
@@ -376,6 +478,9 @@ export function OfferDetailPublic({
                 const hints = bundleHints.get(v.id);
                 const isActive = qty > 0;
                 const isMaxed = qty >= max;
+                const isTrigger = (offer.bundleRules || []).some(
+                  (r) => r.triggerVariantId === v.id
+                );
 
                 return (
                   <div
@@ -398,6 +503,11 @@ export function OfferDetailPublic({
                                 {a.name}: <strong>{a.value}</strong>
                               </span>
                             ))
+                          )}
+                          {isTrigger && (
+                            <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                              <Link2 className="h-2.5 w-2.5" /> مرتبط
+                            </span>
                           )}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
@@ -587,6 +697,94 @@ export function OfferDetailPublic({
           </div>
         </div>
       </div>
+
+      {/* Bundle Prompt Modal (M9.5c) */}
+      {bundlePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={cancelBundlePrompt}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-base font-bold text-gray-900">
+                <Link2 className="h-5 w-5 text-amber-500" />
+                شرط شراء مرتبط
+              </h3>
+              <button onClick={cancelBundlePrompt} className="rounded p-1 hover:bg-gray-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="mb-3 text-sm text-gray-700">
+              شراء <strong className="text-[#ff5c00]">{bundlePrompt.triggerLabel}</strong>{" "}
+              (سيتحول إلى {bundlePrompt.newTriggerQty}) يتطلب إضافة:
+            </p>
+
+            <div className="mb-4 space-y-2">
+              {bundlePrompt.rows.map((row) => (
+                <div
+                  key={row.variantId}
+                  className={`rounded-lg border p-2 text-sm ${
+                    row.wouldExceed
+                      ? "border-red-300 bg-red-50"
+                      : row.delta > 0
+                      ? "border-amber-200 bg-amber-50"
+                      : "border-green-200 bg-green-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex-1 font-medium text-gray-900">{row.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                        row.wouldExceed
+                          ? "bg-red-200 text-red-800"
+                          : row.delta > 0
+                          ? "bg-amber-200 text-amber-800"
+                          : "bg-green-200 text-green-800"
+                      }`}
+                    >
+                      {row.wouldExceed
+                        ? `⚠ يحتاج ${row.current + row.delta} / متاح ${row.stock}`
+                        : row.delta > 0
+                        ? `+${row.delta}`
+                        : `✓ لديك ${row.current}`}
+                    </span>
+                  </div>
+                  {row.wouldExceed && (
+                    <p className="mt-1 text-xs text-red-700">
+                      المخزون غير كافٍ — قلل من {bundlePrompt.triggerLabel} أو أزل هذا الخيار
+                    </p>
+                  )}
+                  {!row.wouldExceed && row.delta > 0 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      المطلوب: {row.needed} — لديك: {row.current}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {hasBlockingRow && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                لا يمكن المتابعة — المخزون غير كافٍ لبعض الخيارات.
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={cancelBundlePrompt}
+                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={confirmBundlePrompt}
+                disabled={hasBlockingRow}
+                className="flex-1 rounded-lg bg-[#ff5c00] px-3 py-2 text-sm font-bold text-white hover:bg-[#e64a00] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                موافق — أضف الكل
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
