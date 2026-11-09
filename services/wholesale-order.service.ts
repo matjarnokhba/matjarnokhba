@@ -264,21 +264,82 @@ export const WholesaleOrderService = {
     });
     const offerMap = new Map(offers.map((o) => [o.id, o]));
 
+    // ═══ M8.2: per-item variant existence check ═══
     for (const item of items) {
       const offer = offerMap.get(item.offerId);
       if (!offer) throw new NotFoundError("WholesaleOffer", item.offerId);
-      if (offer.status !== "ACTIVE") throw new ValidationError(`عرض ${item.offerId} غير نشط`);
+      const ov = offer.variants.find((v) => v.masterVariantId === item.masterVariantId);
+      if (!ov) throw new ValidationError(`variant ${item.masterVariantId} غير موجود في العرض`);
+    }
+
+    // ═══ M8.2: aggregate quantities per offer ═══
+    const offerTotals = new Map<number, number>();
+    for (const item of items) {
+      offerTotals.set(item.offerId, (offerTotals.get(item.offerId) || 0) + item.quantity);
+    }
+
+    // ═══ M8.2: per-offer validation (aggregate min/max + status) ═══
+    for (const [offerId, totalQty] of offerTotals) {
+      const offer = offerMap.get(offerId)!;
+      if (offer.status !== "ACTIVE") throw new ValidationError(`عرض ${offerId} غير نشط`);
       if (offer.businessUnit.status !== "ACTIVE") throw new ValidationError("بائع العرض غير نشط");
       if (offer.businessUnit.id === input.buyerBusinessUnitId) throw new ValidationError("لا يمكنك الشراء من نفسك");
       if (offer.master.status !== "ACTIVE") throw new ValidationError("منتج العرض غير نشط");
-      if (item.quantity < offer.minOrderQty) {
-        throw new ValidationError(`الحد الأدنى ${offer.minOrderQty} للعرض ${offer.master.name}`);
+      if (totalQty < offer.minOrderQty) {
+        throw new ValidationError(
+          `مجموع الكميات (${totalQty}) أقل من الحد الأدنى (${offer.minOrderQty}) للعرض "${offer.master.name}"`
+        );
       }
-      if (offer.maxOrderQty && item.quantity > offer.maxOrderQty) {
-        throw new ValidationError(`الحد الأقصى ${offer.maxOrderQty} للعرض ${offer.master.name}`);
+      if (offer.maxOrderQty && totalQty > offer.maxOrderQty) {
+        throw new ValidationError(
+          `مجموع الكميات (${totalQty}) يتجاوز الحد الأقصى (${offer.maxOrderQty}) للعرض "${offer.master.name}"`
+        );
       }
-      const ov = offer.variants.find((v) => v.masterVariantId === item.masterVariantId);
-      if (!ov) throw new ValidationError(`variant ${item.masterVariantId} غير موجود في العرض`);
+    }
+
+    // ═══ M8.2: bundle rules validation ═══
+    const bundleRules = await prisma.wholesaleOfferBundleRule.findMany({
+      where: { offerId: { in: offerIds } },
+      include: {
+        triggerVariant: { select: { masterVariantId: true } },
+        requiredVariant: { select: { masterVariantId: true } },
+      },
+    });
+
+    const fmtAttrs = (attrs: any): string =>
+      Array.isArray(attrs)
+        ? attrs.map((a: any) => `${a.name}: ${a.value}`).join(" · ")
+        : "";
+
+    for (const rule of bundleRules) {
+      const triggerQty =
+        items.find(
+          (i) =>
+            i.offerId === rule.offerId &&
+            i.masterVariantId === rule.triggerVariant.masterVariantId
+        )?.quantity ?? 0;
+      if (triggerQty === 0) continue;
+
+      const requiredQty =
+        items.find(
+          (i) =>
+            i.offerId === rule.offerId &&
+            i.masterVariantId === rule.requiredVariant.masterVariantId
+        )?.quantity ?? 0;
+
+      if (requiredQty < rule.minQuantity) {
+        const offer = offerMap.get(rule.offerId)!;
+        const triggerAttrs = offer.variants.find(
+          (v) => v.masterVariantId === rule.triggerVariant.masterVariantId
+        )?.masterVariant.attributes;
+        const requiredAttrs = offer.variants.find(
+          (v) => v.masterVariantId === rule.requiredVariant.masterVariantId
+        )?.masterVariant.attributes;
+
+        throw new ValidationError(
+          `شراء "${fmtAttrs(triggerAttrs)}" يستلزم شراء ${rule.minQuantity} على الأقل من "${fmtAttrs(requiredAttrs)}" (المختار حالياً: ${requiredQty})`
+        );
+      }
     }
 
     const bySeller = new Map<number, CreateItemInput[]>();
@@ -331,13 +392,20 @@ export const WholesaleOrderService = {
             const offer = offerMap.get(item.offerId)!;
             const ov = offer.variants.find((v) => v.masterVariantId === item.masterVariantId)!;
 
-            const tier = ov.tiers.find(
+            // Find tier for this variant's quantity; if none, fall back to smallest tier (flexible pricing)
+            let tier = ov.tiers.find(
               (t) =>
                 item.quantity >= t.minQty &&
                 (t.maxQty === null || item.quantity <= t.maxQty)
             );
+            if (!tier && ov.tiers.length > 0) {
+              // fallback: smallest tier price (base price for small qty)
+              tier = ov.tiers[0];
+            }
             if (!tier) {
-              throw new ValidationError(`لا توجد شريحة سعر للكمية ${item.quantity}`);
+              throw new ValidationError(
+                `لا توجد شريحة سعر لـ "${offer.master.name}" — أضف شرائح للعرض أولاً`
+              );
             }
             const unitPrice = Number(tier.unitPrice);
             const subtotal = unitPrice * item.quantity;
