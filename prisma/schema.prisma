@@ -3176,6 +3176,7 @@ model WholesaleOfferBundleRule {
   triggerVariantId  Int
   requiredVariantId Int
   minQuantity       Int      @default(1)
+  isMultiplied      Boolean  @default(false)
   notes             String?
   createdAt         DateTime @default(now())
 
