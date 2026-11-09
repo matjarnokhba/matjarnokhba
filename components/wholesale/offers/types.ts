@@ -57,6 +57,7 @@ export type OfferDetail = OfferListItem & {
     triggerVariantId: number;
     requiredVariantId: number;
     minQuantity: number;
+    isMultiplied: boolean;
     notes: string | null;
   }>;
   packages?: Array<{

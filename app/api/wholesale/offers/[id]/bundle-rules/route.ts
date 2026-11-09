@@ -6,7 +6,8 @@ import { SessionService } from "@/services/session.service";
 const schema = z.object({
   triggerVariantId: z.number().int().positive(),
   requiredVariantId: z.number().int().positive(),
-  minQuantity: z.number().int().min(1).default(1),
+  minQuantity: z.number().int().min(1).max(10000).default(1),
+  isMultiplied: z.boolean().default(false),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -76,7 +77,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    const { triggerVariantId, requiredVariantId, minQuantity, notes } = parsed.data;
+    const { triggerVariantId, requiredVariantId, minQuantity, isMultiplied, notes } = parsed.data;
     if (triggerVariantId === requiredVariantId) {
       return NextResponse.json({ success: false, message: "لا يمكن أن يكون المشغّل والمطلوب نفس الخيار" }, { status: 400 });
     }
@@ -94,7 +95,7 @@ export async function POST(
       return NextResponse.json({ success: false, message: "هذه القاعدة موجودة مسبقًا" }, { status: 409 });
     }
     const rule = await prisma.wholesaleOfferBundleRule.create({
-      data: { offerId, triggerVariantId, requiredVariantId, minQuantity, notes: notes?.trim() || null },
+      data: { offerId, triggerVariantId, requiredVariantId, minQuantity, isMultiplied, notes: notes?.trim() || null },
     });
     return NextResponse.json({ success: true, rule });
   } catch (e: any) {

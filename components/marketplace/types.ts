@@ -46,6 +46,7 @@ export type PublicOfferDetail = PublicOfferItem & {
     triggerVariantId: number;
     requiredVariantId: number;
     minQuantity: number;
+    isMultiplied: boolean;
     notes: string | null;
   }>;
   packages?: Array<{

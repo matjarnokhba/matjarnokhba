@@ -327,7 +327,10 @@ export const WholesaleOrderService = {
             i.masterVariantId === rule.requiredVariant.masterVariantId
         )?.quantity ?? 0;
 
-      if (requiredQty < rule.minQuantity) {
+      const neededQty = rule.isMultiplied
+        ? triggerQty * rule.minQuantity
+        : rule.minQuantity;
+      if (requiredQty < neededQty) {
         const offer = offerMap.get(rule.offerId)!;
         const triggerAttrs = offer.variants.find(
           (v) => v.masterVariantId === rule.triggerVariant.masterVariantId
@@ -336,8 +339,11 @@ export const WholesaleOrderService = {
           (v) => v.masterVariantId === rule.requiredVariant.masterVariantId
         )?.masterVariant.attributes;
 
+        const ruleDesc = rule.isMultiplied
+          ? `${rule.minQuantity}× (${triggerQty} × ${rule.minQuantity} = ${neededQty})`
+          : `${rule.minQuantity}`;
         throw new ValidationError(
-          `شراء "${fmtAttrs(triggerAttrs)}" يستلزم شراء ${rule.minQuantity} على الأقل من "${fmtAttrs(requiredAttrs)}" (المختار حالياً: ${requiredQty})`
+          `شراء "${fmtAttrs(triggerAttrs)}" يستلزم ${neededQty} على الأقل من "${fmtAttrs(requiredAttrs)}" — ${ruleDesc} (المختار: ${requiredQty})`
         );
       }
     }

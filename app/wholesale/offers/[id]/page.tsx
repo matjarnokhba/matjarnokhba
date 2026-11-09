@@ -64,6 +64,7 @@ export default async function OfferDetailPage({
           triggerVariantId: true,
           requiredVariantId: true,
           minQuantity: true,
+          isMultiplied: true,
           notes: true,
         },
         orderBy: { id: "asc" },
@@ -143,6 +144,7 @@ export default async function OfferDetailPage({
       triggerVariantId: r.triggerVariantId,
       requiredVariantId: r.requiredVariantId,
       minQuantity: r.minQuantity,
+      isMultiplied: r.isMultiplied,
       notes: r.notes,
     })) ?? [],
     packages: offer.packages.map((p) => ({
