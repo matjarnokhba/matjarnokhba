@@ -45,7 +45,11 @@ export const AutoBalanceService = {
    * Only uses non-rare variants for auto-distribution.
    * Rare variants are excluded (suggestedQty = 0).
    */
-  async compute(offerId: number, totalQty: number): Promise<ComputeResult> {
+  async compute(
+    offerId: number,
+    totalQty: number,
+    locked?: { variantId: number; qty: number }
+  ): Promise<ComputeResult> {
     if (!Number.isInteger(totalQty) || totalQty < 1) {
       throw new Error("totalQty يجب أن يكون عدداً صحيحاً موجباً");
     }
@@ -116,7 +120,11 @@ export const AutoBalanceService = {
     }));
 
     // Only non-rare variants participate in auto-distribution
-    const distributable = withWeights.filter((v) => !v.isRare && v.stock > 0);
+    // Exclude locked variant from redistribution (its quantity is preserved)
+    const distributableAll = withWeights.filter((v) => !v.isRare && v.stock > 0);
+    const distributable = locked
+      ? distributableAll.filter((v) => v.variantId !== locked.variantId)
+      : distributableAll;
     const sumWeight = distributable.reduce((s, v) => s + v.weight, 0);
 
     if (sumWeight === 0) {
@@ -140,22 +148,32 @@ export const AutoBalanceService = {
       };
     }
 
+    // Adjust total for distribution: subtract locked quantity
+    const lockedQty = locked?.qty ?? 0;
+    const distributableTotal = Math.max(0, totalQty - lockedQty);
+
     // Raw and rounded
     const rawMap = new Map<number, number>();
     const roundedMap = new Map<number, number>();
     for (const v of distributable) {
-      const raw = (totalQty * v.weight) / sumWeight;
+      const raw = sumWeight > 0 ? (distributableTotal * v.weight) / sumWeight : 0;
       rawMap.set(v.variantId, raw);
       roundedMap.set(v.variantId, roundWithThreshold(raw, config.roundThreshold));
     }
 
-    // Fix total after rounding
+    // Set locked variant to its locked quantity
+    if (locked) {
+      rawMap.set(locked.variantId, locked.qty);
+      roundedMap.set(locked.variantId, locked.qty);
+    }
+
+    // Fix total after rounding (locked variant NOT touched)
     let sumRounded = 0;
     for (const q of roundedMap.values()) sumRounded += q;
     let delta = totalQty - sumRounded;
 
-    if (delta !== 0) {
-      // Add/subtract from the variant with the largest stock (non-rare)
+    if (delta !== 0 && distributable.length > 0) {
+      // Add/subtract from the variant with the largest stock among distributable (non-rare, non-locked)
       const largest = distributable.reduce(
         (best, v) => (v.stock > best.stock ? v : best),
         distributable[0]
@@ -172,9 +190,14 @@ export const AutoBalanceService = {
       roundedMap.set(v.variantId, Math.min(q, v.stock));
     }
 
-    // minDistributed = min of non-rare rounded (for rare cap)
-    const nonRareQty = distributable.map((v) => roundedMap.get(v.variantId) || 0);
-    const minDistributed = nonRareQty.length > 0 ? Math.min(...nonRareQty) : 0;
+    // minDistributed = min of ALL non-rare quantities (including locked if non-rare)
+    // Used as rare cap
+    const nonRareQtys: number[] = [];
+    for (const v of distributableAll) {
+      const q = roundedMap.get(v.variantId) ?? 0;
+      if (q > 0) nonRareQtys.push(q);
+    }
+    const minDistributed = nonRareQtys.length > 0 ? Math.min(...nonRareQtys) : 0;
 
     // Build result
     let totalDistributed = 0;

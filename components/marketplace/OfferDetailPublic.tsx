@@ -80,16 +80,24 @@ export function OfferDetailPublic({
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
 
+  // M10.6: dynamic max — for rare variants, cap = min of all current non-rare quantities
   const maxFor = useCallback((variantId: number): number => {
     const v = offer.variants.find((x) => x.id === variantId);
     if (!v) return 0;
     const stockMax = v.availableStock ?? 0;
-    if (offer.autoBalanceEnabled) {
-      const cap = rareCaps[variantId];
-      if (typeof cap === "number") return Math.min(stockMax, cap);
+    if (!offer.autoBalanceEnabled) return stockMax;
+    if (!rareCaps[variantId]) return stockMax;
+
+    // Rare variant: cap = min of current non-rare quantities
+    const nonRareQtys: number[] = [];
+    for (const ov of offer.variants) {
+      if (rareCaps[ov.id]) continue;
+      const q = quantities[ov.id] || 0;
+      if (q > 0) nonRareQtys.push(q);
     }
-    return stockMax;
-  }, [offer.variants, offer.autoBalanceEnabled, rareCaps]);
+    if (nonRareQtys.length === 0) return 0;
+    return Math.min(stockMax, Math.min(...nonRareQtys));
+  }, [offer.variants, offer.autoBalanceEnabled, rareCaps, quantities]);
 
   // M10.4: fetch auto-balance distribution on total change
   useEffect(() => {
@@ -311,11 +319,64 @@ export function OfferDetailPublic({
     setPackageFeedback("");
   }
 
+  // M10.6: when auto-balance enabled and delta >= 2, redistribute
+  function redistributeLocked(lockedVariantId: number, lockedQty: number) {
+    const totalAfter = Object.entries(quantities).reduce((sum, [vid, q]) => {
+      return sum + (parseInt(vid, 10) === lockedVariantId ? lockedQty : q);
+    }, 0);
+    if (totalAfter < 1) return;
+
+    const params = new URLSearchParams({
+      qty: String(totalAfter),
+      lockedVariantId: String(lockedVariantId),
+      lockedQty: String(lockedQty),
+    });
+    fetch(`/api/wholesale/offers/${offer.id}/auto-balance/compute?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.success) return;
+        const nextQty: Record<number, number> = {};
+        const nextCaps: Record<number, number> = {};
+        for (const v of d.variants as Array<{
+          variantId: number;
+          suggestedQty: number;
+          isRare: boolean;
+          maxAllowed: number;
+        }>) {
+          if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
+          if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;
+        }
+        setQuantities(nextQty);
+        setRareCaps(nextCaps);
+        setMinDistributed(d.minDistributed || 0);
+        setPackageFeedback("تم إعادة التوزيع تلقائياً");
+        setTimeout(() => setPackageFeedback(""), 3000);
+      })
+      .catch(() => {});
+  }
+
   function setDirect(variantId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;
     const max = maxFor(variantId);
     let n = raw === "" ? 0 : parseInt(raw, 10);
     if (n > max) n = max;
+
+    const oldQty = quantities[variantId] || 0;
+    const delta = n - oldQty;
+
+    // Auto-redistribute if delta >= 2 and non-rare and auto-balance on
+    if (offer.autoBalanceEnabled && !rareCaps[variantId] && Math.abs(delta) >= 2) {
+      // Stage the change first
+      setQuantities((p) => {
+        const next = { ...p };
+        if (n === 0) delete next[variantId];
+        else next[variantId] = n;
+        return next;
+      });
+      redistributeLocked(variantId, n);
+      return;
+    }
+
     setQuantities((p) => {
       const next = { ...p };
       if (n === 0) delete next[variantId];

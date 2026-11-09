@@ -25,6 +25,17 @@ export async function GET(
       return NextResponse.json({ success: false, message: "qty مطلوب (عدد موجب)" }, { status: 400 });
     }
 
+    const lockedVariantIdRaw = url.searchParams.get("lockedVariantId");
+    const lockedQtyRaw = url.searchParams.get("lockedQty");
+    let locked: { variantId: number; qty: number } | undefined;
+    if (lockedVariantIdRaw && lockedQtyRaw) {
+      const vid = parseInt(lockedVariantIdRaw, 10);
+      const lq = parseInt(lockedQtyRaw, 10);
+      if (!isNaN(vid) && !isNaN(lq) && lq >= 0) {
+        locked = { variantId: vid, qty: lq };
+      }
+    }
+
     const offer = await prisma.wholesaleOffer.findUnique({
       where: { id: offerId },
       select: { autoBalanceEnabled: true, deletedAt: true },
@@ -39,7 +50,7 @@ export async function GET(
       );
     }
 
-    const result = await AutoBalanceService.compute(offerId, qty);
+    const result = await AutoBalanceService.compute(offerId, qty, locked);
     return NextResponse.json({ success: true, ...result });
   } catch (e: any) {
     console.error("auto-balance compute:", e);
