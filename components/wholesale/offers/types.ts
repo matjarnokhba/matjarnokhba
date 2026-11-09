@@ -46,6 +46,7 @@ export type OfferDetail = OfferListItem & {
     id: number;
     masterVariantId: number;
     attributes: Array<{ name: string; value: string }>;
+    availableStock?: number | null;
     tiers: Array<{
       id: number;
       minQty: number;

@@ -211,6 +211,17 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
                         </span>
                       ))
                     )}
+                    <span
+                      className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                        (v.availableStock ?? 0) > 0
+                          ? (v.availableStock ?? 0) < 10
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-emerald-100 text-emerald-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      مخزون: {v.availableStock ?? 0}
+                    </span>
                   </div>
                   <div className="space-y-1">
                     {v.tiers.map((t) => (
@@ -376,7 +387,7 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
               variants={offer.variants.map((v) => ({
                 id: v.id,
                 attributes: v.attributes,
-                availableStock: null,
+                availableStock: v.availableStock ?? 0,
               }))}
               initialEnabled={offer.autoBalanceEnabled ?? false}
               initialBundleRulesCount={offer.bundleRules?.length ?? 0}

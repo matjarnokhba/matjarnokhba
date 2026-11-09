@@ -82,6 +82,54 @@ export default async function OfferDetailPage({
   const isAdmin =
     current.user.role === "ADMIN" || current.user.role === "SUPER_ADMIN";
   const isOwner = offer.businessUnit.owner.userId === current.user.id;
+  // M11: compute available stock per offer variant (WHOLESALE account - active reservations)
+  const merchantVariantIds = offer.variants
+    .map((v) => v.merchantVariantId)
+    .filter((id): id is number => typeof id === "number");
+
+  const availableStockByVariantId = new Map<number, number>();
+  if (merchantVariantIds.length > 0) {
+    const loc = await prisma.inventoryLocation.findFirst({
+      where: { businessUnitId: offer.businessUnitId, isActive: true },
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
+    if (loc) {
+      const acc = await prisma.inventoryAccount.findFirst({
+        where: { locationId: loc.id, type: "WHOLESALE", isActive: true },
+        select: { id: true },
+      });
+      if (acc) {
+        const [balances, reservations] = await Promise.all([
+          prisma.inventoryBalance.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds }, inventoryAccountId: acc.id },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+          prisma.stockReservation.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+        ]);
+        const balanceMap = new Map<number, number>();
+        for (const b of balances) {
+          balanceMap.set(b.merchantVariantId, (balanceMap.get(b.merchantVariantId) || 0) + b.quantity);
+        }
+        for (const r of reservations) {
+          balanceMap.set(
+            r.merchantVariantId,
+            Math.max(0, (balanceMap.get(r.merchantVariantId) || 0) - r.quantity)
+          );
+        }
+        for (const v of offer.variants) {
+          if (v.merchantVariantId != null) {
+            availableStockByVariantId.set(v.id, balanceMap.get(v.merchantVariantId) ?? 0);
+          } else {
+            availableStockByVariantId.set(v.id, 0);
+          }
+        }
+      }
+    }
+  }
   const isMember = offer.businessUnit.members.length > 0;
   if (!isOwner && !isMember && !isAdmin) notFound();
 
@@ -134,6 +182,7 @@ export default async function OfferDetailPage({
           name: string;
           value: string;
         }>) ?? [],
+      availableStock: availableStockByVariantId.get(v.id) ?? 0,
       tiers: v.tiers.map((t) => ({
         id: t.id,
         minQty: t.minQty,
