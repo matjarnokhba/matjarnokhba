@@ -227,6 +227,97 @@ async function applyOutMovement(
 }
 
 // ═══ Service ═══
+/**
+ * M10.8a: Backfill wholesale balance from retail stock.
+ */
+async function backfillFromRetail(
+  db: any,
+  merchantVariantId: number,
+  inventoryAccountId: number,
+  neededQty: number,
+  referenceType: string,
+  referenceId: number,
+  userId: number | null
+): Promise<number> {
+  try {
+    const mv = await db.merchantVariant.findUnique({
+      where: { id: merchantVariantId },
+      include: {
+        merchantProduct: { select: { businessUnitId: true } },
+        masterVariant: { select: { barcode: true, sku: true } },
+      },
+    });
+    if (!mv) return 0;
+
+    const bu = await db.businessUnit.findUnique({
+      where: { id: mv.merchantProduct.businessUnitId },
+      select: { owner: { select: { userId: true } } },
+    });
+    if (!bu) return 0;
+
+    const seller = await db.seller.findFirst({
+      where: { userId: bu.owner.userId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!seller) return 0;
+
+    const orClauses: any[] = [];
+    if (mv.masterVariant?.barcode) orClauses.push({ barcode: mv.masterVariant.barcode });
+    if (mv.masterVariant?.sku) orClauses.push({ sku: mv.masterVariant.sku });
+    if (mv.barcode) orClauses.push({ barcode: mv.barcode });
+    if (mv.sku) orClauses.push({ sku: mv.sku });
+    if (orClauses.length === 0) return 0;
+
+    const retailPv = await db.productVariant.findFirst({
+      where: { sellerId: seller.id, isActive: true, OR: orClauses },
+      include: { inventory: { select: { id: true, quantity: true } } },
+    });
+    if (!retailPv?.inventory) return 0;
+
+    const transferQty = Math.min(neededQty, retailPv.inventory.quantity);
+    if (transferQty <= 0) return 0;
+
+    await db.inventory.update({
+      where: { id: retailPv.inventory.id },
+      data: { quantity: { decrement: transferQty } },
+    });
+
+    const existing = await db.inventoryBalance.findUnique({
+      where: {
+        merchantVariantId_inventoryAccountId: { merchantVariantId, inventoryAccountId },
+      },
+    });
+
+    if (existing) {
+      await db.inventoryBalance.update({
+        where: { id: existing.id },
+        data: { quantity: { increment: transferQty } },
+      });
+    } else {
+      await db.inventoryBalance.create({
+        data: { merchantVariantId, inventoryAccountId, quantity: transferQty },
+      });
+    }
+
+    await db.inventoryLedger.create({
+      data: {
+        merchantVariantId,
+        inventoryAccountId,
+        businessUnitId: mv.merchantProduct.businessUnitId,
+        type: "ADJUSTMENT",
+        quantity: transferQty,
+        referenceType,
+        referenceId,
+        createdByUserId: userId ?? 1,
+      },
+    });
+
+    return transferQty;
+  } catch (e) {
+    console.error("backfillFromRetail failed:", e);
+    return 0;
+  }
+}
 export const WholesaleInventoryService = {
   /**
    * Reserve stock. Creates StockReservation with TEMP or CONFIRMED stage.
@@ -238,11 +329,30 @@ export const WholesaleInventoryService = {
       throw new ValidationError("الكمية يجب أن تكون عددًا صحيحًا موجبًا");
     }
 
-    const locked = await lockBalance(
+    // M10.8a: auto-backfill from retail if no balance exists
+    let locked = await lockBalance(
       tx,
       input.merchantVariantId,
       input.inventoryAccountId
     );
+    if (!locked) {
+      const added = await backfillFromRetail(
+        tx,
+        input.merchantVariantId,
+        input.inventoryAccountId,
+        input.quantity,
+        input.referenceType,
+        input.referenceId,
+        input.userId ?? null
+      );
+      if (added > 0) {
+        locked = await lockBalance(
+          tx,
+          input.merchantVariantId,
+          input.inventoryAccountId
+        );
+      }
+    }
     if (!locked) {
       throw new InsufficientStockError(
         `variant ${input.merchantVariantId}`,
@@ -251,12 +361,40 @@ export const WholesaleInventoryService = {
       );
     }
 
-    const reserved = await sumActiveReservations(
+    let reserved = await sumActiveReservations(
       tx,
       input.merchantVariantId,
       input.inventoryAccountId
     );
-    const available = locked.quantity - reserved;
+    let available = locked.quantity - reserved;
+
+    if (available < input.quantity) {
+      const stillNeeded = input.quantity - available;
+      const added = await backfillFromRetail(
+        tx,
+        input.merchantVariantId,
+        input.inventoryAccountId,
+        stillNeeded,
+        input.referenceType,
+        input.referenceId,
+        input.userId ?? null
+      );
+      if (added > 0) {
+        const refreshed = await lockBalance(
+          tx,
+          input.merchantVariantId,
+          input.inventoryAccountId
+        );
+        if (refreshed) {
+          reserved = await sumActiveReservations(
+            tx,
+            input.merchantVariantId,
+            input.inventoryAccountId
+          );
+          available = refreshed.quantity - reserved;
+        }
+      }
+    }
 
     if (available < input.quantity) {
       throw new InsufficientStockError(
@@ -265,7 +403,6 @@ export const WholesaleInventoryService = {
         Math.max(0, available)
       );
     }
-
     const stage = input.stage ?? "TEMP";
     let expiresAt: Date | null = input.expiresAt ?? null;
     if (stage === "TEMP" && !expiresAt) {
