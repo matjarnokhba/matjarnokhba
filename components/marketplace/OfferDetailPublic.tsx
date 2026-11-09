@@ -828,7 +828,7 @@ export function OfferDetailPublic({
                         <button
                           type="button"
                           onClick={() => increment(v.id)}
-                          disabled={isMaxed}
+                          disabled={isMaxed || isBlocked}
                           className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                           aria-label="زيادة"
                         >
