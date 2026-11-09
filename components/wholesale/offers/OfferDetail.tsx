@@ -24,6 +24,7 @@ import { OfferActions } from "./OfferActions";
 import TransferToStoreModal from "./TransferToStoreModal";
 import BundleRulesEditor from "./BundleRulesEditor";
 import PackagesEditor from "./PackagesEditor";
+import AutoBalanceEditor from "./AutoBalanceEditor";
 import {
   OFFER_STATUS_LABEL,
   OFFER_STATUS_VARIANT,
@@ -367,6 +368,19 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
                 </button>
               </div>
             </Card>
+          )}
+
+          {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (
+            <AutoBalanceEditor
+              offerId={offer.id}
+              variants={offer.variants.map((v) => ({
+                id: v.id,
+                attributes: v.attributes,
+                availableStock: null,
+              }))}
+              initialEnabled={offer.autoBalanceEnabled ?? false}
+              initialBundleRulesCount={offer.bundleRules?.length ?? 0}
+            />
           )}
 
           {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (

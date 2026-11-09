@@ -100,6 +100,7 @@ export default async function OfferDetailPage({
     status: offer.status,
     claimType: offer.claimType,
     claimVerified: offer.claimVerified,
+    autoBalanceEnabled: offer.autoBalanceEnabled,
     reviewLevel: offer.reviewLevel,
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),
