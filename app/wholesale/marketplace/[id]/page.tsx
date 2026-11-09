@@ -208,6 +208,7 @@ export default async function MarketplaceOfferDetailPage({
     maxOrderQty: offer.maxOrderQty,
     claimType: offer.claimType,
     claimVerified: offer.claimVerified,
+    autoBalanceEnabled: offer.autoBalanceEnabled,
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),
     description: offer.notes,

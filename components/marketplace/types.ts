@@ -14,6 +14,7 @@ export type PublicOfferItem = {
   maxOrderQty: number | null;
   claimType: string;
   claimVerified: boolean;
+  autoBalanceEnabled?: boolean;
   variantCount: number;
   createdAt: string;
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -18,6 +18,7 @@ import {
   Boxes,
   X,
   Link2,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -70,6 +71,11 @@ export function OfferDetailPublic({
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [packageFeedback, setPackageFeedback] = useState("");
   const [bundlePrompt, setBundlePrompt] = useState<BundlePrompt | null>(null);
+  const [autoBalanceTotal, setAutoBalanceTotal] = useState<string>("");
+  const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
+  const [autoBalanceError, setAutoBalanceError] = useState("");
+  const [minDistributed, setMinDistributed] = useState<number>(0);
+  const [rareCaps, setRareCaps] = useState<Record<number, number>>({});
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
@@ -77,9 +83,57 @@ export function OfferDetailPublic({
   const maxFor = useCallback((variantId: number): number => {
     const v = offer.variants.find((x) => x.id === variantId);
     if (!v) return 0;
-    return v.availableStock ?? 0;
-  }, [offer.variants]);
+    const stockMax = v.availableStock ?? 0;
+    if (offer.autoBalanceEnabled) {
+      const cap = rareCaps[variantId];
+      if (typeof cap === "number") return Math.min(stockMax, cap);
+    }
+    return stockMax;
+  }, [offer.variants, offer.autoBalanceEnabled, rareCaps]);
 
+  // M10.4: fetch auto-balance distribution on total change
+  useEffect(() => {
+    if (!offer.autoBalanceEnabled) return;
+    const t = parseInt(autoBalanceTotal, 10);
+    if (!t || t < 1) {
+      setMinDistributed(0);
+      setRareCaps({});
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setAutoBalanceLoading(true);
+      setAutoBalanceError("");
+      try {
+        const res = await fetch(
+          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}`
+        );
+        const d = await res.json();
+        if (!d.success) {
+          setAutoBalanceError(d.message || "فشل التوزيع");
+          return;
+        }
+        const nextQty: Record<number, number> = {};
+        const nextCaps: Record<number, number> = {};
+        for (const v of d.variants as Array<{
+          variantId: number;
+          suggestedQty: number;
+          isRare: boolean;
+          maxAllowed: number;
+        }>) {
+          if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
+          if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;
+        }
+        setQuantities(nextQty);
+        setRareCaps(nextCaps);
+        setMinDistributed(d.minDistributed || 0);
+      } catch {
+        setAutoBalanceError("خطأ في الاتصال");
+      } finally {
+        setAutoBalanceLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [autoBalanceTotal, offer.id, offer.autoBalanceEnabled]);
   const totalQty = useMemo(() => {
     let sum = 0;
     for (const v of offer.variants) sum += quantities[v.id] || 0;
@@ -215,10 +269,12 @@ export function OfferDetailPublic({
     const cur = quantities[variantId] || 0;
     if (cur >= max) return;
 
-    const prompt = buildBundlePrompt(variantId);
-    if (prompt) {
-      setBundlePrompt(prompt);
-      return;
+    if (!offer.autoBalanceEnabled) {
+      const prompt = buildBundlePrompt(variantId);
+      if (prompt) {
+        setBundlePrompt(prompt);
+        return;
+      }
     }
 
     setQuantities((p) => ({ ...p, [variantId]: cur + 1 }));
@@ -446,6 +502,72 @@ export function OfferDetailPublic({
                   {packageFeedback}
                 </div>
               )}
+            </Card>
+          )}
+
+          {offer.autoBalanceEnabled && (
+            <Card>
+              <div id="auto-balance-panel" className="space-y-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  التوزيع التلقائي
+                </h3>
+                <p className="text-xs text-gray-500">
+                  أدخل الكمية الإجمالية — النظام يوزّعها على الألوان المتوفرة بنسب ذكية. الألوان النادرة تُضاف يدوياً فقط.
+                </p>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    الكمية الإجمالية المطلوبة
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={offer.minOrderQty}
+                      max={offer.maxOrderQty ?? undefined}
+                      value={autoBalanceTotal}
+                      onChange={(e) => setAutoBalanceTotal(e.target.value)}
+                      placeholder={`مثال: ${offer.minOrderQty * 5}`}
+                      className="h-10 flex-1 rounded-lg border-2 border-gray-200 px-3 text-sm font-bold focus:border-purple-500 focus:outline-none"
+                    />
+                    {autoBalanceLoading && (
+                      <span className="text-xs text-gray-500">يحسب...</span>
+                    )}
+                  </div>
+                </div>
+
+                {autoBalanceError && (
+                  <div className="rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                    {autoBalanceError}
+                  </div>
+                )}
+
+                {minDistributed > 0 && (
+                  <div className="rounded-lg bg-purple-50 p-2 text-xs text-purple-800">
+                    <p>
+                      الحد الأدنى المُوزَّع: <strong>{minDistributed}</strong> قطعة
+                    </p>
+                    <p className="mt-1 text-purple-600">
+                      الألوان النادرة محدودة بـ {minDistributed} قطعة كحد أقصى
+                    </p>
+                  </div>
+                )}
+
+                {Object.keys(rareCaps).length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                    <p className="font-bold">ألوان نادرة (تُضاف يدوياً):</p>
+                    <ul className="mt-1 list-inside list-disc space-y-0.5">
+                      {offer.variants
+                        .filter((v) => rareCaps[v.id] !== undefined)
+                        .map((v) => (
+                          <li key={v.id}>
+                            {fmtAttrs(v.attributes)} — حد أقصى {rareCaps[v.id]}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </Card>
           )}
 
@@ -699,7 +821,7 @@ export function OfferDetailPublic({
       </div>
 
       {/* Bundle Prompt Modal (M9.5c) */}
-      {bundlePrompt && (
+      {bundlePrompt && !offer.autoBalanceEnabled && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={cancelBundlePrompt}>
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
