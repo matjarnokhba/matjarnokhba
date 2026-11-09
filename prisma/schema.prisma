@@ -3123,6 +3123,7 @@ model WholesaleOffer {
   variants        WholesaleOfferVariant[]
   orderItems      WholesaleOrderItem[]
   bundleRules     WholesaleOfferBundleRule[]
+  packages        WholesaleOfferPackage[]
 
   @@unique([businessUnitId, masterId])
   @@index([masterId, status])
@@ -3145,6 +3146,8 @@ model WholesaleOfferVariant {
   tiers             WholesaleOfferTier[]
   triggeredBundles  WholesaleOfferBundleRule[] @relation("BundleTrigger")
   requiredByBundles WholesaleOfferBundleRule[] @relation("BundleRequired")
+
+  packageItems WholesaleOfferPackageItem[]
 
   @@unique([offerId, masterVariantId])
   @@index([offerId])
@@ -3184,6 +3187,37 @@ model WholesaleOfferBundleRule {
   @@index([offerId])
   @@index([triggerVariantId])
   @@index([requiredVariantId])
+}
+
+model WholesaleOfferPackage {
+  id        Int      @id @default(autoincrement())
+  offerId   Int
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offer WholesaleOffer              @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  items WholesaleOfferPackageItem[]
+
+  @@index([offerId])
+  @@index([offerId, sortOrder])
+}
+
+model WholesaleOfferPackageItem {
+  id        Int      @id @default(autoincrement())
+  packageId Int
+  variantId Int
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  package WholesaleOfferPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  variant WholesaleOfferVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, variantId])
+  @@index([packageId])
+  @@index([variantId])
 }
 
 model WholesaleOrderGroup {
