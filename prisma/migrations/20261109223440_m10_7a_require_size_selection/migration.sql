@@ -1,0 +1,1 @@
+ALTER TABLE "WholesaleOffer" ADD COLUMN IF NOT EXISTS "requireSizeSelection" BOOLEAN NOT NULL DEFAULT false;

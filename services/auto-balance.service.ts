@@ -142,7 +142,8 @@ export const AutoBalanceService = {
     const availableSizes = Array.from(availableSizesSet).sort();
 
     const hasSizeFilter = Array.isArray(sizeFilter) && sizeFilter.length > 0;
-    if (offer.requireSizeSelection && !hasSizeFilter) {
+    // Only require size selection when the offer actually has size attributes
+    if (offer.requireSizeSelection && availableSizes.length > 0 && !hasSizeFilter) {
       throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
     }
 
