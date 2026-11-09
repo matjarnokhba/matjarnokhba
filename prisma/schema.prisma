@@ -3116,14 +3116,17 @@ model WholesaleOffer {
   updatedAt         DateTime             @updatedAt
   deletedAt         DateTime?
 
-  businessUnit    BusinessUnit               @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  master          MasterProduct              @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  merchantProduct MerchantProduct?           @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
-  approvedByUser  User?                      @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  variants        WholesaleOfferVariant[]
-  orderItems      WholesaleOrderItem[]
-  bundleRules     WholesaleOfferBundleRule[]
-  packages        WholesaleOfferPackage[]
+  businessUnit         BusinessUnit               @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master               MasterProduct              @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  merchantProduct      MerchantProduct?           @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
+  approvedByUser       User?                      @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  variants             WholesaleOfferVariant[]
+  orderItems           WholesaleOrderItem[]
+  bundleRules          WholesaleOfferBundleRule[]
+  packages             WholesaleOfferPackage[]
+  autoBalanceEnabled   Boolean                    @default(false)
+  autoBalanceConfig    Json?
+  autoBalanceUpdatedAt DateTime?
 
   @@unique([businessUnitId, masterId])
   @@index([masterId, status])

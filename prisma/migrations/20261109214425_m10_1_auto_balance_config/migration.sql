@@ -1,0 +1,4 @@
+ALTER TABLE "WholesaleOffer" 
+  ADD COLUMN IF NOT EXISTS "autoBalanceEnabled" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "autoBalanceConfig" JSONB,
+  ADD COLUMN IF NOT EXISTS "autoBalanceUpdatedAt" TIMESTAMP(3);
