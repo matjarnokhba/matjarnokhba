@@ -371,21 +371,21 @@ enum ProductUnit {
 // ============================================
 
 model User {
-  id                     Int       @id @default(autoincrement())
-  email                  String    @unique
-  referralCode           String    @unique @default(cuid())
-  referredById           Int?
-  passwordHash           String?
-  googleId               String?   @unique
-  emailVerified          Boolean   @default(false)
-  emailVerificationToken String?   @unique
+  id                         Int       @id @default(autoincrement())
+  email                      String    @unique
+  referralCode               String    @unique @default(cuid())
+  referredById               Int?
+  passwordHash               String?
+  googleId                   String?   @unique
+  emailVerified              Boolean   @default(false)
+  emailVerificationToken     String?   @unique
   emailVerificationExpiresAt DateTime?
-  name                   String
-  phone                  String?
-  role                   UserRole  @default(CUSTOMER)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  deletedAt              DateTime?
+  name                       String
+  phone                      String?
+  role                       UserRole  @default(CUSTOMER)
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  deletedAt                  DateTime?
 
   addresses           Address[]
   seller              Seller?
@@ -413,26 +413,26 @@ model User {
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
   // Catalog v3
-  staffOf         SellerStaff?    @relation("StaffUser")
-  staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
-
-  @@index([email])
-  @@index([deletedAt])
+  staffOf            SellerStaff?      @relation("StaffUser")
+  staffCreatedBy     SellerStaff[]     @relation("StaffCreatedBy")
 
   // ─── Wholesale relations (M1.1) ───
   businessOwner           BusinessOwner?
   businessUnitMemberships BusinessUnitMember[]
-  masterProductsCreated   MasterProduct[] @relation("MasterProductCreatedBy")
-  masterProductsApproved  MasterProduct[] @relation("MasterProductApprovedBy")
+  masterProductsCreated   MasterProduct[]      @relation("MasterProductCreatedBy")
+  masterProductsApproved  MasterProduct[]      @relation("MasterProductApprovedBy")
 
   // ─── M1.2 back-relations ───
   wholesaleOffersApproved WholesaleOffer[] @relation("WholesaleOfferApprovedBy")
 
   // ─── M1.3 back-relations ───
-  ledgerEntriesCreated LedgerEntry[]  @relation("LedgerEntryCreatedBy")
-  creditNotesIssued    CreditNote[]   @relation("CreditNoteIssuer")
-  returnOrdersApproved ReturnOrder[]  @relation("ReturnOrderApprovedBy")
-  returnOrdersRejected ReturnOrder[]  @relation("ReturnOrderRejectedBy")
+  ledgerEntriesCreated LedgerEntry[] @relation("LedgerEntryCreatedBy")
+  creditNotesIssued    CreditNote[]  @relation("CreditNoteIssuer")
+  returnOrdersApproved ReturnOrder[] @relation("ReturnOrderApprovedBy")
+  returnOrdersRejected ReturnOrder[] @relation("ReturnOrderRejectedBy")
+
+  @@index([email])
+  @@index([deletedAt])
 }
 
 model Address {
@@ -586,14 +586,13 @@ model Seller {
   sellerReturnBatches  SellerReturnBatch[]
   staff                SellerStaff[]
 
+  orderItems OrderItem[] @relation("OrderItemSeller")
+
   @@index([status])
   @@index([deletedAt])
   @@index([isFeatured])
   @@index([isVerified])
   @@index([collectionZoneId])
-
-
-  orderItems OrderItem[] @relation("OrderItemSeller")
 }
 
 // ============================================
@@ -618,8 +617,8 @@ model Category {
   deletedAt      DateTime?
 
   // ═══ Catalog v2 ═══
-  level   Int     @default(1)
-  isLeaf  Boolean @default(false)
+  level  Int     @default(1)
+  isLeaf Boolean @default(false)
 
   parent     Category?           @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children   Category[]          @relation("CategoryHierarchy")
@@ -629,57 +628,58 @@ model Category {
   @@index([parentId])
   @@index([isActive])
   @@index([deletedAt])
-
 }
 
 model Product {
-  id           Int           @id @default(autoincrement())
-  productCode  String        @unique @default(uuid())
-  sellerId     Int
-  categoryId   Int
-  name         String
-  slug         String
-  description  String?
-  brand        String?
-  badge        String?
-  rating       Float         @default(0)
-  reviewsCount Int           @default(0)
-  sold         Int           @default(0)
-  freeShipping Boolean       @default(false)
-  status       ProductStatus @default(DRAFT)
-  pendingOwnerApproval Boolean @default(false)
+  id                   Int           @id @default(autoincrement())
+  productCode          String        @unique @default(uuid())
+  sellerId             Int
+  categoryId           Int
+  name                 String
+  slug                 String
+  description          String?
+  brand                String?
+  badge                String?
+  rating               Float         @default(0)
+  reviewsCount         Int           @default(0)
+  sold                 Int           @default(0)
+  freeShipping         Boolean       @default(false)
+  status               ProductStatus @default(DRAFT)
+  pendingOwnerApproval Boolean       @default(false)
   createdByStaffId     Int?
-  isFeatured   Boolean       @default(false)
-  isNew        Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?
+  isFeatured           Boolean       @default(false)
+  isNew                Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  deletedAt            DateTime?
 
   // ═══ Catalog v2 ═══
-  productType        ProductType  @default(PHYSICAL)
-  originCountry      String?
-  videoUrl           String?
-  salePrice          Decimal?     @db.Decimal(10, 2)
-  minOrderQty        Int          @default(1)
-  maxOrderQty        Int?
-  weightGrams        Int?
-  lengthCm           Decimal?     @db.Decimal(6, 2)
-  widthCm            Decimal?     @db.Decimal(6, 2)
-  heightCm           Decimal?     @db.Decimal(6, 2)
-  unit               ProductUnit  @default(PIECE)
-  requiresColdChain  Boolean      @default(false)
-  requiresLicense    Boolean      @default(false)
-  licenseNote        String?
-  specifications     ProductSpecification[]
+  productType       ProductType            @default(PHYSICAL)
+  originCountry     String?
+  videoUrl          String?
+  salePrice         Decimal?               @db.Decimal(10, 2)
+  minOrderQty       Int                    @default(1)
+  maxOrderQty       Int?
+  weightGrams       Int?
+  lengthCm          Decimal?               @db.Decimal(6, 2)
+  widthCm           Decimal?               @db.Decimal(6, 2)
+  heightCm          Decimal?               @db.Decimal(6, 2)
+  unit              ProductUnit            @default(PIECE)
+  requiresColdChain Boolean                @default(false)
+  requiresLicense   Boolean                @default(false)
+  licenseNote       String?
+  specifications    ProductSpecification[]
 
-  seller     Seller           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
-  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  images     ProductImage[]
-  options    ProductOption[]
-  variants   ProductVariant[]
-  reviews    Review[]
-  editLogs   ProductEditLog[]
-  favorites  Favorite[]
+  seller    Seller           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  category  Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images    ProductImage[]
+  options   ProductOption[]
+  variants  ProductVariant[]
+  reviews   Review[]
+  editLogs  ProductEditLog[]
+  favorites Favorite[]
+
+  orderItems OrderItem[]
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -687,8 +687,6 @@ model Product {
   @@index([categoryId])
   @@index([status])
   @@index([deletedAt])
-
-  orderItems OrderItem[]
 }
 
 model ProductImage {
@@ -754,14 +752,14 @@ model ProductVariant {
   inventory      Inventory?
   storeSaleItems StoreSaleItem[]
 
+  orderItems OrderItem[]
+
   @@unique([productId, optionsHash])
   @@unique([sellerId, sku])
   @@unique([sellerId, barcode])
   @@index([productId])
   @@index([sellerId])
   @@index([sku])
-
-  orderItems OrderItem[]
 }
 
 model ProductVariantOptionValue {
@@ -914,12 +912,12 @@ model OrderItem {
   shipmentItems    ShipmentItem[]    @relation("OrderItemShipmentItems")
   fulfillmentItems FulfillmentItem[]
 
+  returnItems ReturnItem[]
+
   @@index([orderId])
   @@index([productId])
   @@index([variantId])
   @@index([sellerId])
-
-  returnItems ReturnItem[]
 }
 
 model OrderStatusHistory {
@@ -1542,11 +1540,11 @@ model CategoryAttribute {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  category Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  values   CategoryAttributeValue[]
-  productSpecs ProductSpecification[]
-  isSpecification Boolean @default(false)
-  helpText String?
+  category        Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values          CategoryAttributeValue[]
+  productSpecs    ProductSpecification[]
+  isSpecification Boolean                  @default(false)
+  helpText        String?
 
   @@unique([categoryId, slug])
   @@index([categoryId])
@@ -1842,6 +1840,7 @@ model FulfillmentItem {
   warehouseReceipts    WarehouseReceipt[]
   shipmentItems        ShipmentItem[]
   collectionBatchItems CollectionBatchItem[]
+
   @@index([sellerId])
   @@index([status])
   @@index([sellerId, status])
@@ -2543,9 +2542,9 @@ model SellerStaff {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  user        User                   @relation("StaffUser", fields: [userId], references: [id], onDelete: Cascade)
-  seller      Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  createdBy   User                   @relation("StaffCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  user        User                    @relation("StaffUser", fields: [userId], references: [id], onDelete: Cascade)
+  seller      Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdBy   User                    @relation("StaffCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   permissions SellerStaffPermission[]
 
   @@index([sellerId])
@@ -2591,8 +2590,6 @@ model ProductSpecification {
 // ============================================
 // CATALOG v3 — Unified Product Identity
 // ============================================
-
-
 
 // ═══════════════════════════════════════════════════════════
 // WHOLESALE SYSTEM — M1.1: Identity, Product, Activity
@@ -2677,7 +2674,7 @@ model BusinessOwner {
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
 
-  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   legalEntities    LegalEntity[]
   businessUnits    BusinessUnit[]
   accountingGroups AccountingGroup[]
@@ -2706,53 +2703,53 @@ model LegalEntity {
 }
 
 model BusinessUnit {
-  id                  Int                  @id @default(autoincrement())
-  ownerId             Int
-  legalEntityId       Int?
-  accountingGroupId   Int?
-  name                String
-  slug                String               @unique
-  type                BusinessType
-  activityType        String?
-  description         String?
-  logo                String?
-  status              BusinessUnitStatus   @default(ACTIVE)
-  capabilities        Json                 @default("[]")
-  registrationStatus  RegistrationStatus   @default(UNREGISTERED)
-  verificationStatus  VerificationStatus   @default(PENDING)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  deletedAt           DateTime?
+  id                 Int                @id @default(autoincrement())
+  ownerId            Int
+  legalEntityId      Int?
+  accountingGroupId  Int?
+  name               String
+  slug               String             @unique
+  type               BusinessType
+  activityType       String?
+  description        String?
+  logo               String?
+  status             BusinessUnitStatus @default(ACTIVE)
+  capabilities       Json               @default("[]")
+  registrationStatus RegistrationStatus @default(UNREGISTERED)
+  verificationStatus VerificationStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
 
-  owner              BusinessOwner       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  legalEntity        LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  accountingGroup    AccountingGroup?    @relation(fields: [accountingGroupId], references: [id], onDelete: SetNull)
+  owner              BusinessOwner        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  legalEntity        LegalEntity?         @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  accountingGroup    AccountingGroup?     @relation(fields: [accountingGroupId], references: [id], onDelete: SetNull)
   members            BusinessUnitMember[]
   merchantProducts   MerchantProduct[]
   inventoryLocations InventoryLocation[]
-
-  @@index([ownerId, status])
-  @@index([type, status])
-  @@index([accountingGroupId])
-  @@index([verificationStatus])
 
   // ─── M1.2 back-relations ───
   offers WholesaleOffer[]
 
   // ─── M1.3 back-relations ───
-  ledgerBooks          LedgerBook[]
-  invoicesSent         Invoice[]     @relation("InvoiceSender")
-  invoicesReceived     Invoice[]     @relation("InvoiceReceiver")
-  paymentsMade         Payment[]     @relation("PaymentPayer")
-  settlementsReceived  Settlement[]  @relation("SettlementReceiver")
-  returnOrdersBuyer    ReturnOrder[] @relation("ReturnOrderBuyer")
-  returnOrdersSeller   ReturnOrder[] @relation("ReturnOrderSeller")
+  ledgerBooks         LedgerBook[]
+  invoicesSent        Invoice[]     @relation("InvoiceSender")
+  invoicesReceived    Invoice[]     @relation("InvoiceReceiver")
+  paymentsMade        Payment[]     @relation("PaymentPayer")
+  settlementsReceived Settlement[]  @relation("SettlementReceiver")
+  returnOrdersBuyer   ReturnOrder[] @relation("ReturnOrderBuyer")
+  returnOrdersSeller  ReturnOrder[] @relation("ReturnOrderSeller")
 
   // ─── M5.3 Ledger ───
-  ledgerContacts   LedgerContact[] @relation("BULedgerContacts")
+  ledgerContacts LedgerContact[] @relation("BULedgerContacts")
 
   // ─── M5.4 Transfers ───
   inventoryTransfers InventoryTransfer[]
+
+  @@index([ownerId, status])
+  @@index([type, status])
+  @@index([accountingGroupId])
+  @@index([verificationStatus])
 }
 
 model BusinessUnitMember {
@@ -2804,11 +2801,11 @@ model MerchantProduct {
   updatedAt              DateTime              @updatedAt
   deletedAt              DateTime?
 
-  businessUnit BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  master       MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  variants     MerchantVariant[]
-  sellingUnits SellingUnit[]
-    wholesaleOffers WholesaleOffer[]
+  businessUnit    BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master          MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  variants        MerchantVariant[]
+  sellingUnits    SellingUnit[]
+  wholesaleOffers WholesaleOffer[]
 
   @@unique([businessUnitId, masterId])
   @@index([businessUnitId, status])
@@ -2829,9 +2826,9 @@ model MerchantVariant {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  merchantProduct MerchantProduct @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
-  masterVariant   MasterVariant?  @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
-    wholesaleOfferVariants WholesaleOfferVariant[]
+  merchantProduct        MerchantProduct         @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
+  masterVariant          MasterVariant?          @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+  wholesaleOfferVariants WholesaleOfferVariant[]
 
   @@unique([merchantProductId, sku])
   @@index([merchantProductId, isDefault])
@@ -2875,24 +2872,24 @@ model InventoryLocation {
 }
 
 model InventoryAccount {
-  id             Int                   @id @default(autoincrement())
+  id             Int                  @id @default(autoincrement())
   locationId     Int
   businessUnitId Int
   type           InventoryAccountType
-  isActive       Boolean               @default(true)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   location InventoryLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@unique([locationId, type])
-  @@index([businessUnitId, type])
 
   // ─── M1.2 back-relations ───
   balances     InventoryBalance[]
   ledgers      InventoryLedger[]
   batches      InventoryBatch[]
   reservations StockReservation[]
+
+  @@unique([locationId, type])
+  @@index([businessUnitId, type])
 }
 
 model MasterProduct {
@@ -2921,13 +2918,13 @@ model MasterProduct {
   versions         MasterProductVersion[]
   merchantProducts MerchantProduct[]
 
+  // ─── M1.2 back-relations ───
+  offers WholesaleOffer[]
+
   @@index([categoryId, status])
   @@index([barcode])
   @@index([qrCode])
   @@index([status])
-
-  // ─── M1.2 back-relations ───
-  offers WholesaleOffer[]
 }
 
 model MasterVariant {
@@ -2945,16 +2942,16 @@ model MasterVariant {
   master           MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Cascade)
   merchantVariants MerchantVariant[]
 
-  @@unique([masterId, attributesHash])
-  @@index([barcode])
-  @@index([qrCode])
-  @@index([masterId, isDefault])
-
   // ─── M1.2 back-relations ───
   offerVariants WholesaleOfferVariant[]
 
   // ─── M1.3 back-relations ───
-  priceComparisons     PriceComparisonCache[]
+  priceComparisons PriceComparisonCache[]
+
+  @@unique([masterId, attributesHash])
+  @@index([barcode])
+  @@index([qrCode])
+  @@index([masterId, isDefault])
 }
 
 model MasterProductVersion {
@@ -3102,7 +3099,7 @@ model WholesaleOffer {
   id                Int                  @id @default(autoincrement())
   businessUnitId    Int
   masterId          Int
-    merchantProductId Int?
+  merchantProductId Int?
   wholesalePrice    Decimal              @db.Decimal(10, 2)
   minOrderQty       Int                  @default(1)
   maxOrderQty       Int?
@@ -3119,36 +3116,39 @@ model WholesaleOffer {
   updatedAt         DateTime             @updatedAt
   deletedAt         DateTime?
 
-  businessUnit   BusinessUnit             @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  master         MasterProduct            @relation(fields: [masterId], references: [id], onDelete: Restrict)
-    merchantProduct  MerchantProduct?         @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
-  approvedByUser User?                    @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  variants       WholesaleOfferVariant[]
-  orderItems     WholesaleOrderItem[]
+  businessUnit    BusinessUnit               @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master          MasterProduct              @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  merchantProduct MerchantProduct?           @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
+  approvedByUser  User?                      @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  variants        WholesaleOfferVariant[]
+  orderItems      WholesaleOrderItem[]
+  bundleRules     WholesaleOfferBundleRule[]
 
   @@unique([businessUnitId, masterId])
   @@index([masterId, status])
   @@index([status, deletedAt])
   @@index([businessUnitId, status])
-    @@index([merchantProductId])
+  @@index([merchantProductId])
 }
 
 model WholesaleOfferVariant {
-  id              Int      @id @default(autoincrement())
-  offerId         Int
-  masterVariantId Int
-    merchantVariantId Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  offerId           Int
+  masterVariantId   Int
+  merchantVariantId Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  offer         WholesaleOffer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  masterVariant MasterVariant          @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-    merchantVariant  MerchantVariant?       @relation(fields: [merchantVariantId], references: [id], onDelete: SetNull)
-  tiers         WholesaleOfferTier[]
+  offer             WholesaleOffer             @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  masterVariant     MasterVariant              @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+  merchantVariant   MerchantVariant?           @relation(fields: [merchantVariantId], references: [id], onDelete: SetNull)
+  tiers             WholesaleOfferTier[]
+  triggeredBundles  WholesaleOfferBundleRule[] @relation("BundleTrigger")
+  requiredByBundles WholesaleOfferBundleRule[] @relation("BundleRequired")
 
   @@unique([offerId, masterVariantId])
   @@index([offerId])
-    @@index([merchantVariantId])
+  @@index([merchantVariantId])
 }
 
 model WholesaleOfferTier {
@@ -3164,6 +3164,26 @@ model WholesaleOfferTier {
 
   @@unique([variantId, minQty])
   @@index([variantId])
+}
+
+// M8.1: bundle rules — buying triggerVariant forces ≥minQuantity of requiredVariant
+model WholesaleOfferBundleRule {
+  id                Int      @id @default(autoincrement())
+  offerId           Int
+  triggerVariantId  Int
+  requiredVariantId Int
+  minQuantity       Int      @default(1)
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  offer           WholesaleOffer        @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  triggerVariant  WholesaleOfferVariant @relation("BundleTrigger", fields: [triggerVariantId], references: [id], onDelete: Cascade)
+  requiredVariant WholesaleOfferVariant @relation("BundleRequired", fields: [requiredVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([triggerVariantId, requiredVariantId])
+  @@index([offerId])
+  @@index([triggerVariantId])
+  @@index([requiredVariantId])
 }
 
 model WholesaleOrderGroup {
@@ -3188,8 +3208,8 @@ model WholesaleOrder {
   sellerBusinessUnitId Int
   buyerBusinessUnitId  Int
   subtotal             Decimal                    @db.Decimal(12, 2)
-  discount             Decimal                    @db.Decimal(10, 2) @default(0)
-  shippingCost         Decimal                    @db.Decimal(10, 2) @default(0)
+  discount             Decimal                    @default(0) @db.Decimal(10, 2)
+  shippingCost         Decimal                    @default(0) @db.Decimal(10, 2)
   total                Decimal                    @db.Decimal(12, 2)
   status               WholesaleOrderStatus       @default(PENDING)
   paymentStatus        WholesalePaymentStatus     @default(UNPAID)
@@ -3207,14 +3227,14 @@ model WholesaleOrder {
   group WholesaleOrderGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   items WholesaleOrderItem[]
 
+  // ─── M1.3 back-relations ───
+  returnOrders ReturnOrder[]
+
   @@index([sellerBusinessUnitId, status])
   @@index([buyerBusinessUnitId, status])
   @@index([groupId])
   @@index([status, createdAt])
   @@index([orderNumber])
-
-  // ─── M1.3 back-relations ───
-  returnOrders ReturnOrder[]
 }
 
 model WholesaleOrderItem {
@@ -3235,12 +3255,12 @@ model WholesaleOrderItem {
   order WholesaleOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   offer WholesaleOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
 
+  // ─── M1.3 back-relations ───
+  returnItems ReturnOrderItem[]
+
   @@index([orderId])
   @@index([offerId])
   @@index([masterVariantId])
-
-  // ─── M1.3 back-relations ───
-  returnItems ReturnOrderItem[]
 }
 
 model InventoryLedger {
@@ -3260,13 +3280,13 @@ model InventoryLedger {
   inventoryAccount InventoryAccount @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
   inventoryBatch   InventoryBatch?  @relation(fields: [inventoryBatchId], references: [id], onDelete: SetNull)
 
+  // ─── M1.3 back-relations ───
+  returnRecord InventoryReturn?
+
   @@index([merchantVariantId, inventoryAccountId, createdAt])
   @@index([inventoryBatchId])
   @@index([businessUnitId, createdAt])
   @@index([referenceType, referenceId])
-
-  // ─── M1.3 back-relations ───
-  returnRecord InventoryReturn?
 }
 
 model InventoryBalance {
@@ -3285,27 +3305,27 @@ model InventoryBalance {
 }
 
 model InventoryBatch {
-  id                 Int                       @id @default(autoincrement())
+  id                 Int                      @id @default(autoincrement())
   merchantVariantId  Int
   inventoryAccountId Int
   sourceType         InventoryBatchSourceType
   sourceReferenceId  Int?
   quantityReceived   Int
   quantityRemaining  Int
-  unitCost           Decimal                   @db.Decimal(10, 4)
-  receivedAt         DateTime                  @default(now())
-  createdAt          DateTime                  @default(now())
+  unitCost           Decimal                  @db.Decimal(10, 4)
+  receivedAt         DateTime                 @default(now())
+  createdAt          DateTime                 @default(now())
 
   inventoryAccount InventoryAccount           @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
   ledgerEntries    InventoryLedger[]
   allocations      InventoryBatchAllocation[]
 
-  @@index([merchantVariantId, inventoryAccountId, receivedAt])
-  @@index([sourceType, sourceReferenceId])
-
   // ─── M1.3 back-relations ───
   returnItemsSource      ReturnOrderItem[] @relation("ReturnItemSourceBatch")
   inventoryReturnsSource InventoryReturn[] @relation("InventoryReturnSourceBatch")
+
+  @@index([merchantVariantId, inventoryAccountId, receivedAt])
+  @@index([sourceType, sourceReferenceId])
 }
 
 model InventoryBatchAllocation {
@@ -3455,7 +3475,7 @@ model LedgerAccount {
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 
-  book     LedgerBook     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  book     LedgerBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
   lines    LedgerLine[]
   balances AccountBalance[]
 
@@ -3473,8 +3493,8 @@ model LedgerEntry {
   createdByUserId Int?
   createdAt       DateTime @default(now())
 
-  book          LedgerBook    @relation(fields: [bookId], references: [id], onDelete: Restrict)
-  createdByUser User?         @relation("LedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  book          LedgerBook   @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  createdByUser User?        @relation("LedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   lines         LedgerLine[]
 
   @@index([bookId])
@@ -3486,8 +3506,8 @@ model LedgerLine {
   id        Int      @id @default(autoincrement())
   entryId   Int
   accountId Int
-  debit     Decimal  @db.Decimal(14, 2) @default(0)
-  credit    Decimal  @db.Decimal(14, 2) @default(0)
+  debit     Decimal  @default(0) @db.Decimal(14, 2)
+  credit    Decimal  @default(0) @db.Decimal(14, 2)
   createdAt DateTime @default(now())
 
   entry   LedgerEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -3501,9 +3521,9 @@ model AccountBalance {
   id          Int      @id @default(autoincrement())
   accountId   Int
   currency    String   @default("MAD")
-  debitTotal  Decimal  @db.Decimal(14, 2) @default(0)
-  creditTotal Decimal  @db.Decimal(14, 2) @default(0)
-  balance     Decimal  @db.Decimal(14, 2) @default(0)
+  debitTotal  Decimal  @default(0) @db.Decimal(14, 2)
+  creditTotal Decimal  @default(0) @db.Decimal(14, 2)
+  balance     Decimal  @default(0) @db.Decimal(14, 2)
   lastLineId  Int?
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
@@ -3525,9 +3545,9 @@ model Invoice {
   orderId                    Int?
   returnOrderId              Int?
   subtotal                   Decimal                @db.Decimal(14, 2)
-  taxAmount                  Decimal                @db.Decimal(14, 2) @default(0)
+  taxAmount                  Decimal                @default(0) @db.Decimal(14, 2)
   total                      Decimal                @db.Decimal(14, 2)
-  paidAmount                 Decimal                @db.Decimal(14, 2) @default(0)
+  paidAmount                 Decimal                @default(0) @db.Decimal(14, 2)
   status                     WholesaleInvoiceStatus @default(DRAFT)
   issuedAt                   DateTime?
   dueAt                      DateTime?
@@ -3535,13 +3555,13 @@ model Invoice {
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
 
-  book                 LedgerBook   @relation(fields: [bookId], references: [id], onDelete: Restrict)
-  businessUnit         BusinessUnit @relation("InvoiceSender", fields: [businessUnitId], references: [id], onDelete: Restrict)
-  counterpartyBusiness BusinessUnit @relation("InvoiceReceiver", fields: [counterpartyBusinessUnitId], references: [id], onDelete: Restrict)
-  originalInvoice      Invoice?     @relation("InvoiceCorrection", fields: [originalInvoiceId], references: [id], onDelete: SetNull)
-  corrections          Invoice[]    @relation("InvoiceCorrection")
+  book                 LedgerBook          @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  businessUnit         BusinessUnit        @relation("InvoiceSender", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  counterpartyBusiness BusinessUnit        @relation("InvoiceReceiver", fields: [counterpartyBusinessUnitId], references: [id], onDelete: Restrict)
+  originalInvoice      Invoice?            @relation("InvoiceCorrection", fields: [originalInvoiceId], references: [id], onDelete: SetNull)
+  corrections          Invoice[]           @relation("InvoiceCorrection")
   creditNote           CreditNote?
-  creditNoteOriginal   CreditNote[] @relation("CreditNoteOriginal")
+  creditNoteOriginal   CreditNote[]        @relation("CreditNoteOriginal")
   allocations          PaymentAllocation[]
 
   @@index([businessUnitId])
@@ -3552,16 +3572,16 @@ model Invoice {
 }
 
 model CreditNote {
-  id                Int                   @id @default(autoincrement())
-  invoiceId         Int                   @unique
+  id                Int                  @id @default(autoincrement())
+  invoiceId         Int                  @unique
   originalInvoiceId Int
   returnOrderId     Int?
-  amount            Decimal               @db.Decimal(14, 2)
+  amount            Decimal              @db.Decimal(14, 2)
   reasonCode        CreditNoteReasonCode
   reasonText        String?
   issuedByUserId    Int?
-  issuedAt          DateTime              @default(now())
-  createdAt         DateTime              @default(now())
+  issuedAt          DateTime             @default(now())
+  createdAt         DateTime             @default(now())
 
   invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   originalInvoice Invoice      @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
@@ -3588,8 +3608,8 @@ model Payment {
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
-  group        PaymentGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  businessUnit BusinessUnit       @relation("PaymentPayer", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  group        PaymentGroup?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  businessUnit BusinessUnit        @relation("PaymentPayer", fields: [businessUnitId], references: [id], onDelete: Restrict)
   allocations  PaymentAllocation[]
   refunds      Refund[]
   settlement   Settlement?
@@ -3605,7 +3625,7 @@ model PaymentAllocation {
   paymentId       Int
   invoiceId       Int
   allocatedAmount Decimal  @db.Decimal(14, 2)
-  refundedAmount  Decimal  @db.Decimal(14, 2) @default(0)
+  refundedAmount  Decimal  @default(0) @db.Decimal(14, 2)
   createdAt       DateTime @default(now())
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
@@ -3633,14 +3653,14 @@ model PaymentGroup {
 }
 
 model Settlement {
-  id              Int                     @id @default(autoincrement())
-  paymentId       Int                     @unique
-  businessUnitId  Int
-  amount          Decimal                 @db.Decimal(14, 2)
-  status          PaymentSettlementStatus @default(PENDING)
-  settledAt       DateTime?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id             Int                     @id @default(autoincrement())
+  paymentId      Int                     @unique
+  businessUnitId Int
+  amount         Decimal                 @db.Decimal(14, 2)
+  status         PaymentSettlementStatus @default(PENDING)
+  settledAt      DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   businessUnit BusinessUnit @relation("SettlementReceiver", fields: [businessUnitId], references: [id], onDelete: Restrict)
@@ -3687,11 +3707,11 @@ model ReturnOrder {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  originalOrder      WholesaleOrder  @relation(fields: [originalOrderId], references: [id], onDelete: Restrict)
-  buyerBusinessUnit  BusinessUnit    @relation("ReturnOrderBuyer", fields: [buyerBusinessUnitId], references: [id], onDelete: Restrict)
-  sellerBusinessUnit BusinessUnit    @relation("ReturnOrderSeller", fields: [sellerBusinessUnitId], references: [id], onDelete: Restrict)
-  approvedByUser     User?           @relation("ReturnOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  rejectedByUser     User?           @relation("ReturnOrderRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  originalOrder      WholesaleOrder    @relation(fields: [originalOrderId], references: [id], onDelete: Restrict)
+  buyerBusinessUnit  BusinessUnit      @relation("ReturnOrderBuyer", fields: [buyerBusinessUnitId], references: [id], onDelete: Restrict)
+  sellerBusinessUnit BusinessUnit      @relation("ReturnOrderSeller", fields: [sellerBusinessUnitId], references: [id], onDelete: Restrict)
+  approvedByUser     User?             @relation("ReturnOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedByUser     User?             @relation("ReturnOrderRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
   items              ReturnOrderItem[]
   creditNotes        CreditNote[]
 
@@ -3715,10 +3735,10 @@ model ReturnOrderItem {
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
-  returnOrder       ReturnOrder       @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
+  returnOrder       ReturnOrder        @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
   originalOrderItem WholesaleOrderItem @relation(fields: [originalOrderItemId], references: [id], onDelete: Restrict)
   inventoryReturns  InventoryReturn[]
-  sourceBatch       InventoryBatch?   @relation("ReturnItemSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
+  sourceBatch       InventoryBatch?    @relation("ReturnItemSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
 
   @@index([returnOrderId])
   @@index([originalOrderItemId])
@@ -3767,7 +3787,7 @@ model PriceAlertSetting {
   id               Int      @id @default(autoincrement())
   masterCategoryId Int?
   businessUnitType String?
-  thresholdPercent Decimal  @db.Decimal(5, 2) @default(5.0)
+  thresholdPercent Decimal  @default(5.0) @db.Decimal(5, 2)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -3781,27 +3801,27 @@ model PriceAlertSetting {
 // ═══════════════════════════════════════════════════════════
 
 enum LedgerEntryType {
-  GAVE        // "أعطيته" — balance increases (they owe us)
-  TOOK        // "أخذت منه" — balance decreases (we owe them)
-  SETTLEMENT  // direct balance adjustment (no direction)
+  GAVE // "أعطيته" — balance increases (they owe us)
+  TOOK // "أخذت منه" — balance decreases (we owe them)
+  SETTLEMENT // direct balance adjustment (no direction)
 }
 
 model LedgerContact {
-  id              Int       @id @default(autoincrement())
-  businessUnitId  Int
-  name            String
-  contactType     String    @default("EXTERNAL")  // PLATFORM_TRADER | EXTERNAL | EMPLOYEE | SUPPLIER
-  linkedUserId    Int?
-  linkedBUId      Int?
-  phone           String?
-  email           String?
-  notes           String?
-  openingBalance  Decimal   @default(0) @db.Decimal(12, 2)
-  currentBalance  Decimal   @default(0) @db.Decimal(12, 2)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
+  id             Int       @id @default(autoincrement())
+  businessUnitId Int
+  name           String
+  contactType    String    @default("EXTERNAL") // PLATFORM_TRADER | EXTERNAL | EMPLOYEE | SUPPLIER
+  linkedUserId   Int?
+  linkedBUId     Int?
+  phone          String?
+  email          String?
+  notes          String?
+  openingBalance Decimal   @default(0) @db.Decimal(12, 2)
+  currentBalance Decimal   @default(0) @db.Decimal(12, 2)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
   businessUnit BusinessUnit         @relation("BULedgerContacts", fields: [businessUnitId], references: [id], onDelete: Cascade)
   entries      LedgerContactEntry[]
@@ -3821,7 +3841,7 @@ model LedgerContactEntry {
   balanceAfter    Decimal         @db.Decimal(12, 2)
   entryDate       DateTime        @default(now())
   description     String
-  referenceType   String?         // MANUAL | WHOLESALE_ORDER | WHOLESALE_RETURN | PAYMENT
+  referenceType   String? // MANUAL | WHOLESALE_ORDER | WHOLESALE_RETURN | PAYMENT
   referenceId     Int?
   attachmentUrl   String?
   createdByUserId Int
@@ -3834,6 +3854,7 @@ model LedgerContactEntry {
   @@index([referenceType, referenceId])
   @@index([createdByUserId])
 }
+
 // ═══════════════════════════════════════════════════════════
 // WHOLESALE — Inventory Transfers (M5.4)
 // ═══════════════════════════════════════════════════════════
