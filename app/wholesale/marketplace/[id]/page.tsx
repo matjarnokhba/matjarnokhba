@@ -48,7 +48,7 @@ export default async function MarketplaceOfferDetailPage({
         orderBy: { id: "asc" },
         include: {
           masterVariant: {
-            select: { id: true, attributes: true, isDefault: true },
+            select: { id: true, attributes: true, isDefault: true, barcode: true, sku: true },
           },
           tiers: { orderBy: { minQty: "asc" } },
         },
