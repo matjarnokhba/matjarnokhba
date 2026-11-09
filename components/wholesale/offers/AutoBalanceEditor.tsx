@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sparkles, Loader2, AlertCircle, ToggleLeft, ToggleRight } from "lucide-react";
 
 type Variant = {
@@ -14,6 +14,7 @@ type Props = {
   variants: Variant[];
   initialEnabled: boolean;
   initialBundleRulesCount: number;
+  initialRequireSizeSelection?: boolean;
   readOnly?: boolean;
 };
 
@@ -23,6 +24,7 @@ type PreviewVariant = {
   stock: number;
   weight: number;
   isRare: boolean;
+  isBlocked: boolean;
   suggestedQty: number;
   maxAllowed: number;
 };
@@ -45,6 +47,7 @@ export default function AutoBalanceEditor({
   variants,
   initialEnabled,
   initialBundleRulesCount,
+  initialRequireSizeSelection = false,
   readOnly,
 }: Props) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -55,6 +58,20 @@ export default function AutoBalanceEditor({
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [requireSizeSelection, setRequireSizeSelection] = useState(initialRequireSizeSelection);
+
+  const availableSizes = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of variants) {
+      for (const a of v.attributes) {
+        const n = a.name.toLowerCase().trim();
+        if (n.includes("مقاس") || n.includes("size")) {
+          if (a.value) set.add(a.value);
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }, [variants]);
 
   useEffect(() => {
     if (!enabled) { setPreview(null); return; }
@@ -63,7 +80,13 @@ export default function AutoBalanceEditor({
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
       try {
-        const res = await fetch(`/api/wholesale/offers/${offerId}/auto-balance/compute?qty=${t}`);
+        const sizesParam =
+          requireSizeSelection && availableSizes.length > 0
+            ? `&sizes=${encodeURIComponent(availableSizes.join(","))}`
+            : "";
+        const res = await fetch(
+          `/api/wholesale/offers/${offerId}/auto-balance/compute?qty=${t}${sizesParam}`
+        );
         const d = await res.json();
         if (d.success) setPreview(d);
         else setPreview(null);
@@ -71,7 +94,7 @@ export default function AutoBalanceEditor({
       finally { setPreviewLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
-  }, [enabled, previewQty, offerId]);
+  }, [enabled, previewQty, offerId, requireSizeSelection, availableSizes]);
 
   async function handleToggle() {
     setError("");
@@ -87,16 +110,37 @@ export default function AutoBalanceEditor({
       const res = await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: next, deleteBundleRules: deleteRules }),
+        body: JSON.stringify({
+          enabled: next,
+          deleteBundleRules: deleteRules,
+          requireSizeSelection,
+        }),
       });
       const d = await res.json();
       if (d.success) {
         setEnabled(next);
         if (d.bundleRulesDeleted) setBundleRulesCount(0);
         setShowConfirmDelete(false);
-      } else { setError(d.message || "فشل"); }
+      } else {
+        setError(d.message || "فشل");
+      }
     } catch { setError("خطأ في الاتصال"); }
     finally { setToggling(false); }
+  }
+
+  async function updateRequireSizeSelection(next: boolean) {
+    setRequireSizeSelection(next);
+    if (!enabled) return;
+    try {
+      await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          requireSizeSelection: next,
+        }),
+      });
+    } catch { /* silent */ }
   }
 
   return (
@@ -145,6 +189,36 @@ export default function AutoBalanceEditor({
       )}
 
       {enabled && !showConfirmDelete && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={requireSizeSelection}
+              onChange={(e) => updateRequireSizeSelection(e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+              disabled={readOnly || toggling}
+            />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-gray-900">إلزام المشتري باختيار المقاس</p>
+              <p className="mt-0.5 text-[11px] text-gray-500">
+                عند التفعيل: المشتري يجب أن يختار مقاساً واحداً أو أكثر قبل التوزيع.
+              </p>
+              {requireSizeSelection && availableSizes.length === 0 && (
+                <p className="mt-1 rounded bg-amber-100 p-1 text-[10px] text-amber-800">
+                  ⚠ هذا المنتج لا يحتوي على مقاسات — التفعيل لن يكون له تأثير
+                </p>
+              )}
+              {requireSizeSelection && availableSizes.length > 0 && (
+                <p className="mt-1 text-[10px] text-purple-700">
+                  المقاسات المتاحة: {availableSizes.join(" · ")}
+                </p>
+              )}
+            </div>
+          </label>
+        </div>
+      )}
+
+      {enabled && !showConfirmDelete && (
         <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700">معاينة التوزيع (كمية)</label>
@@ -162,10 +236,10 @@ export default function AutoBalanceEditor({
               </div>
               <div className="max-h-48 space-y-1 overflow-y-auto">
                 {preview.variants.map((v) => (
-                  <div key={v.variantId} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-xs ${v.isRare ? "bg-amber-100" : "bg-white"}`}>
+                  <div key={v.variantId} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-xs ${v.isBlocked ? "bg-gray-100 opacity-60" : v.isRare ? "bg-amber-100" : "bg-white"}`}>
                     <span className="flex-1 truncate">
                       {fmtAttrs(v.attributes)}
-                      {v.isRare && <span className="ml-1 rounded bg-amber-400 px-1 text-[10px] font-bold text-amber-900">نادر</span>}
+                      {v.isRare && !v.isBlocked && <span className="ml-1 rounded bg-amber-400 px-1 text-[10px] font-bold text-amber-900">نادر</span>}
                     </span>
                     <span className="text-gray-500">مخزون: {v.stock}</span>
                     <span className="w-16 text-right font-bold text-gray-900">{v.suggestedQty} ق</span>

@@ -75,45 +75,72 @@ export function OfferDetailPublic({
   const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
   const [autoBalanceError, setAutoBalanceError] = useState("");
   const [minDistributed, setMinDistributed] = useState<number>(0);
+  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
+  const [blockedVariants, setBlockedVariants] = useState<Set<number>>(new Set());
   const [rareCaps, setRareCaps] = useState<Record<number, number>>({});
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
 
-  // M10.6: dynamic max — for rare variants, cap = min of all current non-rare quantities
+  // M10.6 + M10.7b: dynamic max — block non-selected sizes, cap rare variants
   const maxFor = useCallback((variantId: number): number => {
+    if (blockedVariants.has(variantId)) return 0;
     const v = offer.variants.find((x) => x.id === variantId);
     if (!v) return 0;
     const stockMax = v.availableStock ?? 0;
     if (!offer.autoBalanceEnabled) return stockMax;
     if (!rareCaps[variantId]) return stockMax;
 
-    // Rare variant: cap = min of current non-rare quantities
     const nonRareQtys: number[] = [];
     for (const ov of offer.variants) {
       if (rareCaps[ov.id]) continue;
+      if (blockedVariants.has(ov.id)) continue;
       const q = quantities[ov.id] || 0;
       if (q > 0) nonRareQtys.push(q);
     }
     if (nonRareQtys.length === 0) return 0;
     return Math.min(stockMax, Math.min(...nonRareQtys));
-  }, [offer.variants, offer.autoBalanceEnabled, rareCaps, quantities]);
+  }, [offer.variants, offer.autoBalanceEnabled, rareCaps, quantities, blockedVariants]);
 
+  // M10.7b: extract available sizes from variant attributes
+  const availableSizes = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of offer.variants) {
+      for (const a of v.attributes) {
+        const n = a.name.toLowerCase().trim();
+        if (n.includes("مقاس") || n.includes("size")) {
+          if (a.value) set.add(a.value);
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }, [offer.variants]);
   // M10.4: fetch auto-balance distribution on total change
   useEffect(() => {
     if (!offer.autoBalanceEnabled) return;
+    if (offer.requireSizeSelection && availableSizes.length > 0 && selectedSizes.size === 0) {
+      setMinDistributed(0);
+      setRareCaps({});
+      setBlockedVariants(new Set());
+      return;
+    }
     const t = parseInt(autoBalanceTotal, 10);
     if (!t || t < 1) {
       setMinDistributed(0);
       setRareCaps({});
+      setBlockedVariants(new Set());
       return;
     }
     const timer = setTimeout(async () => {
       setAutoBalanceLoading(true);
       setAutoBalanceError("");
       try {
+        const sizesParam =
+          selectedSizes.size > 0
+            ? `&sizes=${encodeURIComponent(Array.from(selectedSizes).join(","))}`
+            : "";
         const res = await fetch(
-          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}`
+          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}${sizesParam}`
         );
         const d = await res.json();
         if (!d.success) {
@@ -122,17 +149,21 @@ export function OfferDetailPublic({
         }
         const nextQty: Record<number, number> = {};
         const nextCaps: Record<number, number> = {};
+        const nextBlocked = new Set<number>();
         for (const v of d.variants as Array<{
           variantId: number;
           suggestedQty: number;
           isRare: boolean;
+          isBlocked: boolean;
           maxAllowed: number;
         }>) {
           if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
           if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;
+          if (v.isBlocked) nextBlocked.add(v.variantId);
         }
         setQuantities(nextQty);
         setRareCaps(nextCaps);
+        setBlockedVariants(nextBlocked);
         setMinDistributed(d.minDistributed || 0);
       } catch {
         setAutoBalanceError("خطأ في الاتصال");
@@ -141,7 +172,7 @@ export function OfferDetailPublic({
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [autoBalanceTotal, offer.id, offer.autoBalanceEnabled]);
+  }, [autoBalanceTotal, selectedSizes, availableSizes.length, offer.id, offer.autoBalanceEnabled, offer.requireSizeSelection]);
   const totalQty = useMemo(() => {
     let sum = 0;
     for (const v of offer.variants) sum += quantities[v.id] || 0;
@@ -386,6 +417,19 @@ export function OfferDetailPublic({
     setPackageFeedback("");
   }
 
+  function toggleSize(size: string) {
+    setSelectedSizes((prev) => {
+      const next = new Set(prev);
+      if (next.has(size)) next.delete(size);
+      else next.add(size);
+      return next;
+    });
+    setQuantities({});
+    setRareCaps({});
+    setBlockedVariants(new Set());
+    setMinDistributed(0);
+  }
+
   function clearAll() {
     setQuantities({});
     setPackageFeedback("");
@@ -577,6 +621,33 @@ export function OfferDetailPublic({
                   أدخل الكمية الإجمالية — النظام يوزّعها على الألوان المتوفرة بنسب ذكية. الألوان النادرة تُضاف يدوياً فقط.
                 </p>
 
+                {offer.requireSizeSelection && availableSizes.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      اختر المقاس أولاً ({selectedSizes.size} محدد)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableSizes.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => toggleSize(s)}
+                          className={`rounded-lg border-2 px-3 py-1.5 text-xs font-bold transition ${
+                            selectedSizes.has(s)
+                              ? "border-purple-500 bg-purple-500 text-white"
+                              : "border-gray-200 bg-white text-gray-700 hover:border-purple-300"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedSizes.size === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-700">اختر مقاساً واحداً على الأقل لبدء التوزيع</p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     الكمية الإجمالية المطلوبة
@@ -664,12 +735,17 @@ export function OfferDetailPublic({
                 const isTrigger = (offer.bundleRules || []).some(
                   (r) => r.triggerVariantId === v.id
                 );
+                const isBlocked = blockedVariants.has(v.id);
 
                 return (
                   <div
                     key={v.id}
                     className={`rounded-lg border-2 p-3 transition-colors ${
-                      isActive ? "border-[#ff5c00] bg-orange-50" : "border-gray-200"
+                      isBlocked
+                        ? "border-gray-100 bg-gray-50 opacity-60"
+                        : isActive
+                        ? "border-[#ff5c00] bg-orange-50"
+                        : "border-gray-200"
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -746,7 +822,8 @@ export function OfferDetailPublic({
                           value={qty === 0 ? "" : String(qty)}
                           onChange={(e) => setDirect(v.id, e.target.value)}
                           placeholder="0"
-                          className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none"
+                          disabled={isBlocked}
+                          className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none disabled:bg-gray-100"
                         />
                         <button
                           type="button"
@@ -770,7 +847,10 @@ export function OfferDetailPublic({
                         </span>
                       </div>
                     )}
-                    {isMaxed && max > 0 && (
+                    {isBlocked && (
+                      <p className="mt-1 text-[11px] text-gray-600">خارج المقاسات المختارة</p>
+                    )}
+                    {!isBlocked && isMaxed && max > 0 && (
                       <p className="mt-1 text-[11px] text-amber-700">
                         الحد الأقصى المتاح {max} قطعة
                       </p>
