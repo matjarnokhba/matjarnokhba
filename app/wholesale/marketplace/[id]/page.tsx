@@ -64,6 +64,10 @@ export default async function MarketplaceOfferDetailPage({
         },
         orderBy: { id: "asc" },
       },
+      packages: {
+        include: { items: { select: { variantId: true, quantity: true } } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      },
     },
   });
 
@@ -143,6 +147,50 @@ export default async function MarketplaceOfferDetailPage({
   // Cannot buy own offer
   const isOwnOffer = offer.businessUnit.ownerId === owner?.id;
 
+  // M9.2: compute available stock per variant
+  const merchantVariantIds = offer.variants
+    .map((v) => v.merchantVariantId)
+    .filter((id): id is number => typeof id === "number");
+  const availableStockByMerchantVariant = new Map<number, number>();
+  if (merchantVariantIds.length > 0) {
+    const loc = await prisma.inventoryLocation.findFirst({
+      where: { businessUnitId: offer.businessUnitId, isActive: true },
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
+    if (loc) {
+      const acc = await prisma.inventoryAccount.findFirst({
+        where: { locationId: loc.id, type: "WHOLESALE", isActive: true },
+        select: { id: true },
+      });
+      if (acc) {
+        const [balances, reservations] = await Promise.all([
+          prisma.inventoryBalance.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds }, inventoryAccountId: acc.id },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+          prisma.stockReservation.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+        ]);
+        for (const b of balances) {
+          availableStockByMerchantVariant.set(
+            b.merchantVariantId,
+            (availableStockByMerchantVariant.get(b.merchantVariantId) || 0) + b.quantity
+          );
+        }
+        for (const r of reservations) {
+          const cur = availableStockByMerchantVariant.get(r.merchantVariantId) || 0;
+          availableStockByMerchantVariant.set(
+            r.merchantVariantId,
+            Math.max(0, cur - r.quantity)
+          );
+        }
+      }
+    }
+  }
+
   const serialized: PublicOfferDetail = {
     id: offer.id,
     masterId: offer.masterId,
@@ -185,6 +233,9 @@ export default async function MarketplaceOfferDetailPage({
         maxQty: t.maxQty,
         unitPrice: Number(t.unitPrice),
       })),
+      availableStock: v.merchantVariantId != null
+        ? (availableStockByMerchantVariant.get(v.merchantVariantId) ?? 0)
+        : null,
     })),
     bundleRules: offer.bundleRules.map((r) => ({
       id: r.id,
@@ -192,6 +243,12 @@ export default async function MarketplaceOfferDetailPage({
       requiredVariantId: r.requiredVariantId,
       minQuantity: r.minQuantity,
       notes: r.notes,
+    })),
+    packages: offer.packages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sortOrder: p.sortOrder,
+      items: p.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
     })),
   };
 

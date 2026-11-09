@@ -39,6 +39,7 @@ export type PublicOfferDetail = PublicOfferItem & {
       maxQty: number | null;
       unitPrice: number;
     }>;
+    availableStock?: number | null;
   }>;
   bundleRules?: Array<{
     id: number;
@@ -46,6 +47,12 @@ export type PublicOfferDetail = PublicOfferItem & {
     requiredVariantId: number;
     minQuantity: number;
     notes: string | null;
+  }>;
+  packages?: Array<{
+    id: number;
+    name: string;
+    sortOrder: number;
+    items: Array<{ variantId: number; quantity: number }>;
   }>;
 };
 
