@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { OfferActions } from "./OfferActions";
 import TransferToStoreModal from "./TransferToStoreModal";
 import BundleRulesEditor from "./BundleRulesEditor";
+import PackagesEditor from "./PackagesEditor";
 import {
   OFFER_STATUS_LABEL,
   OFFER_STATUS_VARIANT,
@@ -366,6 +367,14 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
                 </button>
               </div>
             </Card>
+          )}
+
+          {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (
+            <PackagesEditor
+              offerId={offer.id}
+              variants={offer.variants.map((v) => ({ id: v.id, attributes: v.attributes }))}
+              initialPackages={offer.packages ?? []}
+            />
           )}
 
           {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (

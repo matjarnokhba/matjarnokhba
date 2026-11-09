@@ -58,6 +58,12 @@ export type OfferDetail = OfferListItem & {
     requiredVariantId: number;
     minQuantity: number;
     notes: string | null;
+  }>;
+  packages?: Array<{
+    id: number;
+    name: string;
+    sortOrder: number;
+    items: Array<{ variantId: number; quantity: number }>;
   }>;};
 
 export type BUOption = {

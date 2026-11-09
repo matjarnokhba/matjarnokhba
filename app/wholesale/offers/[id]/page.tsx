@@ -68,6 +68,10 @@ export default async function OfferDetailPage({
         },
         orderBy: { id: "asc" },
       },
+      packages: {
+        include: { items: { select: { variantId: true, quantity: true } } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      },
     },
   });
 
@@ -141,6 +145,12 @@ export default async function OfferDetailPage({
       minQuantity: r.minQuantity,
       notes: r.notes,
     })) ?? [],
+    packages: offer.packages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sortOrder: p.sortOrder,
+      items: p.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+    })),
   };
 
   return (
