@@ -58,6 +58,16 @@ export default async function OfferDetailPage({
         },
       },
       _count: { select: { variants: true } },
+      bundleRules: {
+        select: {
+          id: true,
+          triggerVariantId: true,
+          requiredVariantId: true,
+          minQuantity: true,
+          notes: true,
+        },
+        orderBy: { id: "asc" },
+      },
     },
   });
 
@@ -124,6 +134,13 @@ export default async function OfferDetailPage({
         unitPrice: Number(t.unitPrice),
       })),
     })),
+    bundleRules: offer.bundleRules?.map((r) => ({
+      id: r.id,
+      triggerVariantId: r.triggerVariantId,
+      requiredVariantId: r.requiredVariantId,
+      minQuantity: r.minQuantity,
+      notes: r.notes,
+    })) ?? [],
   };
 
   return (

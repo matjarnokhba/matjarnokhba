@@ -51,7 +51,14 @@ export type OfferDetail = OfferListItem & {
       unitPrice: number;
     }>;
   }>;
-};
+
+  bundleRules?: Array<{
+    id: number;
+    triggerVariantId: number;
+    requiredVariantId: number;
+    minQuantity: number;
+    notes: string | null;
+  }>;};
 
 export type BUOption = {
   id: number;
