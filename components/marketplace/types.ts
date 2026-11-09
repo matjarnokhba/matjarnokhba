@@ -15,6 +15,7 @@ export type PublicOfferItem = {
   claimType: string;
   claimVerified: boolean;
   autoBalanceEnabled?: boolean;
+  requireSizeSelection?: boolean;
   variantCount: number;
   createdAt: string;
 };

@@ -209,6 +209,7 @@ export default async function MarketplaceOfferDetailPage({
     claimType: offer.claimType,
     claimVerified: offer.claimVerified,
     autoBalanceEnabled: offer.autoBalanceEnabled,
+    requireSizeSelection: offer.requireSizeSelection,
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),
     description: offer.notes,

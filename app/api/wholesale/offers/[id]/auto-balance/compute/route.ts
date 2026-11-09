@@ -35,6 +35,10 @@ export async function GET(
         locked = { variantId: vid, qty: lq };
       }
     }
+    const sizesRaw = url.searchParams.get("sizes");
+    const sizeFilter = sizesRaw
+      ? sizesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
 
     const offer = await prisma.wholesaleOffer.findUnique({
       where: { id: offerId },
@@ -50,7 +54,7 @@ export async function GET(
       );
     }
 
-    const result = await AutoBalanceService.compute(offerId, qty, locked);
+    const result = await AutoBalanceService.compute(offerId, qty, locked, sizeFilter);
     return NextResponse.json({ success: true, ...result });
   } catch (e: any) {
     console.error("auto-balance compute:", e);

@@ -15,12 +15,14 @@ export type VariantDistribution = {
   variantId: number;
   merchantVariantId: number | null;
   attributes: Array<{ name: string; value: string }>;
+  sizeValue: string | null;
   stock: number;
   weight: number;
   isRare: boolean;
+  isBlocked: boolean;
   rawQuantity: number;
   suggestedQty: number;
-  maxAllowed: number; // for rare: min(other rounded); for non-rare: stock
+  maxAllowed: number;
 };
 
 export type ComputeResult = {
@@ -28,10 +30,25 @@ export type ComputeResult = {
   totalDistributed: number;
   minDistributed: number;
   maxStock: number;
+  availableSizes: string[];
+  sizeFilterApplied: string[] | null;
+  requireSizeSelection: boolean;
   variants: VariantDistribution[];
   config: AutoBalanceConfig;
 };
 
+function getSizeValue(attrs: any): string | null {
+  if (!Array.isArray(attrs)) return null;
+  for (const a of attrs) {
+    if (!a || typeof a.name !== "string") continue;
+    const name = a.name.toLowerCase().trim();
+    if (name.includes("مقاس") || name.includes("size")) {
+      const v = String(a.value ?? "").trim();
+      return v || null;
+    }
+  }
+  return null;
+}
 function roundWithThreshold(value: number, threshold: number): number {
   if (value < 0.0001) return 0;
   const floor = Math.floor(value);
@@ -48,7 +65,8 @@ export const AutoBalanceService = {
   async compute(
     offerId: number,
     totalQty: number,
-    locked?: { variantId: number; qty: number }
+    locked?: { variantId: number; qty: number },
+    sizeFilter?: string[]
   ): Promise<ComputeResult> {
     if (!Number.isInteger(totalQty) || totalQty < 1) {
       throw new Error("totalQty يجب أن يكون عدداً صحيحاً موجباً");
@@ -102,26 +120,47 @@ export const AutoBalanceService = {
       }
     }
 
-    // Compute weights
-    const variantData = offer.variants.map((v) => ({
-      variantId: v.id,
-      merchantVariantId: v.merchantVariantId,
-      attributes: (v.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [],
-      stock: v.merchantVariantId ? stockMap.get(v.merchantVariantId) || 0 : 0,
-    }));
+    // Compute weights + size values
+    const variantData = offer.variants.map((v) => {
+      const attrs = (v.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [];
+      return {
+        variantId: v.id,
+        merchantVariantId: v.merchantVariantId,
+        attributes: attrs,
+        sizeValue: getSizeValue(attrs),
+        stock: v.merchantVariantId ? stockMap.get(v.merchantVariantId) || 0 : 0,
+      };
+    });
 
     const maxStock = Math.max(0, ...variantData.map((v) => v.stock));
 
-    // Compute weight and rare flag
+    // Size filter
+    const availableSizesSet = new Set<string>();
+    for (const v of variantData) {
+      if (v.sizeValue) availableSizesSet.add(v.sizeValue);
+    }
+    const availableSizes = Array.from(availableSizesSet).sort();
+
+    const hasSizeFilter = Array.isArray(sizeFilter) && sizeFilter.length > 0;
+    if (offer.requireSizeSelection && !hasSizeFilter) {
+      throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
+    }
+
+    const isInFilter = (sv: string | null): boolean => {
+      if (!hasSizeFilter) return true;
+      return sv !== null && sizeFilter!.includes(sv);
+    };
+
+    // Compute weight + rare + blocked
     const withWeights = variantData.map((v) => ({
       ...v,
       weight: maxStock > 0 ? v.stock / maxStock : 0,
       isRare: maxStock > 0 ? v.stock / maxStock < config.rareThreshold : false,
+      isBlocked: !isInFilter(v.sizeValue),
     }));
 
-    // Only non-rare variants participate in auto-distribution
-    // Exclude locked variant from redistribution (its quantity is preserved)
-    const distributableAll = withWeights.filter((v) => !v.isRare && v.stock > 0);
+    // Only non-rare, non-blocked variants participate in auto-distribution
+    const distributableAll = withWeights.filter((v) => !v.isRare && !v.isBlocked && v.stock > 0);
     const distributable = locked
       ? distributableAll.filter((v) => v.variantId !== locked.variantId)
       : distributableAll;
@@ -133,14 +172,19 @@ export const AutoBalanceService = {
         totalDistributed: 0,
         minDistributed: 0,
         maxStock,
+        availableSizes,
+        sizeFilterApplied: hasSizeFilter ? sizeFilter! : null,
+        requireSizeSelection: offer.requireSizeSelection,
         config,
         variants: withWeights.map((v) => ({
           variantId: v.variantId,
           merchantVariantId: v.merchantVariantId,
           attributes: v.attributes,
+          sizeValue: v.sizeValue,
           stock: v.stock,
           weight: v.weight,
           isRare: v.isRare,
+          isBlocked: v.isBlocked,
           rawQuantity: 0,
           suggestedQty: 0,
           maxAllowed: 0,
@@ -190,8 +234,7 @@ export const AutoBalanceService = {
       roundedMap.set(v.variantId, Math.min(q, v.stock));
     }
 
-    // minDistributed = min of ALL non-rare quantities (including locked if non-rare)
-    // Used as rare cap
+    // minDistributed = min of non-rare, non-blocked quantities
     const nonRareQtys: number[] = [];
     for (const v of distributableAll) {
       const q = roundedMap.get(v.variantId) ?? 0;
@@ -203,18 +246,27 @@ export const AutoBalanceService = {
     let totalDistributed = 0;
     const variantsResult: VariantDistribution[] = withWeights.map((v) => {
       const raw = rawMap.get(v.variantId) ?? 0;
-      const suggested = roundedMap.get(v.variantId) ?? 0;
+      let suggested = roundedMap.get(v.variantId) ?? 0;
+      if (v.isBlocked) suggested = 0;
       totalDistributed += suggested;
+
+      let maxAllowed: number;
+      if (v.isBlocked) maxAllowed = 0;
+      else if (v.isRare) maxAllowed = minDistributed;
+      else maxAllowed = v.stock;
+
       return {
         variantId: v.variantId,
         merchantVariantId: v.merchantVariantId,
         attributes: v.attributes,
+        sizeValue: v.sizeValue,
         stock: v.stock,
         weight: v.weight,
         isRare: v.isRare,
+        isBlocked: v.isBlocked,
         rawQuantity: Math.round(raw * 100) / 100,
         suggestedQty: suggested,
-        maxAllowed: v.isRare ? minDistributed : v.stock,
+        maxAllowed,
       };
     });
 
@@ -223,6 +275,9 @@ export const AutoBalanceService = {
       totalDistributed,
       minDistributed,
       maxStock,
+      availableSizes,
+      sizeFilterApplied: hasSizeFilter ? sizeFilter! : null,
+      requireSizeSelection: offer.requireSizeSelection,
       variants: variantsResult,
       config,
     };

@@ -6,6 +6,7 @@ import { SessionService } from "@/services/session.service";
 const schema = z.object({
   enabled: z.boolean(),
   deleteBundleRules: z.boolean().optional(),
+  requireSizeSelection: z.boolean().optional(),
 });
 
 async function ensureOwner(offerId: number, userId: number) {
@@ -64,7 +65,7 @@ export async function POST(
       );
     }
 
-    const { enabled, deleteBundleRules } = parsed.data;
+    const { enabled, deleteBundleRules, requireSizeSelection } = parsed.data;
 
     if (enabled && !deleteBundleRules) {
       const rulesCount = await prisma.wholesaleOfferBundleRule.count({
@@ -87,12 +88,16 @@ export async function POST(
       if (enabled && deleteBundleRules) {
         await tx.wholesaleOfferBundleRule.deleteMany({ where: { offerId } });
       }
+      const updateData: any = {
+        autoBalanceEnabled: enabled,
+        autoBalanceUpdatedAt: new Date(),
+      };
+      if (typeof requireSizeSelection === "boolean") {
+        updateData.requireSizeSelection = requireSizeSelection;
+      }
       await tx.wholesaleOffer.update({
         where: { id: offerId },
-        data: {
-          autoBalanceEnabled: enabled,
-          autoBalanceUpdatedAt: new Date(),
-        },
+        data: updateData,
       });
     });
 
