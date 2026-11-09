@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Package,
+  Package as PackageIcon,
   ShieldCheck,
   Building2,
   Star,
@@ -13,7 +13,9 @@ import {
   ShoppingCart,
   AlertCircle,
   Layers,
-  X,
+  Plus,
+  Minus,
+  Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -46,40 +48,44 @@ export function OfferDetailPublic({
   isOwnOffer,
 }: OfferDetailPublicProps) {
   const [activeImage, setActiveImage] = useState(0);
-  const [quantities, setQuantities] = useState<Record<number, string>>({});
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [packageFeedback, setPackageFeedback] = useState("");
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
 
+  const maxFor = (variantId: number): number => {
+    const v = offer.variants.find((x) => x.id === variantId);
+    if (!v) return 0;
+    return v.availableStock ?? 0;
+  };
+
+  const totalQty = useMemo(() => {
+    let sum = 0;
+    for (const v of offer.variants) sum += quantities[v.id] || 0;
+    return sum;
+  }, [quantities, offer.variants]);
+
   const variantPrices = useMemo(() => {
-    const result = new Map<number, number>();
+    const map = new Map<number, number>();
     for (const v of offer.variants) {
-      const qty = parseInt(quantities[v.id] || "0", 10);
-      if (isNaN(qty) || qty <= 0) continue;
+      const qty = quantities[v.id] || 0;
+      if (qty <= 0) continue;
       let tier = v.tiers.find(
         (t) => qty >= t.minQty && (t.maxQty === null || qty <= t.maxQty)
       );
       if (!tier && v.tiers.length > 0) tier = v.tiers[0];
-      if (tier) result.set(v.id, tier.unitPrice);
+      if (tier) map.set(v.id, tier.unitPrice);
     }
-    return result;
+    return map;
   }, [quantities, offer.variants]);
-
-  const totalQty = useMemo(() => {
-    let sum = 0;
-    for (const q of Object.values(quantities)) {
-      sum += parseInt(q || "0", 10) || 0;
-    }
-    return sum;
-  }, [quantities]);
 
   const totalEstimate = useMemo(() => {
     let total = 0;
     for (const v of offer.variants) {
       const p = variantPrices.get(v.id);
       if (p === undefined) continue;
-      const qty = parseInt(quantities[v.id] || "0", 10) || 0;
-      total += p * qty;
+      total += p * (quantities[v.id] || 0);
     }
     return Math.round(total * 100) / 100;
   }, [variantPrices, quantities, offer.variants]);
@@ -87,16 +93,14 @@ export function OfferDetailPublic({
   const bundleViolations = useMemo(() => {
     const violations: string[] = [];
     for (const rule of offer.bundleRules || []) {
-      const triggerQty =
-        parseInt(quantities[rule.triggerVariantId] || "0", 10) || 0;
+      const triggerQty = quantities[rule.triggerVariantId] || 0;
       if (triggerQty === 0) continue;
-      const requiredQty =
-        parseInt(quantities[rule.requiredVariantId] || "0", 10) || 0;
+      const requiredQty = quantities[rule.requiredVariantId] || 0;
       if (requiredQty < rule.minQuantity) {
-        const triggerVar = offer.variants.find((v) => v.id === rule.triggerVariantId);
-        const requiredVar = offer.variants.find((v) => v.id === rule.requiredVariantId);
+        const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
+        const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
         violations.push(
-          `شراء "${fmtAttrs(triggerVar?.attributes)}" يستلزم شراء ${rule.minQuantity} على الأقل من "${fmtAttrs(requiredVar?.attributes)}"`
+          `شراء "${fmtAttrs(tv?.attributes)}" يستلزم ${rule.minQuantity} على الأقل من "${fmtAttrs(rv?.attributes)}"`
         );
       }
     }
@@ -106,15 +110,13 @@ export function OfferDetailPublic({
   const bundleHints = useMemo(() => {
     const hints = new Map<number, string[]>();
     for (const rule of offer.bundleRules || []) {
-      const triggerQty =
-        parseInt(quantities[rule.triggerVariantId] || "0", 10) || 0;
+      const triggerQty = quantities[rule.triggerVariantId] || 0;
       if (triggerQty === 0) continue;
-      const requiredQty =
-        parseInt(quantities[rule.requiredVariantId] || "0", 10) || 0;
+      const requiredQty = quantities[rule.requiredVariantId] || 0;
       if (requiredQty < rule.minQuantity) {
-        const triggerVar = offer.variants.find((v) => v.id === rule.triggerVariantId);
+        const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
         const existing = hints.get(rule.requiredVariantId) || [];
-        existing.push(`مطلوب بواسطة "${fmtAttrs(triggerVar?.attributes)}" (≥${rule.minQuantity})`);
+        existing.push(`مطلوب ≥${rule.minQuantity} بسبب "${fmtAttrs(tv?.attributes)}"`);
         hints.set(rule.requiredVariantId, existing);
       }
     }
@@ -132,25 +134,73 @@ export function OfferDetailPublic({
     !maxExceeded &&
     bundleViolations.length === 0;
 
-  function setQty(variantId: number, val: string) {
-    if (val !== "" && !/^\d+$/.test(val)) return;
-    setQuantities((prev) => {
-      const next = { ...prev };
-      if (val === "" || val === "0") delete next[variantId];
-      else next[variantId] = val;
+  function increment(variantId: number) {
+    const max = maxFor(variantId);
+    const cur = quantities[variantId] || 0;
+    if (cur >= max) return;
+    setQuantities((p) => ({ ...p, [variantId]: cur + 1 }));
+    setPackageFeedback("");
+  }
+
+  function decrement(variantId: number) {
+    const cur = quantities[variantId] || 0;
+    if (cur <= 0) return;
+    setQuantities((p) => {
+      const next = { ...p };
+      if (cur - 1 === 0) delete next[variantId];
+      else next[variantId] = cur - 1;
       return next;
     });
+    setPackageFeedback("");
+  }
+
+  function setDirect(variantId: number, raw: string) {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    const max = maxFor(variantId);
+    let n = raw === "" ? 0 : parseInt(raw, 10);
+    if (n > max) n = max;
+    setQuantities((p) => {
+      const next = { ...p };
+      if (n === 0) delete next[variantId];
+      else next[variantId] = n;
+      return next;
+    });
+    setPackageFeedback("");
   }
 
   function clearAll() {
     setQuantities({});
+    setPackageFeedback("");
+  }
+
+  function applyPackage(pkg: { name: string; items: Array<{ variantId: number; quantity: number }> }) {
+    const next = { ...quantities };
+    let capped = false;
+    for (const item of pkg.items) {
+      const max = maxFor(item.variantId);
+      const cur = next[item.variantId] || 0;
+      const want = cur + item.quantity;
+      if (want > max) {
+        next[item.variantId] = max;
+        capped = true;
+      } else {
+        next[item.variantId] = want;
+      }
+    }
+    setQuantities(next);
+    setPackageFeedback(
+      capped
+        ? `أضيفت "${pkg.name}" — بعض الخيارات تجاوزت المخزون فتم تحديدها بالحد الأقصى`
+        : `أضيفت "${pkg.name}"`
+    );
+    setTimeout(() => setPackageFeedback(""), 4000);
   }
 
   function handleAddToCart() {
     if (!canOrder) return;
     let added = 0;
     for (const v of offer.variants) {
-      const qty = parseInt(quantities[v.id] || "0", 10);
+      const qty = quantities[v.id] || 0;
       if (qty <= 0) continue;
       const price = variantPrices.get(v.id);
       if (price === undefined) continue;
@@ -169,12 +219,11 @@ export function OfferDetailPublic({
       });
       added++;
     }
-    toast(
-      `تمت إضافة ${added} ${added === 1 ? "خيار" : "خيارات"} إلى السلة`,
-      "success"
-    );
+    toast(`تمت إضافة ${added} ${added === 1 ? "خيار" : "خيارات"} إلى السلة`, "success");
     router.push("/wholesale/cart");
   }
+
+  const selectedCount = Object.values(quantities).filter((q) => q > 0).length;
 
   return (
     <div className="space-y-5">
@@ -193,8 +242,7 @@ export function OfferDetailPublic({
           <div className="flex flex-wrap items-center gap-2">
             {offer.claimVerified && (
               <Badge variant="green">
-                <ShieldCheck className="h-3 w-3" />
-                موثق
+                <ShieldCheck className="h-3 w-3" /> موثق
               </Badge>
             )}
             <Badge variant="gray">
@@ -207,22 +255,19 @@ export function OfferDetailPublic({
 
       {isOwnOffer && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertCircle className="inline h-4 w-4" /> هذا عرضك — لا يمكنك شراء
-          منتجك الخاص.
+          <AlertCircle className="inline h-4 w-4" /> هذا عرضك — لا يمكنك شراء منتجك الخاص.
         </div>
       )}
-
       {!isOwnOffer && buyerBUs.length === 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertCircle className="inline h-4 w-4" /> تحتاج نشاطًا بصلاحية
-          الشراء بالجملة لتتمكن من الطلب.
+          <AlertCircle className="inline h-4 w-4" /> تحتاج نشاطًا بصلاحية الشراء بالجملة.
         </div>
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <Card>
-            <div className="mb-3 flex aspect-square max-h-[500px] items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+            <div className="mb-3 flex aspect-square max-h-[400px] items-center justify-center overflow-hidden rounded-lg bg-gray-50">
               {offer.master.images[activeImage] ? (
                 <img
                   src={offer.master.images[activeImage]}
@@ -230,7 +275,7 @@ export function OfferDetailPublic({
                   className="h-full w-full object-contain"
                 />
               ) : (
-                <Package className="h-20 w-20 text-gray-300" />
+                <PackageIcon className="h-20 w-20 text-gray-300" />
               )}
             </div>
             {offer.master.images.length > 1 && (
@@ -241,16 +286,10 @@ export function OfferDetailPublic({
                     type="button"
                     onClick={() => setActiveImage(idx)}
                     className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 transition-colors ${
-                      idx === activeImage
-                        ? "border-[#ff5c00]"
-                        : "border-gray-200"
+                      idx === activeImage ? "border-[#ff5c00]" : "border-gray-200"
                     }`}
                   >
-                    <img
-                      src={url}
-                      alt={`صورة ${idx + 1}`}
-                      className="h-full w-full object-cover"
-                    />
+                    <img src={url} alt={`صورة ${idx + 1}`} className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -260,57 +299,96 @@ export function OfferDetailPublic({
           {offer.master.description && (
             <Card>
               <h3 className="mb-2 text-sm font-bold text-gray-900">الوصف</h3>
-              <p className="whitespace-pre-wrap text-sm text-gray-700">
-                {offer.master.description}
+              <p className="whitespace-pre-wrap text-sm text-gray-700">{offer.master.description}</p>
+            </Card>
+          )}
+
+          {offer.packages && offer.packages.length > 0 && (
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
+                <Boxes className="h-4 w-4 text-[#ff5c00]" />
+                رزم جاهزة ({offer.packages.length})
+              </h3>
+              <p className="mb-3 text-xs text-gray-500">
+                اضغط رزمة لإضافة محتواها مباشرة، ثم عدّل الكميات إن أردت.
               </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {offer.packages.map((pkg) => {
+                  const totalPieces = pkg.items.reduce((s, i) => s + i.quantity, 0);
+                  const summary = pkg.items
+                    .map((i) => {
+                      const v = offer.variants.find((x) => x.id === i.variantId);
+                      return `${i.quantity}× ${fmtAttrs(v?.attributes)}`;
+                    })
+                    .join(" · ");
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => applyPackage(pkg)}
+                      className="rounded-lg border-2 border-gray-200 bg-white p-3 text-right transition hover:border-[#ff5c00] hover:bg-orange-50"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-bold text-gray-900">{pkg.name}</span>
+                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-[#ff5c00]">
+                          {totalPieces}
+                        </span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[11px] text-gray-600">{summary}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              {packageFeedback && (
+                <div className="mt-3 rounded-lg bg-green-50 p-2 text-xs text-green-800">
+                  {packageFeedback}
+                </div>
+              )}
             </Card>
           )}
 
           <Card>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Layers className="h-4 w-4 text-gray-400" />
-                اختر الكميات ({offer.variants.length} خيار)
+                الخيارات ({offer.variants.length})
               </h3>
               {totalQty > 0 && (
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="text-xs text-gray-500 hover:text-red-600 underline"
+                  className="text-xs text-gray-500 underline hover:text-red-600"
                 >
                   مسح الكل
                 </button>
               )}
             </div>
             <p className="mb-3 text-xs text-gray-500">
-              أدخل الكمية المطلوبة لكل لون/مقاس. المجموع يجب أن يكون ≥{" "}
-              <strong>{offer.minOrderQty}</strong>
+              المجموع ≥ <strong>{offer.minOrderQty}</strong>
               {offer.maxOrderQty !== null && ` و≤ ${offer.maxOrderQty}`}.
             </p>
 
-            <div className="max-h-[600px] space-y-2 overflow-y-auto">
+            <div className="space-y-2">
               {offer.variants.map((v) => {
-                const qty = parseInt(quantities[v.id] || "0", 10) || 0;
+                const qty = quantities[v.id] || 0;
+                const max = v.availableStock ?? 0;
                 const price = variantPrices.get(v.id);
                 const hints = bundleHints.get(v.id);
                 const isActive = qty > 0;
+                const isMaxed = qty >= max;
 
                 return (
                   <div
                     key={v.id}
                     className={`rounded-lg border-2 p-3 transition-colors ${
-                      isActive
-                        ? "border-[#ff5c00] bg-orange-50"
-                        : "border-gray-200"
+                      isActive ? "border-[#ff5c00] bg-orange-50" : "border-gray-200"
                     }`}
                   >
-                    <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1">
                           {v.attributes.length === 0 ? (
-                            <span className="text-xs text-gray-500">
-                              متغير افتراضي
-                            </span>
+                            <span className="text-xs text-gray-500">افتراضي</span>
                           ) : (
                             v.attributes.map((a, i) => (
                               <span
@@ -322,14 +400,12 @@ export function OfferDetailPublic({
                             ))
                           )}
                         </div>
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
                           {v.tiers.length > 0 ? (
                             v.tiers.length === 1 ? (
-                              <>
-                                السعر: {formatMoney(v.tiers[0].unitPrice)} د.م/قطعة
-                              </>
+                              <span>{formatMoney(v.tiers[0].unitPrice)} د.م</span>
                             ) : (
-                              <>
+                              <span>
                                 {v.tiers.map((t, i) => (
                                   <span key={i}>
                                     {i > 0 && " · "}
@@ -338,36 +414,61 @@ export function OfferDetailPublic({
                                     {formatMoney(t.unitPrice)}
                                   </span>
                                 ))}
-                              </>
+                              </span>
                             )
                           ) : (
-                            <span className="text-red-600">لا توجد شرائح سعر</span>
+                            <span className="text-red-600">لا شرائح سعر</span>
                           )}
+                          <span>
+                            · مخزون:{" "}
+                            <strong className={max === 0 ? "text-red-600" : "text-gray-900"}>
+                              {max}
+                            </strong>
+                          </span>
                         </div>
                         {hints && hints.length > 0 && (
                           <div className="mt-1 space-y-0.5">
                             {hints.map((h, i) => (
-                              <p key={i} className="text-xs text-amber-700">
+                              <p key={i} className="text-[11px] text-amber-700">
                                 ⚠ {h}
                               </p>
                             ))}
                           </div>
                         )}
                       </div>
-                      <div className="w-24 flex-shrink-0">
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => decrement(v.id)}
+                          disabled={qty <= 0}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                          aria-label="إنقاص"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
                         <input
                           type="text"
                           inputMode="numeric"
-                          pattern="[0-9]*"
+                          value={qty === 0 ? "" : String(qty)}
+                          onChange={(e) => setDirect(v.id, e.target.value)}
                           placeholder="0"
-                          value={quantities[v.id] || ""}
-                          onChange={(e) => setQty(v.id, e.target.value)}
-                          className="w-full rounded-lg border-2 border-gray-200 px-2 py-1.5 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none"
+                          className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none"
                         />
+                        <button
+                          type="button"
+                          onClick={() => increment(v.id)}
+                          disabled={isMaxed}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                          aria-label="زيادة"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
+
                     {price !== undefined && qty > 0 && (
-                      <div className="flex items-center justify-between border-t border-gray-200 pt-2 text-sm">
+                      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-1 text-xs">
                         <span className="text-gray-600">
                           {qty} × {formatMoney(price)} د.م
                         </span>
@@ -375,6 +476,11 @@ export function OfferDetailPublic({
                           {formatMoney(price * qty)} د.م
                         </span>
                       </div>
+                    )}
+                    {isMaxed && max > 0 && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        الحد الأقصى المتاح {max} قطعة
+                      </p>
                     )}
                   </div>
                 );
@@ -396,8 +502,7 @@ export function OfferDetailPublic({
               </p>
               {offer.sellerVerificationStatus === "VERIFIED" && (
                 <Badge variant="green" size="sm">
-                  <ShieldCheck className="h-3 w-3" />
-                  نشاط موثق
+                  <ShieldCheck className="h-3 w-3" /> نشاط موثق
                 </Badge>
               )}
               <p className="text-xs text-gray-500">
@@ -406,100 +511,80 @@ export function OfferDetailPublic({
             </div>
           </Card>
 
-          <Card>
-            <h3 className="mb-3 text-sm font-bold text-gray-900">ملخص الطلب</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">عدد الخيارات</span>
-                <span className="font-medium">
-                  {Object.keys(quantities).length}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">إجمالي القطع</span>
-                <span
-                  className={`font-bold ${
-                    minMet ? "text-gray-900" : "text-red-600"
-                  }`}
-                >
-                  {totalQty}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">الحد الأدنى</span>
-                <span className="text-gray-700">{offer.minOrderQty}</span>
-              </div>
-              {offer.maxOrderQty !== null && (
+          <div className="lg:sticky lg:top-4">
+            <Card>
+              <h3 className="mb-3 text-sm font-bold text-gray-900">ملخص الطلب</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">خيارات مختارة</span>
+                  <span className="font-medium">{selectedCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">إجمالي القطع</span>
+                  <span className={`font-bold ${minMet ? "text-gray-900" : "text-red-600"}`}>
+                    {totalQty}
+                  </span>
+                </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">الحد الأقصى</span>
-                  <span
-                    className={
-                      maxExceeded ? "font-bold text-red-600" : "text-gray-700"
-                    }
-                  >
-                    {offer.maxOrderQty}
-                  </span>
+                  <span className="text-gray-500">الحد الأدنى</span>
+                  <span className="text-gray-700">{offer.minOrderQty}</span>
                 </div>
-              )}
-              {totalEstimate > 0 && (
-                <div className="flex justify-between border-t pt-2 text-base">
-                  <span className="font-bold">الإجمالي التقديري</span>
-                  <span className="font-black text-[#ff5c00]">
-                    {formatMoney(totalEstimate)} د.م
-                  </span>
-                </div>
-              )}
-            </div>
+                {offer.maxOrderQty !== null && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">الحد الأقصى</span>
+                    <span className={maxExceeded ? "font-bold text-red-600" : "text-gray-700"}>
+                      {offer.maxOrderQty}
+                    </span>
+                  </div>
+                )}
+                {totalEstimate > 0 && (
+                  <div className="flex justify-between border-t pt-2 text-base">
+                    <span className="font-bold">الإجمالي</span>
+                    <span className="font-black text-[#ff5c00]">
+                      {formatMoney(totalEstimate)} د.م
+                    </span>
+                  </div>
+                )}
+              </div>
 
-            {!minMet && totalQty > 0 && (
-              <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">
-                يتبقى {offer.minOrderQty - totalQty} قطعة للوصول إلى الحد الأدنى
-              </div>
-            )}
-            {maxExceeded && (
-              <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">
-                تجاوزت الحد الأقصى بـ {totalQty - (offer.maxOrderQty || 0)} قطعة
-              </div>
-            )}
-            {bundleViolations.length > 0 && (
-              <div className="mt-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2">
-                {bundleViolations.map((v, i) => (
-                  <p
-                    key={i}
-                    className="flex items-start gap-1 text-xs text-amber-800"
-                  >
-                    <AlertCircle className="mt-0.5 h-3 w-3 flex-shrink-0" />{" "}
-                    {v}
-                  </p>
-                ))}
-              </div>
-            )}
-            {totalQty > 0 &&
-              minMet &&
-              !maxExceeded &&
-              bundleViolations.length === 0 && (
+              {!minMet && totalQty > 0 && (
+                <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                  يتبقى {offer.minOrderQty - totalQty} قطعة
+                </div>
+              )}
+              {maxExceeded && (
+                <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                  تجاوزت الحد الأقصى بـ {totalQty - (offer.maxOrderQty || 0)}
+                </div>
+              )}
+              {bundleViolations.length > 0 && (
+                <div className="mt-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                  {bundleViolations.map((v, i) => (
+                    <p key={i} className="flex items-start gap-1 text-xs text-amber-800">
+                      <AlertCircle className="mt-0.5 h-3 w-3 flex-shrink-0" /> {v}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {canOrder && (
                 <div className="mt-3 flex items-center gap-1 rounded-lg bg-green-50 p-2 text-xs text-green-700">
-                  <CheckCircle2 className="h-3 w-3" /> الطلب صالح للإرسال
+                  <CheckCircle2 className="h-3 w-3" /> جاهز للإرسال
                 </div>
               )}
 
-            <div className="mt-3 flex gap-2">
-              {totalQty > 0 && (
-                <Button variant="secondary" onClick={clearAll}>
-                  <X className="h-4 w-4" /> مسح
+              <div className="mt-3">
+                <Button
+                  fullWidth
+                  disabled={!canOrder}
+                  variant="primary"
+                  iconLeft={<ShoppingCart className="h-4 w-4" />}
+                  onClick={handleAddToCart}
+                >
+                  أضف إلى السلة ({totalQty})
                 </Button>
-              )}
-              <Button
-                fullWidth
-                disabled={!canOrder}
-                variant="primary"
-                iconLeft={<ShoppingCart className="h-4 w-4" />}
-                onClick={handleAddToCart}
-              >
-                أضف إلى السلة ({totalQty})
-              </Button>
-            </div>
-          </Card>
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
