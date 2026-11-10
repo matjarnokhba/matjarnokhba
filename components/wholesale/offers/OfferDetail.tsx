@@ -392,6 +392,7 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
               initialEnabled={offer.autoBalanceEnabled ?? false}
               initialBundleRulesCount={offer.bundleRules?.length ?? 0}
               initialRequireSizeSelection={offer.requireSizeSelection ?? false}
+              initialMaxManualAdjustment={offer.maxManualAdjustment ?? 1}
             />
           )}
 

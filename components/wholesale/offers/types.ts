@@ -15,6 +15,7 @@ export type OfferListItem = {
   claimVerified: boolean;
   autoBalanceEnabled?: boolean;
   requireSizeSelection?: boolean;
+  maxManualAdjustment?: number;
   reviewLevel: string;
   variantCount: number;
   createdAt: string;

@@ -15,6 +15,7 @@ type Props = {
   initialEnabled: boolean;
   initialBundleRulesCount: number;
   initialRequireSizeSelection?: boolean;
+  initialMaxManualAdjustment?: number;
   readOnly?: boolean;
 };
 
@@ -52,6 +53,7 @@ export default function AutoBalanceEditor({
   initialEnabled,
   initialBundleRulesCount,
   initialRequireSizeSelection = false,
+  initialMaxManualAdjustment = 1,
   readOnly,
 }: Props) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -63,6 +65,7 @@ export default function AutoBalanceEditor({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [requireSizeSelection, setRequireSizeSelection] = useState(initialRequireSizeSelection);
+  const [maxManualAdjustment, setMaxManualAdjustment] = useState(initialMaxManualAdjustment);
 
   const availableSizes = useMemo(() => {
     const set = new Set<string>();
@@ -143,6 +146,20 @@ export default function AutoBalanceEditor({
       });
     } catch { /* silent */ }
   }
+  async function updateMaxManualAdjustment(next: number) {
+    setMaxManualAdjustment(next);
+    if (!enabled) return;
+    try {
+      await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          maxManualAdjustment: next,
+        }),
+      });
+    } catch { /* silent */ }
+  }
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -219,7 +236,38 @@ export default function AutoBalanceEditor({
         </div>
       )}
 
-      {enabled && !showConfirmDelete && (
+            {enabled && !showConfirmDelete && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <label className="mb-1 block text-xs font-bold text-gray-900">
+            سقف التعديل اليدوي لكل لون
+          </label>
+          <p className="mb-2 text-[11px] text-gray-500">
+            أقصى زيادة أو إنقاص يمكن للمشتري إجراؤه على كل لون بعد التوزيع التلقائي. 0 = بدون تعديل.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={maxManualAdjustment}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (!isNaN(v) && v >= 0 && v <= 100) {
+                  updateMaxManualAdjustment(v);
+                }
+              }}
+              disabled={readOnly || toggling}
+              className="h-9 w-20 rounded border border-gray-200 px-2 text-sm font-bold disabled:bg-gray-100"
+            />
+            <span className="text-xs text-gray-600">
+              {maxManualAdjustment === 0
+                ? "بدون تعديل (auto فقط)"
+                : `±${maxManualAdjustment} قطعة لكل لون`}
+            </span>
+          </div>
+        </div>
+      )}
+{enabled && !showConfirmDelete && (
         <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700">معاينة التوزيع (كمية)</label>

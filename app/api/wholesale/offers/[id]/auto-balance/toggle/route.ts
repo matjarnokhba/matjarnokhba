@@ -7,6 +7,7 @@ const schema = z.object({
   enabled: z.boolean(),
   deleteBundleRules: z.boolean().optional(),
   requireSizeSelection: z.boolean().optional(),
+  maxManualAdjustment: z.number().int().min(0).max(100).optional(),
 });
 
 async function ensureOwner(offerId: number, userId: number) {
@@ -65,7 +66,7 @@ export async function POST(
       );
     }
 
-    const { enabled, deleteBundleRules, requireSizeSelection } = parsed.data;
+    const { enabled, deleteBundleRules, requireSizeSelection, maxManualAdjustment } = parsed.data;
 
     if (enabled && !deleteBundleRules) {
       const rulesCount = await prisma.wholesaleOfferBundleRule.count({
@@ -94,6 +95,9 @@ export async function POST(
       };
       if (typeof requireSizeSelection === "boolean") {
         updateData.requireSizeSelection = requireSizeSelection;
+      }
+      if (typeof maxManualAdjustment === "number") {
+        updateData.maxManualAdjustment = maxManualAdjustment;
       }
       await tx.wholesaleOffer.update({
         where: { id: offerId },

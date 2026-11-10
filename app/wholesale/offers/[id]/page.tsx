@@ -150,6 +150,7 @@ export default async function OfferDetailPage({
     claimVerified: offer.claimVerified,
     autoBalanceEnabled: offer.autoBalanceEnabled,
     requireSizeSelection: offer.requireSizeSelection,
+    maxManualAdjustment: offer.maxManualAdjustment,
     reviewLevel: offer.reviewLevel,
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),
