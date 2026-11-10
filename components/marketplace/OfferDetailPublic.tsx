@@ -111,6 +111,7 @@ export function OfferDetailPublic({
   const [manualAdjust, setManualAdjust] = useState<Record<number, number>>({});
   const [pendingPackage, setPendingPackage] = useState<{ name: string; items: Array<{ variantId: number; quantity: number }> } | null>(null);
   const [pkgBoosted, setPkgBoosted] = useState<Set<number>>(new Set());
+  const [pkgBase, setPkgBase] = useState<Record<number, number>>({});
   const [sizeLimits, setSizeLimits] = useState<Record<string, number>>({});
 
   const availableSizes = useMemo(() => {
@@ -306,22 +307,27 @@ export function OfferDetailPublic({
     // Build synthetic dists for pkgBoosted variants of selected sizes
     const buildSynthMap = (): Map<number, VariantDist> => {
       const m = new Map<number, VariantDist>();
+      const maxAdj = offer.maxManualAdjustment ?? 1;
       for (const ov of offer.variants) {
         if (!pkgBoosted.has(ov.id)) continue;
         const sizeVal = getSizeFromAttrs(ov.attributes);
         if (!sizeVal || !sizesToCompute.includes(sizeVal)) continue;
+        const stock = ov.availableStock ?? 0;
+        const base = pkgBase[ov.id] ?? 0;
+        const minAllowed = Math.max(0, base - maxAdj);
+        const maxAllowed = Math.min(stock, base + maxAdj);
         m.set(ov.id, {
           variantId: ov.id,
           attributes: ov.attributes,
           sizeValue: sizeVal,
-          stock: ov.availableStock ?? 0,
+          stock,
           isRare: false,
           isBlocked: false,
-          baseQty: 0,
-          suggestedQty: 0,
-          minAllowed: 0,
-          maxAllowed: ov.availableStock ?? 0,
-          maxAdjust: 0,
+          baseQty: base,
+          suggestedQty: base,
+          minAllowed,
+          maxAllowed,
+          maxAdjust: maxAdj,
         });
       }
       return m;
@@ -419,7 +425,7 @@ export function OfferDetailPublic({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, offer.variants]);
+  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, offer.variants, pkgBoosted, pkgBase, offer.maxManualAdjustment]);
   // M10.9e: apply pending package once distributions are ready
   // ============ Handlers ============
   function toggleSize(size: string) {
@@ -449,6 +455,13 @@ export function OfferDetailPublic({
       }
       return next;
     });
+    setPkgBase((prev) => {
+      const next = { ...prev };
+      for (const v of offer.variants) {
+        if (getSizeFromAttrs(v.attributes) === size) delete next[v.id];
+      }
+      return next;
+    });
   }
 
   function setSizeQty(size: string, raw: string) {
@@ -467,6 +480,13 @@ export function OfferDetailPublic({
       }
       return next;
     });
+    setPkgBase((prev) => {
+      const next = { ...prev };
+      for (const v of offer.variants) {
+        if (getSizeFromAttrs(v.attributes) === size) delete next[v.id];
+      }
+      return next;
+    });
   }
 
   function adjustVariant(variantId: number, delta: number) {
@@ -474,25 +494,17 @@ export function OfferDetailPublic({
     if (!dist || dist.isBlocked) return;
     const cur = manualAdjust[variantId] ?? dist.suggestedQty;
     const next = cur + delta;
-    const isBoosted = pkgBoosted.has(variantId);
-    const effectiveMin = isBoosted ? 0 : dist.minAllowed;
-    const effectiveMax = isBoosted ? dist.stock : dist.maxAllowed;
-    if (next < effectiveMin || next > effectiveMax) return;
+    if (next < dist.minAllowed || next > dist.maxAllowed) return;
     setManualAdjust((prev) => ({ ...prev, [variantId]: next }));
-    // pkgBoosted persists — only setSizeQty/toggleSize clear it
   }
 
   function setVariantDirect(variantId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;
     const dist = distributions.get(variantId);
     if (!dist || dist.isBlocked) return;
-    const isBoosted = pkgBoosted.has(variantId);
-    const effectiveMin = isBoosted ? 0 : dist.minAllowed;
-    const effectiveMax = isBoosted ? dist.stock : dist.maxAllowed;
     let n = raw === "" ? 0 : parseInt(raw, 10);
-    n = Math.max(effectiveMin, Math.min(effectiveMax, n));
+    n = Math.max(dist.minAllowed, Math.min(dist.maxAllowed, n));
     setManualAdjust((prev) => ({ ...prev, [variantId]: n }));
-    // pkgBoosted persists — only setSizeQty/toggleSize clear it
   }
 
   // ============ Manual mode handlers ============
@@ -586,13 +598,6 @@ export function OfferDetailPublic({
 
   function applyPackage(pkg: { name: string; items: Array<{ variantId: number; quantity: number }> }) {
     if (offer.autoBalanceEnabled) {
-      // M10.9f: package applies DIRECTLY (bypasses auto-balance constraints)
-      // - No compute needed
-      // - Bypasses maxAllowed/maxManualAdjustment
-      // - Bypasses sizeLimits
-      // - Only stock is the cap
-
-      // Auto-select sizes from package (no sizeLimit constraint)
       const pkgSizes = new Set<string>();
       const qtyPerSize: Record<string, number> = {};
       for (const item of pkg.items) {
@@ -605,78 +610,59 @@ export function OfferDetailPublic({
         }
       }
 
-      // Build next manualAdjust + pkgBoosted
       const next = { ...manualAdjust };
       const nextBoosted = new Set(pkgBoosted);
+      const nextBase = { ...pkgBase };
       let capped = false;
 
       for (const item of pkg.items) {
         const dist = distributions.get(item.variantId);
-        if (!dist || dist.isBlocked) {
-          // No distribution yet (compute not run) — find variant manually
-          const v = offer.variants.find((x) => x.id === item.variantId);
-          if (!v) continue;
-          const stock = v.availableStock ?? 0;
-          if (stock <= 0) continue;
-          const current = next[item.variantId] ?? 0;
-          const wanted = current + item.quantity;
-          const applied = Math.min(wanted, stock);
-          if (applied < wanted) capped = true;
-          next[item.variantId] = applied;
-          nextBoosted.add(item.variantId);
-          continue;
-        }
-        const current = next[item.variantId] ?? dist.suggestedQty;
-        const wanted = current + item.quantity;
-        const applied = Math.min(wanted, dist.stock);
-        if (applied < wanted) capped = true;
-        next[item.variantId] = applied;
-        nextBoosted.add(item.variantId); // M10.9i: always boost on package apply
+        const stock = dist ? dist.stock : (offer.variants.find((x) => x.id === item.variantId)?.availableStock ?? 0);
+        if (stock <= 0) continue;
+        const prevBase = nextBase[item.variantId] ?? 0;
+        const newBase = Math.min(prevBase + item.quantity, stock);
+        if (newBase < prevBase + item.quantity) capped = true;
+        nextBase[item.variantId] = newBase;
+        next[item.variantId] = newBase;
+        nextBoosted.add(item.variantId);
       }
 
-      // Update selected sizes (no limit)
       const nextSelected = new Set(selectedSizes);
       const nextSizeQty = { ...sizeQuantities };
       for (const s of pkgSizes) {
         nextSelected.add(s);
         const current = parseInt(nextSizeQty[s] || "0", 10) || 0;
-        const wanted = current + (qtyPerSize[s] || 0);
-        nextSizeQty[s] = String(wanted);
+        nextSizeQty[s] = String(Math.max(current, qtyPerSize[s] || 0));
       }
 
       setSelectedSizes(nextSelected);
       setSizeQuantities(nextSizeQty);
       setManualAdjust(next);
       setPkgBoosted(nextBoosted);
+      setPkgBase(nextBase);
       setPackageFeedback(
-        capped
-          ? `أضيفت "${pkg.name}" — بعض الخيارات وصلت لحد المخزون`
-          : `أضيفت "${pkg.name}"`
+        capped ? `أضيفت "${pkg.name}" — وصلت لحد المخزون` : `أضيفت "${pkg.name}"`
       );
       setTimeout(() => setPackageFeedback(""), 4000);
       return;
     }
 
-    // Manual mode: unchanged
-    const next = { ...quantities };
-    let capped = false;
+    const nextQty = { ...quantities };
+    let cappedM = false;
     for (const item of pkg.items) {
       const max = maxForManual(item.variantId);
-      const cur = next[item.variantId] || 0;
+      const cur = nextQty[item.variantId] || 0;
       const want = cur + item.quantity;
-      if (want > max) {
-        next[item.variantId] = max;
-        capped = true;
-      } else {
-        next[item.variantId] = want;
-      }
+      if (want > max) { nextQty[item.variantId] = max; cappedM = true; }
+      else { nextQty[item.variantId] = want; }
     }
-    setQuantities(next);
+    setQuantities(nextQty);
     setPackageFeedback(
-      capped ? `أضيفت "${pkg.name}" — بعض الخيارات تجاوزت المخزون` : `أضيفت "${pkg.name}"`
+      cappedM ? `أضيفت "${pkg.name}" — بعض الخيارات تجاوزت المخزون` : `أضيفت "${pkg.name}"`
     );
     setTimeout(() => setPackageFeedback(""), 4000);
   }
+
 
   function handleAddToCart() {
     if (!canOrder) return;
