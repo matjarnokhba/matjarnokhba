@@ -147,8 +147,8 @@ export function OfferDetailPublic({
       const sizeVariantIds = offer.variants
         .filter((v) => getSizeFromAttrs(v.attributes) === s)
         .map((v) => v.id);
-      const allBoosted = sizeVariantIds.length > 0 && sizeVariantIds.every((id) => pkgBoosted.has(id));
-      if (allBoosted) {
+      const anyBoosted = sizeVariantIds.some((id) => pkgBoosted.has(id));
+      if (anyBoosted) {
         errs[s] = null;
         continue;
       }
@@ -289,8 +289,13 @@ export function OfferDetailPublic({
       setPkgBoosted(new Set());
       return;
     }
-    // M10.9d2: block compute if any size has invalid qty (below min or above stock)
+    // Block compute if any size has invalid qty, UNLESS it has a pkgBoosted variant
     const hasInvalidSize = sizesToCompute.some((s) => {
+      const sizeVariantIds = offer.variants
+        .filter((v) => getSizeFromAttrs(v.attributes) === s)
+        .map((v) => v.id);
+      const anyBoosted = sizeVariantIds.some((id) => pkgBoosted.has(id));
+      if (anyBoosted) return false;
       const raw = sizeQuantities[s];
       const q = raw ? parseInt(raw, 10) : 0;
       const limit = sizeLimitsMap[s] || 0;
@@ -338,7 +343,6 @@ export function OfferDetailPublic({
         }
         setDistributions(nextMap);
         setManualAdjust(nextAdjust);
-        setPkgBoosted(new Set());
         if (d.sizeLimits) setSizeLimits(d.sizeLimits as Record<string, number>);
       } catch {
         setAutoError("خطأ في الاتصال");
@@ -348,7 +352,7 @@ export function OfferDetailPublic({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
+  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, pkgBoosted, offer.variants]);
   // M10.9e: apply pending package once distributions are ready
   // ============ Handlers ============
   function toggleSize(size: string) {
@@ -381,6 +385,8 @@ export function OfferDetailPublic({
       else next[size] = raw;
       return next;
     });
+    // User took manual control → clear package boost
+    setPkgBoosted(new Set());
   }
 
   function adjustVariant(variantId: number, delta: number) {
