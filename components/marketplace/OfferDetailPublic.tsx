@@ -124,7 +124,10 @@ export function OfferDetailPublic({
 
   const hasSizes = availableSizes.length > 0;
 
-  const sizeLimitsMap = offer.sizeLimits ?? {};
+  const sizeLimitsMap = useMemo(
+    () => offer.sizeLimits ?? {},
+    [offer.sizeLimits]
+  );
 
   const maxSizeQty = useCallback((size: string): number => {
     let sum = 0;
@@ -284,9 +287,9 @@ export function OfferDetailPublic({
 
     const sizesToCompute = Array.from(selectedSizes);
     if (sizesToCompute.length === 0) {
-      setDistributions(new Map());
-      setManualAdjust({});
-      setPkgBoosted(new Set());
+      setDistributions((prev) => (prev.size === 0 ? prev : new Map()));
+      setManualAdjust((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      setPkgBoosted((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
     // Block compute if any size has invalid qty, UNLESS it has a pkgBoosted variant
@@ -303,8 +306,9 @@ export function OfferDetailPublic({
       return q < 1 || q < limit || (maxQ > 0 && q > maxQ);
     });
     if (hasInvalidSize) {
-      setDistributions(new Map());
-      setManualAdjust({});
+      setDistributions((prev) => (prev.size === 0 ? prev : new Map()));
+      setManualAdjust((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      setPkgBoosted((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
 
@@ -352,7 +356,7 @@ export function OfferDetailPublic({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, pkgBoosted, offer.variants]);
+  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, offer.variants]);
   // M10.9e: apply pending package once distributions are ready
   // ============ Handlers ============
   function toggleSize(size: string) {
