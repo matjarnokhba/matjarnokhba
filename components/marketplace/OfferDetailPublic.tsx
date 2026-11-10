@@ -135,12 +135,9 @@ export function OfferDetailPublic({
       setAutoBalanceLoading(true);
       setAutoBalanceError("");
       try {
-        const sizesParam =
-          selectedSizes.size > 0
-            ? `&sizes=${encodeURIComponent(Array.from(selectedSizes).join(","))}`
-            : "";
+        // TODO M10.8c: use per-size qtys ?sizes=M:100,L:50
         const res = await fetch(
-          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}${sizesParam}`
+          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}`
         );
         const d = await res.json();
         if (!d.success) {
@@ -156,6 +153,9 @@ export function OfferDetailPublic({
           isRare: boolean;
           isBlocked: boolean;
           maxAllowed: number;
+          baseQty: number;
+          minAllowed: number;
+          maxAdjust: number;
         }>) {
           if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
           if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;

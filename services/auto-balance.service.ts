@@ -2,14 +2,16 @@ import { prisma } from "@/lib/prisma";
 import { NotFoundError } from "@/lib/wholesale/errors";
 
 export type AutoBalanceConfig = {
-  rareThreshold: number;   // default 0.25
-  roundThreshold: number;  // default 0.7
+  rareThreshold: number;
+  roundThreshold: number;
 };
 
 const DEFAULT_CONFIG: AutoBalanceConfig = {
   rareThreshold: 0.25,
   roundThreshold: 0.7,
 };
+
+export type SizeQty = { size: string; qty: number };
 
 export type VariantDistribution = {
   variantId: number;
@@ -20,9 +22,12 @@ export type VariantDistribution = {
   weight: number;
   isRare: boolean;
   isBlocked: boolean;
-  rawQuantity: number;
+  baseQty: number;
   suggestedQty: number;
+  minAllowed: number;
   maxAllowed: number;
+  maxAdjust: number;
+  rawQuantity: number;
 };
 
 export type ComputeResult = {
@@ -33,6 +38,7 @@ export type ComputeResult = {
   availableSizes: string[];
   sizeFilterApplied: string[] | null;
   requireSizeSelection: boolean;
+  maxManualAdjustment: number;
   variants: VariantDistribution[];
   config: AutoBalanceConfig;
 };
@@ -49,6 +55,7 @@ function getSizeValue(attrs: any): string | null {
   }
   return null;
 }
+
 function roundWithThreshold(value: number, threshold: number): number {
   if (value < 0.0001) return 0;
   const floor = Math.floor(value);
@@ -58,27 +65,40 @@ function roundWithThreshold(value: number, threshold: number): number {
 
 export const AutoBalanceService = {
   /**
-   * Compute distribution for a given totalQty.
-   * Only uses non-rare variants for auto-distribution.
-   * Rare variants are excluded (suggestedQty = 0).
+   * Compute distribution.
+   *
+   * Accepts:
+   *  - sizesInput as number → legacy wildcard (distribute N across all variants)
+   *  - sizesInput as SizeQty[] → per-size distribution (each size gets its own qty)
    */
   async compute(
     offerId: number,
-    totalQty: number,
-    locked?: { variantId: number; qty: number },
-    sizeFilter?: string[]
+    sizesInput: SizeQty[] | number
   ): Promise<ComputeResult> {
-    if (!Number.isInteger(totalQty) || totalQty < 1) {
-      throw new Error("totalQty يجب أن يكون عدداً صحيحاً موجباً");
+    // Normalize input
+    let sizes: SizeQty[];
+    if (typeof sizesInput === "number") {
+      if (!Number.isInteger(sizesInput) || sizesInput < 1) {
+        throw new Error("totalQty يجب أن يكون عدداً صحيحاً موجباً");
+      }
+      sizes = [{ size: "*", qty: sizesInput }];
+    } else {
+      sizes = sizesInput.filter((s) => s.qty > 0);
+      if (sizes.length === 0) {
+        throw new Error("مطلوب كمية واحدة على الأقل");
+      }
+      for (const s of sizes) {
+        if (!Number.isInteger(s.qty) || s.qty < 1) {
+          throw new Error(`كمية غير صحيحة للمقاس ${s.size}`);
+        }
+      }
     }
 
     const offer = await prisma.wholesaleOffer.findUnique({
       where: { id: offerId },
       include: {
         variants: {
-          include: {
-            masterVariant: { select: { attributes: true } },
-          },
+          include: { masterVariant: { select: { attributes: true } } },
         },
       },
     });
@@ -88,6 +108,7 @@ export const AutoBalanceService = {
       ...DEFAULT_CONFIG,
       ...((offer.autoBalanceConfig as any) || {}),
     };
+    const maxAdjust = Math.max(0, offer.maxManualAdjustment ?? 1);
 
     // Fetch stock per variant
     const merchantVariantIds = offer.variants
@@ -120,9 +141,10 @@ export const AutoBalanceService = {
       }
     }
 
-    // Compute weights + size values
+    // Build variant data
     const variantData = offer.variants.map((v) => {
-      const attrs = (v.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [];
+      const attrs =
+        (v.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [];
       return {
         variantId: v.id,
         merchantVariantId: v.merchantVariantId,
@@ -132,52 +154,125 @@ export const AutoBalanceService = {
       };
     });
 
-    const maxStock = Math.max(0, ...variantData.map((v) => v.stock));
-
-    // Size filter
+    // Available sizes
     const availableSizesSet = new Set<string>();
     for (const v of variantData) {
       if (v.sizeValue) availableSizesSet.add(v.sizeValue);
     }
     const availableSizes = Array.from(availableSizesSet).sort();
 
-    const hasSizeFilter = Array.isArray(sizeFilter) && sizeFilter.length > 0;
-    // Only require size selection when the offer actually has size attributes
-    if (offer.requireSizeSelection && availableSizes.length > 0 && !hasSizeFilter) {
-      throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
+    const isWildcard = sizes.length === 1 && sizes[0].size === "*";
+
+    // Validate requireSizeSelection
+    if (offer.requireSizeSelection && availableSizes.length > 0) {
+      if (isWildcard) {
+        throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
+      }
+      const nonWildcard = sizes.filter((s) => s.size !== "*");
+      if (nonWildcard.length === 0) {
+        throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
+      }
     }
 
-    const isInFilter = (sv: string | null): boolean => {
-      if (!hasSizeFilter) return true;
-      return sv !== null && sizeFilter!.includes(sv);
-    };
+    // Group variants by size
+    type VData = (typeof variantData)[number];
+    const groups = new Map<string, VData[]>();
+    if (isWildcard) {
+      groups.set("*", variantData);
+    } else {
+      for (const s of sizes) {
+        groups.set(
+          s.size,
+          variantData.filter((v) => v.sizeValue === s.size)
+        );
+      }
+    }
 
-    // Compute weight + rare + blocked
-    const withWeights = variantData.map((v) => ({
-      ...v,
-      weight: maxStock > 0 ? v.stock / maxStock : 0,
-      isRare: maxStock > 0 ? v.stock / maxStock < config.rareThreshold : false,
-      isBlocked: !isInFilter(v.sizeValue),
-    }));
+    const resultVariants: VariantDistribution[] = [];
+    let totalQty = 0;
+    let totalDistributed = 0;
+    const minDistributedValues: number[] = [];
 
-    // Only non-rare, non-blocked variants participate in auto-distribution
-    const distributableAll = withWeights.filter((v) => !v.isRare && !v.isBlocked && v.stock > 0);
-    const distributable = locked
-      ? distributableAll.filter((v) => v.variantId !== locked.variantId)
-      : distributableAll;
-    const sumWeight = distributable.reduce((s, v) => s + v.weight, 0);
+    for (const sizeEntry of sizes) {
+      const group = groups.get(sizeEntry.size) ?? [];
+      if (group.length === 0) continue;
 
-    if (sumWeight === 0) {
-      return {
-        totalQty,
-        totalDistributed: 0,
-        minDistributed: 0,
-        maxStock,
-        availableSizes,
-        sizeFilterApplied: hasSizeFilter ? sizeFilter! : null,
-        requireSizeSelection: offer.requireSizeSelection,
-        config,
-        variants: withWeights.map((v) => ({
+      const maxStock = Math.max(0, ...group.map((v) => v.stock));
+      const withWeights = group.map((v) => ({
+        ...v,
+        weight: maxStock > 0 ? v.stock / maxStock : 0,
+        isRare:
+          maxStock > 0 ? v.stock / maxStock < config.rareThreshold : false,
+      }));
+
+      const distributableAll = withWeights.filter(
+        (v) => !v.isRare && v.stock > 0
+      );
+      const sumWeight = distributableAll.reduce((s, v) => s + v.weight, 0);
+
+      const baseMap = new Map<number, number>();
+      const rawMap = new Map<number, number>();
+
+      if (sumWeight > 0) {
+        for (const v of distributableAll) {
+          const raw = (sizeEntry.qty * v.weight) / sumWeight;
+          rawMap.set(v.variantId, raw);
+          baseMap.set(v.variantId, roundWithThreshold(raw, config.roundThreshold));
+        }
+
+        // Fix sum on the largest-stock variant
+        let sumRounded = 0;
+        for (const q of baseMap.values()) sumRounded += q;
+        const delta = sizeEntry.qty - sumRounded;
+        if (delta !== 0 && distributableAll.length > 0) {
+          const largest = distributableAll.reduce(
+            (best, v) => (v.stock > best.stock ? v : best),
+            distributableAll[0]
+          );
+          baseMap.set(
+            largest.variantId,
+            Math.max(0, (baseMap.get(largest.variantId) ?? 0) + delta)
+          );
+        }
+
+        // Cap by stock
+        for (const v of distributableAll) {
+          const q = baseMap.get(v.variantId) ?? 0;
+          baseMap.set(v.variantId, Math.min(q, v.stock));
+        }
+      }
+
+      // minDistributed within this size
+      const nonRareQtys: number[] = [];
+      for (const v of distributableAll) {
+        const q = baseMap.get(v.variantId) ?? 0;
+        if (q > 0) nonRareQtys.push(q);
+      }
+      const sizeMin =
+        nonRareQtys.length > 0 ? Math.min(...nonRareQtys) : 0;
+      if (sizeMin > 0) minDistributedValues.push(sizeMin);
+
+      // Build result variants for this size
+      for (const v of withWeights) {
+        const baseQty = baseMap.get(v.variantId) ?? 0;
+        totalDistributed += baseQty;
+
+        let minAllowed: number;
+        let maxAllowed: number;
+        let variantMaxAdjust: number;
+
+        if (v.isRare) {
+          // Rare: base=0, can add manually up to sizeMin (from non-rare)
+          minAllowed = 0;
+          maxAllowed = Math.min(v.stock, sizeMin);
+          variantMaxAdjust = 0; // maxAdjust doesn't apply; sizeMin is the cap
+        } else {
+          minAllowed = Math.max(0, baseQty - maxAdjust);
+          maxAllowed = Math.min(v.stock, baseQty + maxAdjust);
+          variantMaxAdjust = maxAdjust;
+        }
+
+        resultVariants.push({
           variantId: v.variantId,
           merchantVariantId: v.merchantVariantId,
           attributes: v.attributes,
@@ -185,108 +280,64 @@ export const AutoBalanceService = {
           stock: v.stock,
           weight: v.weight,
           isRare: v.isRare,
-          isBlocked: v.isBlocked,
-          rawQuantity: 0,
-          suggestedQty: 0,
-          maxAllowed: 0,
-        })),
-      };
+          isBlocked: false,
+          baseQty,
+          suggestedQty: baseQty,
+          minAllowed,
+          maxAllowed,
+          maxAdjust: variantMaxAdjust,
+          rawQuantity: Math.round((rawMap.get(v.variantId) ?? 0) * 100) / 100,
+        });
+      }
+
+      totalQty += sizeEntry.qty;
     }
 
-    // Adjust total for distribution: subtract locked quantity
-    const lockedQty = locked?.qty ?? 0;
-    const distributableTotal = Math.max(0, totalQty - lockedQty);
-
-    // Raw and rounded
-    const rawMap = new Map<number, number>();
-    const roundedMap = new Map<number, number>();
-    for (const v of distributable) {
-      const raw = sumWeight > 0 ? (distributableTotal * v.weight) / sumWeight : 0;
-      rawMap.set(v.variantId, raw);
-      roundedMap.set(v.variantId, roundWithThreshold(raw, config.roundThreshold));
+    // Add unselected sizes as blocked (only in per-size mode)
+    if (!isWildcard) {
+      const selectedSizeSet = new Set(sizes.map((s) => s.size));
+      for (const v of variantData) {
+        if (resultVariants.some((r) => r.variantId === v.variantId)) continue;
+        if (v.sizeValue && !selectedSizeSet.has(v.sizeValue)) {
+          resultVariants.push({
+            variantId: v.variantId,
+            merchantVariantId: v.merchantVariantId,
+            attributes: v.attributes,
+            sizeValue: v.sizeValue,
+            stock: v.stock,
+            weight: 0,
+            isRare: false,
+            isBlocked: true,
+            baseQty: 0,
+            suggestedQty: 0,
+            minAllowed: 0,
+            maxAllowed: 0,
+            maxAdjust: 0,
+            rawQuantity: 0,
+          });
+        }
+      }
     }
 
-    // Set locked variant to its locked quantity
-    if (locked) {
-      rawMap.set(locked.variantId, locked.qty);
-      roundedMap.set(locked.variantId, locked.qty);
-    }
-
-    // Fix total after rounding (locked variant NOT touched)
-    let sumRounded = 0;
-    for (const q of roundedMap.values()) sumRounded += q;
-    let delta = totalQty - sumRounded;
-
-    if (delta !== 0 && distributable.length > 0) {
-      // Add/subtract from the variant with the largest stock among distributable (non-rare, non-locked)
-      const largest = distributable.reduce(
-        (best, v) => (v.stock > best.stock ? v : best),
-        distributable[0]
-      );
-      roundedMap.set(
-        largest.variantId,
-        Math.max(0, (roundedMap.get(largest.variantId) || 0) + delta)
-      );
-    }
-
-    // Cap by stock
-    for (const v of distributable) {
-      const q = roundedMap.get(v.variantId) || 0;
-      roundedMap.set(v.variantId, Math.min(q, v.stock));
-    }
-
-    // minDistributed = min of non-rare, non-blocked quantities
-    const nonRareQtys: number[] = [];
-    for (const v of distributableAll) {
-      const q = roundedMap.get(v.variantId) ?? 0;
-      if (q > 0) nonRareQtys.push(q);
-    }
-    const minDistributed = nonRareQtys.length > 0 ? Math.min(...nonRareQtys) : 0;
-
-    // Build result
-    let totalDistributed = 0;
-    const variantsResult: VariantDistribution[] = withWeights.map((v) => {
-      const raw = rawMap.get(v.variantId) ?? 0;
-      let suggested = roundedMap.get(v.variantId) ?? 0;
-      if (v.isBlocked) suggested = 0;
-      totalDistributed += suggested;
-
-      let maxAllowed: number;
-      if (v.isBlocked) maxAllowed = 0;
-      else if (v.isRare) maxAllowed = minDistributed;
-      else maxAllowed = v.stock;
-
-      return {
-        variantId: v.variantId,
-        merchantVariantId: v.merchantVariantId,
-        attributes: v.attributes,
-        sizeValue: v.sizeValue,
-        stock: v.stock,
-        weight: v.weight,
-        isRare: v.isRare,
-        isBlocked: v.isBlocked,
-        rawQuantity: Math.round(raw * 100) / 100,
-        suggestedQty: suggested,
-        maxAllowed,
-      };
-    });
+    const globalMin =
+      minDistributedValues.length > 0
+        ? Math.min(...minDistributedValues)
+        : 0;
 
     return {
       totalQty,
       totalDistributed,
-      minDistributed,
-      maxStock,
+      minDistributed: globalMin,
+      maxStock: Math.max(0, ...variantData.map((v) => v.stock)),
       availableSizes,
-      sizeFilterApplied: hasSizeFilter ? sizeFilter! : null,
+      sizeFilterApplied: isWildcard ? null : sizes.map((s) => s.size),
       requireSizeSelection: offer.requireSizeSelection,
-      variants: variantsResult,
+      maxManualAdjustment: maxAdjust,
+      variants: resultVariants,
       config,
     };
   },
 
-  /**
-   * Recompute (update timestamp only). Weights are computed on-demand.
-   */
   async recompute(offerId: number): Promise<void> {
     await prisma.wholesaleOffer.update({
       where: { id: offerId },

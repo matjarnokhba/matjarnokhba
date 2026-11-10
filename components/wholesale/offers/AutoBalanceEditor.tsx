@@ -21,12 +21,16 @@ type Props = {
 type PreviewVariant = {
   variantId: number;
   attributes: Array<{ name: string; value: string }>;
+  sizeValue: string | null;
   stock: number;
   weight: number;
   isRare: boolean;
   isBlocked: boolean;
+  baseQty: number;
   suggestedQty: number;
+  minAllowed: number;
   maxAllowed: number;
+  maxAdjust: number;
 };
 
 type PreviewData = {
@@ -80,12 +84,9 @@ export default function AutoBalanceEditor({
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
       try {
-        const sizesParam =
-          requireSizeSelection && availableSizes.length > 0
-            ? `&sizes=${encodeURIComponent(availableSizes.join(","))}`
-            : "";
+        // Seller preview: wildcard distribution across all variants
         const res = await fetch(
-          `/api/wholesale/offers/${offerId}/auto-balance/compute?qty=${t}${sizesParam}`
+          `/api/wholesale/offers/${offerId}/auto-balance/compute?qty=${t}`
         );
         const d = await res.json();
         if (d.success) setPreview(d);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { AutoBalanceService } from "@/services/auto-balance.service";
+import { AutoBalanceService, type SizeQty } from "@/services/auto-balance.service";
 
 export async function GET(
   request: Request,
@@ -20,25 +20,56 @@ export async function GET(
 
     const url = new URL(request.url);
     const qtyRaw = url.searchParams.get("qty");
-    const qty = qtyRaw ? parseInt(qtyRaw, 10) : 0;
-    if (!qty || qty < 1) {
-      return NextResponse.json({ success: false, message: "qty مطلوب (عدد موجب)" }, { status: 400 });
-    }
-
-    const lockedVariantIdRaw = url.searchParams.get("lockedVariantId");
-    const lockedQtyRaw = url.searchParams.get("lockedQty");
-    let locked: { variantId: number; qty: number } | undefined;
-    if (lockedVariantIdRaw && lockedQtyRaw) {
-      const vid = parseInt(lockedVariantIdRaw, 10);
-      const lq = parseInt(lockedQtyRaw, 10);
-      if (!isNaN(vid) && !isNaN(lq) && lq >= 0) {
-        locked = { variantId: vid, qty: lq };
-      }
-    }
     const sizesRaw = url.searchParams.get("sizes");
-    const sizeFilter = sizesRaw
-      ? sizesRaw.split(",").map((s) => s.trim()).filter(Boolean)
-      : undefined;
+
+    let sizesInput: SizeQty[] | number;
+    if (sizesRaw && sizesRaw.includes(":")) {
+      // New format: "M:100,L:50"
+      try {
+        sizesInput = sizesRaw
+          .split(",")
+          .map((e) => {
+            const trimmed = e.trim();
+            const parts = trimmed.split(":");
+            if (parts.length !== 2) {
+              throw new Error(`صيغة غير صحيحة: ${trimmed} (استخدم M:100)`);
+            }
+            const size = parts[0].trim();
+            const qty = parseInt(parts[1].trim(), 10);
+            if (!size || isNaN(qty) || qty < 1) {
+              throw new Error(`كمية أو مقاس غير صحيح: ${trimmed}`);
+            }
+            return { size, qty };
+          })
+          .filter((s) => s.qty > 0);
+      } catch (e: any) {
+        return NextResponse.json(
+          { success: false, message: e?.message || "صيغة sizes غير صحيحة" },
+          { status: 400 }
+        );
+      }
+      if (sizesInput.length === 0) {
+        return NextResponse.json(
+          { success: false, message: "sizes فارغة" },
+          { status: 400 }
+        );
+      }
+    } else if (qtyRaw) {
+      // Legacy wildcard: ?qty=N
+      const q = parseInt(qtyRaw, 10);
+      if (!q || q < 1) {
+        return NextResponse.json(
+          { success: false, message: "qty مطلوب (عدد موجب)" },
+          { status: 400 }
+        );
+      }
+      sizesInput = q;
+    } else {
+      return NextResponse.json(
+        { success: false, message: "qty أو sizes مطلوب" },
+        { status: 400 }
+      );
+    }
 
     const offer = await prisma.wholesaleOffer.findUnique({
       where: { id: offerId },
@@ -54,7 +85,7 @@ export async function GET(
       );
     }
 
-    const result = await AutoBalanceService.compute(offerId, qty, locked, sizeFilter);
+    const result = await AutoBalanceService.compute(offerId, sizesInput);
     return NextResponse.json({ success: true, ...result });
   } catch (e: any) {
     console.error("auto-balance compute:", e);
