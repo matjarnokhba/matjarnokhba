@@ -309,9 +309,15 @@ export async function POST(
     }
 
     if (reactivated) {
+      // M10.10c: reactivated offers auto-verified + active
       await prisma.wholesaleOffer.update({
         where: { id: offerId },
-        data: { status: "ACTIVE" },
+        data: {
+          status: "ACTIVE",
+          claimVerified: true,
+          reviewLevel: "AUTO",
+          approvedAt: new Date(),
+        },
       });
     }
 
