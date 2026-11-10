@@ -971,8 +971,8 @@ export function OfferDetailPublic({
                                         نادر
                                       </span>
                                     )}                                    {pkgBoosted.has(dist.variantId) && (
-                                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">
-                                        🎁 حزمة
+                                      <span className="rounded inline-flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-blue-200">
+                                        من حزمة
                                       </span>
                                     )}
                                   </div>
