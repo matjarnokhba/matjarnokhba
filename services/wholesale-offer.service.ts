@@ -384,7 +384,10 @@ export const WholesaleOfferService = {
           status: initialStatus as any,
           reviewLevel: reviewLevel as any,
           claimType: input.claimType as any,
-          claimVerified: !!input.skipReview,
+          // AUTO/TRUSTED/skipReview → auto-verified claim
+          claimVerified: !!input.skipReview ||
+            reviewLevel === "AUTO" ||
+            reviewLevel === "TRUSTED",
           claimProofUrl: input.claimProofUrl?.trim() || null,
           claimNotes: input.claimNotes?.trim() || null,
           notes: input.notes?.trim() || null,
