@@ -3124,6 +3124,7 @@ model WholesaleOffer {
   orderItems           WholesaleOrderItem[]
   bundleRules          WholesaleOfferBundleRule[]
   packages             WholesaleOfferPackage[]
+  sizeLimits           WholesaleOfferSizeLimit[]
   autoBalanceEnabled   Boolean                    @default(false)
   autoBalanceConfig    Json?
   autoBalanceUpdatedAt DateTime?
@@ -3224,6 +3225,20 @@ model WholesaleOfferPackageItem {
   @@unique([packageId, variantId])
   @@index([packageId])
   @@index([variantId])
+}
+
+model WholesaleOfferSizeLimit {
+  id          Int      @id @default(autoincrement())
+  offerId     Int
+  size        String
+  minOrderQty Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  offer WholesaleOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, size])
+  @@index([offerId])
 }
 
 model WholesaleOrderGroup {
