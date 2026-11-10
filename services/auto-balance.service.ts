@@ -39,6 +39,7 @@ export type ComputeResult = {
   sizeFilterApplied: string[] | null;
   requireSizeSelection: boolean;
   maxManualAdjustment: number;
+  sizeLimits: Record<string, number>;
   variants: VariantDistribution[];
   config: AutoBalanceConfig;
 };
@@ -110,6 +111,16 @@ export const AutoBalanceService = {
     };
     const maxAdjust = Math.max(0, offer.maxManualAdjustment ?? 1);
 
+    // M10.9b: load per-size minimum order limits
+    const sizeLimitsRows = await prisma.wholesaleOfferSizeLimit.findMany({
+      where: { offerId },
+      select: { size: true, minOrderQty: true },
+    });
+    const sizeLimits: Record<string, number> = {};
+    for (const row of sizeLimitsRows) {
+      sizeLimits[row.size] = row.minOrderQty;
+    }
+
     // Fetch stock per variant
     const merchantVariantIds = offer.variants
       .map((v) => v.merchantVariantId)
@@ -171,6 +182,18 @@ export const AutoBalanceService = {
       const nonWildcard = sizes.filter((s) => s.size !== "*");
       if (nonWildcard.length === 0) {
         throw new Error("يجب اختيار مقاس واحد على الأقل قبل التوزيع");
+      }
+    }
+
+    // M10.9b: validate each size's qty against its min limit
+    if (!isWildcard) {
+      for (const s of sizes) {
+        const limit = sizeLimits[s.size] ?? 1;
+        if (s.qty < limit) {
+          throw new Error(
+            `الكمية المطلوبة من المقاس "${s.size}" (${s.qty}) أقل من الحد الأدنى (${limit})`
+          );
+        }
       }
     }
 
@@ -333,6 +356,7 @@ export const AutoBalanceService = {
       sizeFilterApplied: isWildcard ? null : sizes.map((s) => s.size),
       requireSizeSelection: offer.requireSizeSelection,
       maxManualAdjustment: maxAdjust,
+      sizeLimits,
       variants: resultVariants,
       config,
     };
@@ -343,5 +367,42 @@ export const AutoBalanceService = {
       where: { id: offerId },
       data: { autoBalanceUpdatedAt: new Date() },
     });
+  },
+
+  /**
+   * M10.9b: bulk set per-size min order limits.
+   * Replaces all existing limits for the offer.
+   */
+  async setSizeLimits(
+    offerId: number,
+    limits: Array<{ size: string; minOrderQty: number }>
+  ): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      await tx.wholesaleOfferSizeLimit.deleteMany({ where: { offerId } });
+      if (limits.length > 0) {
+        await tx.wholesaleOfferSizeLimit.createMany({
+          data: limits
+            .filter((l) => l.size && l.minOrderQty >= 1)
+            .map((l) => ({
+              offerId,
+              size: l.size,
+              minOrderQty: l.minOrderQty,
+            })),
+        });
+      }
+    });
+  },
+
+  /**
+   * M10.9b: get all size limits for an offer as a Record<size, minOrderQty>.
+   */
+  async getSizeLimits(offerId: number): Promise<Record<string, number>> {
+    const rows = await prisma.wholesaleOfferSizeLimit.findMany({
+      where: { offerId },
+      select: { size: true, minOrderQty: true },
+    });
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.size] = r.minOrderQty;
+    return out;
   },
 };

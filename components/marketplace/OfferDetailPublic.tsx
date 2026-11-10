@@ -109,6 +109,7 @@ export function OfferDetailPublic({
   const [autoLoading, setAutoLoading] = useState(false);
   const [autoError, setAutoError] = useState("");
   const [manualAdjust, setManualAdjust] = useState<Record<number, number>>({});
+  const [sizeLimits, setSizeLimits] = useState<Record<string, number>>({});
 
   const availableSizes = useMemo(() => {
     const set = new Set<string>();
@@ -280,6 +281,7 @@ export function OfferDetailPublic({
         }
         setDistributions(nextMap);
         setManualAdjust(nextAdjust);
+        if (d.sizeLimits) setSizeLimits(d.sizeLimits as Record<string, number>);
       } catch {
         setAutoError("خطأ في الاتصال");
       } finally {

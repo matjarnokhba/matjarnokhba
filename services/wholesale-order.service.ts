@@ -348,6 +348,52 @@ export const WholesaleOrderService = {
       }
     }
 
+    // M10.9b: enforce per-size minimum order limits
+    const sizeLimitRows = await prisma.wholesaleOfferSizeLimit.findMany({
+      where: { offerId: { in: offerIds } },
+      select: { offerId: true, size: true, minOrderQty: true },
+    });
+    if (sizeLimitRows.length > 0) {
+      const limitsByOffer = new Map<number, Map<string, number>>();
+      for (const row of sizeLimitRows) {
+        if (!limitsByOffer.has(row.offerId)) limitsByOffer.set(row.offerId, new Map());
+        limitsByOffer.get(row.offerId)!.set(row.size, row.minOrderQty);
+      }
+
+      // Aggregate per offer × size
+      const offerSizeQty = new Map<string, number>();
+      for (const item of items) {
+        const offer = offerMap.get(item.offerId)!;
+        const ov = offer.variants.find((v) => v.masterVariantId === item.masterVariantId);
+        if (!ov) continue;
+        const attrs = (ov.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [];
+        let sizeValue: string | null = null;
+        for (const a of attrs) {
+          const n = (a.name || "").toLowerCase().trim();
+          if (n.includes("مقاس") || n.includes("size")) {
+            sizeValue = String(a.value || "").trim() || null;
+            break;
+          }
+        }
+        if (!sizeValue) continue;
+        const key = `${item.offerId}:${sizeValue}`;
+        offerSizeQty.set(key, (offerSizeQty.get(key) || 0) + item.quantity);
+      }
+
+      for (const [offerIdStr, sizeMap] of limitsByOffer) {
+        const offerIdNum = parseInt(offerIdStr.toString(), 10);
+        const offer = offerMap.get(offerIdNum);
+        for (const [size, minQty] of sizeMap) {
+          const totalForSize = offerSizeQty.get(`${offerIdNum}:${size}`) || 0;
+          if (totalForSize > 0 && totalForSize < minQty) {
+            throw new ValidationError(
+              `الكمية المطلوبة من مقاس "${size}" في عرض "${offer?.master.name ?? offerIdNum}" (${totalForSize}) أقل من الحد الأدنى (${minQty})`
+            );
+          }
+        }
+      }
+    }
+
     const bySeller = new Map<number, CreateItemInput[]>();
     for (const item of items) {
       const offer = offerMap.get(item.offerId)!;
