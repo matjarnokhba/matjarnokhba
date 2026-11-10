@@ -232,6 +232,7 @@ export async function POST(
           minOrderQty,
           maxOrderQty: maxOrderQty ?? null,
           claimType: "RESELLER",
+          skipReview: true,
           variants: variantsForOffer,
         });
       } catch (err) {

@@ -33,6 +33,7 @@ type CreateOfferInput = {
   minOrderQty: number;
   maxOrderQty?: number | null;
   claimType: OfferClaimType;
+  skipReview?: boolean;
   claimProofUrl?: string | null;
   claimNotes?: string | null;
   notes?: string | null;
@@ -353,9 +354,12 @@ export const WholesaleOfferService = {
       throw new ConflictError("يوجد عرض مسجل مسبقًا لهذا النشاط بنفس المنتج");
     }
 
-    const reviewLevel = await computeReviewLevel(businessUnitId);
+    // M10.10: skip admin review for offer-to-wholesale (direct publish)
+    const reviewLevel = input.skipReview
+      ? "AUTO"
+      : await computeReviewLevel(businessUnitId);
     const initialStatus =
-      reviewLevel === "AUTO" || reviewLevel === "TRUSTED"
+      input.skipReview || reviewLevel === "AUTO" || reviewLevel === "TRUSTED"
         ? "ACTIVE"
         : "PENDING_REVIEW";
 
@@ -380,7 +384,7 @@ export const WholesaleOfferService = {
           status: initialStatus as any,
           reviewLevel: reviewLevel as any,
           claimType: input.claimType as any,
-          claimVerified: false,
+          claimVerified: !!input.skipReview,
           claimProofUrl: input.claimProofUrl?.trim() || null,
           claimNotes: input.claimNotes?.trim() || null,
           notes: input.notes?.trim() || null,
