@@ -25,6 +25,7 @@ import TransferToStoreModal from "./TransferToStoreModal";
 import BundleRulesEditor from "./BundleRulesEditor";
 import PackagesEditor from "./PackagesEditor";
 import AutoBalanceEditor from "./AutoBalanceEditor";
+import SizeLimitsEditor from "./SizeLimitsEditor";
 import {
   OFFER_STATUS_LABEL,
   OFFER_STATUS_VARIANT,
@@ -393,6 +394,16 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
               initialBundleRulesCount={offer.bundleRules?.length ?? 0}
               initialRequireSizeSelection={offer.requireSizeSelection ?? false}
               initialMaxManualAdjustment={offer.maxManualAdjustment ?? 1}
+            />
+          )}
+          {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (
+            <SizeLimitsEditor
+              offerId={offer.id}
+              variants={offer.variants.map((v) => ({
+                id: v.id,
+                attributes: v.attributes,
+              }))}
+              initialLimits={offer.sizeLimits ?? {}}
             />
           )}
 

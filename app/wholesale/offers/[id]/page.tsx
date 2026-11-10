@@ -130,6 +130,13 @@ export default async function OfferDetailPage({
       }
     }
   }
+  // M10.9c: fetch size limits
+  const sizeLimitRows = await prisma.wholesaleOfferSizeLimit.findMany({
+    where: { offerId },
+    select: { size: true, minOrderQty: true },
+  });
+  const sizeLimits: Record<string, number> = {};
+  for (const r of sizeLimitRows) sizeLimits[r.size] = r.minOrderQty;
   const isMember = offer.businessUnit.members.length > 0;
   if (!isOwner && !isMember && !isAdmin) notFound();
 
@@ -151,6 +158,7 @@ export default async function OfferDetailPage({
     autoBalanceEnabled: offer.autoBalanceEnabled,
     requireSizeSelection: offer.requireSizeSelection,
     maxManualAdjustment: offer.maxManualAdjustment,
+    sizeLimits,
     reviewLevel: offer.reviewLevel,
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),

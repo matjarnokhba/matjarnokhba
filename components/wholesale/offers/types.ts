@@ -16,6 +16,7 @@ export type OfferListItem = {
   autoBalanceEnabled?: boolean;
   requireSizeSelection?: boolean;
   maxManualAdjustment?: number;
+  sizeLimits?: Record<string, number>;
   reviewLevel: string;
   variantCount: number;
   createdAt: string;
