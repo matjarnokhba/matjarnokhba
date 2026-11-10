@@ -778,7 +778,7 @@ export function OfferDetailPublic({
             <Card>
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Boxes className="h-4 w-4 text-[#ff5c00]" />
-                رزم جاهزة ({offer.packages.length})
+                حزم جاهزة ({offer.packages.length})
               </h3>
               <div className="grid gap-2 sm:grid-cols-2">
                 {offer.packages.map((pkg) => {
@@ -841,7 +841,7 @@ export function OfferDetailPublic({
                             onClick={() => toggleSize(s)}
                             className={`rounded-lg border-2 px-3 py-1.5 text-xs font-bold transition ${
                               isSelected
-                                ? "border-purple-500 bg-purple-500 text-white"
+                                ? "border-purple-500 bg-purple-500 text-gray-600"
                                 : "border-gray-200 bg-white text-gray-700 hover:border-purple-300"
                             }`}
                           >
@@ -933,7 +933,7 @@ export function OfferDetailPublic({
                   return (
                     <div key={size} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="rounded bg-purple-500 px-2 py-0.5 text-xs font-bold text-white">
+                        <span className="rounded bg-purple-500 px-2 py-0.5 text-xs font-bold text-gray-600">
                           مقاس {size}
                         </span>
                         <span className="text-xs text-gray-600">
@@ -971,8 +971,8 @@ export function OfferDetailPublic({
                                         نادر
                                       </span>
                                     )}                                    {pkgBoosted.has(dist.variantId) && (
-                                      <span className="rounded bg-blue-400 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                                        🎁 رزمة
+                                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">
+                                        🎁 حزمة
                                       </span>
                                     )}
                                   </div>
@@ -990,7 +990,7 @@ export function OfferDetailPublic({
                                     type="button"
                                     onClick={() => adjustVariant(dist.variantId, -1)}
                                     disabled={!canDec}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-gray-600 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                                     aria-label="إنقاص"
                                   >
                                     <Minus className="h-4 w-4" />
@@ -1006,7 +1006,7 @@ export function OfferDetailPublic({
                                     type="button"
                                     onClick={() => adjustVariant(dist.variantId, 1)}
                                     disabled={!canInc}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-gray-600 transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                                     aria-label="زيادة"
                                   >
                                     <Plus className="h-4 w-4" />
@@ -1111,7 +1111,7 @@ export function OfferDetailPublic({
                             type="button"
                             onClick={() => decrementManual(v.id)}
                             disabled={qty <= 0}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-gray-600 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                           >
                             <Minus className="h-4 w-4" />
                           </button>
@@ -1127,7 +1127,7 @@ export function OfferDetailPublic({
                             type="button"
                             onClick={() => incrementManual(v.id)}
                             disabled={isMaxed}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-gray-600 transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                           >
                             <Plus className="h-4 w-4" />
                           </button>
@@ -1288,7 +1288,7 @@ export function OfferDetailPublic({
               <button
                 onClick={confirmBundlePrompt}
                 disabled={hasBlockingRow}
-                className="flex-1 rounded-lg bg-[#ff5c00] px-3 py-2 text-sm font-bold text-white hover:bg-[#e64a00] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 rounded-lg bg-[#ff5c00] px-3 py-2 text-sm font-bold text-gray-600 hover:bg-[#e64a00] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 موافق — أضف الكل
               </button>

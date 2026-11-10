@@ -52,7 +52,7 @@ export default function PackagesEditor({ offerId, variants, initialPackages, rea
 
   async function handleAdd() {
     setError("");
-    if (!pkgName.trim()) { setError("اسم الرزمة مطلوب"); return; }
+    if (!pkgName.trim()) { setError("اسم الحزمة مطلوب"); return; }
     const items = Object.entries(qtyMap)
       .map(([vid, q]) => ({ variantId: parseInt(vid, 10), quantity: parseInt(q || "0", 10) }))
       .filter((i) => i.quantity > 0);
@@ -77,7 +77,7 @@ export default function PackagesEditor({ offerId, variants, initialPackages, rea
   }
 
   async function handleDelete(pkgId: number) {
-    if (!confirm("حذف هذه الرزمة؟")) return;
+    if (!confirm("حذف هذه الحزمة؟")) return;
     setDeleting(pkgId);
     setError("");
     try {
@@ -98,25 +98,25 @@ export default function PackagesEditor({ offerId, variants, initialPackages, rea
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
           <Boxes className="h-4 w-4 text-[#ff5c00]" />
-          رزم جاهزة ({packages.length})
+          حزم جاهزة ({packages.length})
         </h3>
         {!readOnly && !showForm && (
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-1 rounded-lg bg-[#ff5c00] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#e64a00]"
           >
-            <Plus className="h-3 w-3" /> رزمة جديدة
+            <Plus className="h-3 w-3" /> حزمة جديدة
           </button>
         )}
       </div>
       <p className="mb-3 text-xs text-gray-500">
-        عرّف رزمًا جاهزة (مثل: "طقم 3 قطع" أو "عرض 13 قطعة") — المشتري يضيفها بضغطة واحدة.
+        عرّف حزمًا جاهزة (مثل: "طقم 3 قطع" أو "عرض 13 قطعة") — المشتري يضيفها بضغطة واحدة.
       </p>
 
       {showForm && (
         <div className="mb-3 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <div>
-            <label className="mb-1 block text-xs font-medium">اسم الرزمة</label>
+            <label className="mb-1 block text-xs font-medium">اسم الحزمة</label>
             <input
               type="text"
               value={pkgName}
@@ -149,7 +149,7 @@ export default function PackagesEditor({ offerId, variants, initialPackages, rea
 
           {totalPiecesInForm > 0 && (
             <div className="rounded-lg bg-orange-50 p-2 text-xs text-orange-800">
-              إجمالي القطع في الرزمة: <strong>{totalPiecesInForm}</strong>
+              إجمالي القطع في الحزمة: <strong>{totalPiecesInForm}</strong>
             </div>
           )}
 
@@ -175,7 +175,7 @@ export default function PackagesEditor({ offerId, variants, initialPackages, rea
       )}
 
       {packages.length === 0 ? (
-        <p className="py-2 text-center text-xs text-gray-400">لا توجد رزم</p>
+        <p className="py-2 text-center text-xs text-gray-400">لا توجد حزم</p>
       ) : (
         <div className="space-y-1.5">
           {packages.map((pkg) => {
