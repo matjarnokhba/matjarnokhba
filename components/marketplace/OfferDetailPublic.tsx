@@ -375,6 +375,7 @@ export function OfferDetailPublic({
     });
     setDistributions(new Map());
     setManualAdjust({});
+    setPkgBoosted(new Set());
   }
 
   function setSizeQty(size: string, raw: string) {
