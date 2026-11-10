@@ -3128,6 +3128,7 @@ model WholesaleOffer {
   autoBalanceConfig    Json?
   autoBalanceUpdatedAt DateTime?
   requireSizeSelection Boolean                    @default(false)
+  maxManualAdjustment  Int                        @default(1)
 
   @@unique([businessUnitId, masterId])
   @@index([masterId, status])

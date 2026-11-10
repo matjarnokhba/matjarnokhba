@@ -1,0 +1,1 @@
+ALTER TABLE "WholesaleOffer" ADD COLUMN IF NOT EXISTS "maxManualAdjustment" INTEGER NOT NULL DEFAULT 1;
