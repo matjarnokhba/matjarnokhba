@@ -69,6 +69,7 @@ export default async function MarketplaceOfferDetailPage({
         include: { items: { select: { variantId: true, quantity: true } } },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
       },
+      sizeLimits: { select: { size: true, minOrderQty: true } },
     },
   });
 
@@ -210,6 +211,8 @@ export default async function MarketplaceOfferDetailPage({
     claimVerified: offer.claimVerified,
     autoBalanceEnabled: offer.autoBalanceEnabled,
     requireSizeSelection: offer.requireSizeSelection,
+    maxManualAdjustment: offer.maxManualAdjustment,
+    sizeLimits: Object.fromEntries(offer.sizeLimits.map((l) => [l.size, l.minOrderQty])),
     variantCount: offer._count.variants,
     createdAt: offer.createdAt.toISOString(),
     description: offer.notes,

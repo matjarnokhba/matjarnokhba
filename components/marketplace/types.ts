@@ -16,6 +16,8 @@ export type PublicOfferItem = {
   claimVerified: boolean;
   autoBalanceEnabled?: boolean;
   requireSizeSelection?: boolean;
+  maxManualAdjustment?: number;
+  sizeLimits?: Record<string, number>;
   variantCount: number;
   createdAt: string;
 };
