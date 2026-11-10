@@ -109,6 +109,7 @@ export function OfferDetailPublic({
   const [autoLoading, setAutoLoading] = useState(false);
   const [autoError, setAutoError] = useState("");
   const [manualAdjust, setManualAdjust] = useState<Record<number, number>>({});
+  const [pendingPackage, setPendingPackage] = useState<{ name: string; items: Array<{ variantId: number; quantity: number }> } | null>(null);
   const [sizeLimits, setSizeLimits] = useState<Record<string, number>>({});
 
   const availableSizes = useMemo(() => {
@@ -336,6 +337,30 @@ export function OfferDetailPublic({
 
     return () => clearTimeout(timer);
   }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
+  // M10.9e: apply pending package once distributions are ready
+  useEffect(() => {
+    if (!pendingPackage) return;
+    if (distributions.size === 0) return;
+    if (autoLoading) return;
+
+    const next = { ...manualAdjust };
+    let anyCapped = false;
+    for (const item of pendingPackage.items) {
+      const dist = distributions.get(item.variantId);
+      if (!dist || dist.isBlocked) continue;
+      const current = next[item.variantId] ?? dist.suggestedQty;
+      const wanted = current + item.quantity;
+      const capped = Math.min(wanted, dist.maxAllowed);
+      if (capped < wanted) anyCapped = true;
+      next[item.variantId] = capped;
+    }
+    setManualAdjust(next);
+    setPackageFeedback(
+      anyCapped ? `أضيفت "${pendingPackage.name}" — بعض الخيارات وصلت للسقف` : `أضيفت "${pendingPackage.name}"`
+    );
+    setTimeout(() => setPackageFeedback(""), 4000);
+    setPendingPackage(null);
+  }, [pendingPackage, distributions, autoLoading]);
 
   // ============ Handlers ============
   function toggleSize(size: string) {
@@ -479,7 +504,46 @@ export function OfferDetailPublic({
 
   function applyPackage(pkg: { name: string; items: Array<{ variantId: number; quantity: number }> }) {
     if (offer.autoBalanceEnabled) {
-      if (distributions.size === 0) return;
+      // M10.9e: extract sizes from package items
+      const pkgSizes = new Set<string>();
+      const qtyPerSize: Record<string, number> = {};
+      for (const item of pkg.items) {
+        const v = offer.variants.find((x) => x.id === item.variantId);
+        if (!v) continue;
+        const size = getSizeFromAttrs(v.attributes);
+        if (size) {
+          pkgSizes.add(size);
+          qtyPerSize[size] = (qtyPerSize[size] || 0) + item.quantity;
+        }
+      }
+
+      // Check if all package sizes are already selected with valid qty
+      const allSelected = Array.from(pkgSizes).every(
+        (s) => selectedSizes.has(s) && parseInt(sizeQuantities[s] || "0", 10) > 0
+      );
+      const hasDistributions = distributions.size > 0;
+
+      if (!hasDistributions || !allSelected) {
+        // Auto-select missing sizes with initial qty >= limit & package qty
+        const nextSelected = new Set(selectedSizes);
+        const nextQty = { ...sizeQuantities };
+        for (const s of pkgSizes) {
+          const limit = sizeLimitsMap[s] || 0;
+          const pkgQty = qtyPerSize[s] || 0;
+          const initial = Math.max(limit, offer.minOrderQty, pkgQty);
+          if (!nextSelected.has(s) || parseInt(nextQty[s] || "0", 10) < initial) {
+            nextSelected.add(s);
+            nextQty[s] = String(initial);
+          }
+        }
+        setSelectedSizes(nextSelected);
+        setSizeQuantities(nextQty);
+        setPendingPackage(pkg);
+        setPackageFeedback(`جاري تطبيق "${pkg.name}"...`);
+        return;
+      }
+
+      // All sizes ready → apply directly
       const next = { ...manualAdjust };
       let anyCapped = false;
       for (const item of pkg.items) {
@@ -642,7 +706,7 @@ export function OfferDetailPublic({
                       key={pkg.id}
                       type="button"
                       onClick={() => applyPackage(pkg)}
-                      disabled={offer.autoBalanceEnabled && distributions.size === 0}
+
                       className="rounded-lg border-2 border-gray-200 bg-white p-3 text-right transition hover:border-[#ff5c00] hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <div className="flex items-start justify-between gap-2">
