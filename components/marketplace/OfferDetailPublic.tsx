@@ -39,11 +39,36 @@ function fmtAttrs(attrs?: Array<{ name: string; value: string }>): string {
   return attrs.map((a) => `${a.name}: ${a.value}`).join(" · ");
 }
 
+function getSizeFromAttrs(
+  attrs?: Array<{ name: string; value: string }>
+): string | null {
+  if (!attrs) return null;
+  for (const a of attrs) {
+    const n = a.name.toLowerCase().trim();
+    if (n.includes("مقاس") || n.includes("size")) return a.value || null;
+  }
+  return null;
+}
+
 export interface OfferDetailPublicProps {
   offer: PublicOfferDetail;
   buyerBUs: BuyerBU[];
   isOwnOffer: boolean;
 }
+
+type VariantDist = {
+  variantId: number;
+  attributes: Array<{ name: string; value: string }>;
+  sizeValue: string | null;
+  stock: number;
+  isRare: boolean;
+  isBlocked: boolean;
+  baseQty: number;
+  suggestedQty: number;
+  minAllowed: number;
+  maxAllowed: number;
+  maxAdjust: number;
+};
 
 type BundlePromptRow = {
   variantId: number;
@@ -68,121 +93,90 @@ export function OfferDetailPublic({
   isOwnOffer,
 }: OfferDetailPublicProps) {
   const [activeImage, setActiveImage] = useState(0);
-  const [quantities, setQuantities] = useState<Record<number, number>>({});
-  const [packageFeedback, setPackageFeedback] = useState("");
-  const [bundlePrompt, setBundlePrompt] = useState<BundlePrompt | null>(null);
-  const [autoBalanceTotal, setAutoBalanceTotal] = useState<string>("");
-  const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
-  const [autoBalanceError, setAutoBalanceError] = useState("");
-  const [minDistributed, setMinDistributed] = useState<number>(0);
-  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
-  const [blockedVariants, setBlockedVariants] = useState<Set<number>>(new Set());
-  const [rareCaps, setRareCaps] = useState<Record<number, number>>({});
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useWholesaleCart();
 
-  // M10.6 + M10.7b: dynamic max — block non-selected sizes, cap rare variants
-  const maxFor = useCallback((variantId: number): number => {
-    if (blockedVariants.has(variantId)) return 0;
-    const v = offer.variants.find((x) => x.id === variantId);
-    if (!v) return 0;
-    const stockMax = v.availableStock ?? 0;
-    if (!offer.autoBalanceEnabled) return stockMax;
-    if (!rareCaps[variantId]) return stockMax;
+  // ============ Manual mode state (non-auto-balance) ============
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [packageFeedback, setPackageFeedback] = useState("");
+  const [bundlePrompt, setBundlePrompt] = useState<BundlePrompt | null>(null);
 
-    const nonRareQtys: number[] = [];
-    for (const ov of offer.variants) {
-      if (rareCaps[ov.id]) continue;
-      if (blockedVariants.has(ov.id)) continue;
-      const q = quantities[ov.id] || 0;
-      if (q > 0) nonRareQtys.push(q);
-    }
-    if (nonRareQtys.length === 0) return 0;
-    return Math.min(stockMax, Math.min(...nonRareQtys));
-  }, [offer.variants, offer.autoBalanceEnabled, rareCaps, quantities, blockedVariants]);
+  // ============ Auto-balance state ============
+  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
+  const [sizeQuantities, setSizeQuantities] = useState<Record<string, string>>({});
+  const [distributions, setDistributions] = useState<Map<number, VariantDist>>(new Map());
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [autoError, setAutoError] = useState("");
+  const [manualAdjust, setManualAdjust] = useState<Record<number, number>>({});
 
-  // M10.7b: extract available sizes from variant attributes
   const availableSizes = useMemo(() => {
     const set = new Set<string>();
     for (const v of offer.variants) {
-      for (const a of v.attributes) {
-        const n = a.name.toLowerCase().trim();
-        if (n.includes("مقاس") || n.includes("size")) {
-          if (a.value) set.add(a.value);
-        }
-      }
+      const s = getSizeFromAttrs(v.attributes);
+      if (s) set.add(s);
     }
     return Array.from(set).sort();
   }, [offer.variants]);
-  // M10.4: fetch auto-balance distribution on total change
-  useEffect(() => {
-    if (!offer.autoBalanceEnabled) return;
-    if (offer.requireSizeSelection && availableSizes.length > 0 && selectedSizes.size === 0) {
-      setMinDistributed(0);
-      setRareCaps({});
-      setBlockedVariants(new Set());
-      return;
+
+  const hasSizes = availableSizes.length > 0;
+
+  // Group variants by size (for display)
+  const variantsBySize = useMemo(() => {
+    const map = new Map<string, Array<{ id: number; attributes: Array<{ name: string; value: string }>; availableStock: number }>>();
+    if (!hasSizes) {
+      map.set("*", offer.variants.map((v) => ({
+        id: v.id,
+        attributes: v.attributes,
+        availableStock: v.availableStock ?? 0,
+      })));
+      return map;
     }
-    const t = parseInt(autoBalanceTotal, 10);
-    if (!t || t < 1) {
-      setMinDistributed(0);
-      setRareCaps({});
-      setBlockedVariants(new Set());
-      return;
+    for (const v of offer.variants) {
+      const s = getSizeFromAttrs(v.attributes);
+      if (!s) continue;
+      if (!map.has(s)) map.set(s, []);
+      map.get(s)!.push({
+        id: v.id,
+        attributes: v.attributes,
+        availableStock: v.availableStock ?? 0,
+      });
     }
-    const timer = setTimeout(async () => {
-      setAutoBalanceLoading(true);
-      setAutoBalanceError("");
-      try {
-        // TODO M10.8c: use per-size qtys ?sizes=M:100,L:50
-        const res = await fetch(
-          `/api/wholesale/offers/${offer.id}/auto-balance/compute?qty=${t}`
-        );
-        const d = await res.json();
-        if (!d.success) {
-          setAutoBalanceError(d.message || "فشل التوزيع");
-          return;
-        }
-        const nextQty: Record<number, number> = {};
-        const nextCaps: Record<number, number> = {};
-        const nextBlocked = new Set<number>();
-        for (const v of d.variants as Array<{
-          variantId: number;
-          suggestedQty: number;
-          isRare: boolean;
-          isBlocked: boolean;
-          maxAllowed: number;
-          baseQty: number;
-          minAllowed: number;
-          maxAdjust: number;
-        }>) {
-          if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
-          if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;
-          if (v.isBlocked) nextBlocked.add(v.variantId);
-        }
-        setQuantities(nextQty);
-        setRareCaps(nextCaps);
-        setBlockedVariants(nextBlocked);
-        setMinDistributed(d.minDistributed || 0);
-      } catch {
-        setAutoBalanceError("خطأ في الاتصال");
-      } finally {
-        setAutoBalanceLoading(false);
+    return map;
+  }, [offer.variants, hasSizes]);
+
+  // ============ Compute effective quantity per variant ============
+  const effectiveQty = useCallback(
+    (variantId: number): number => {
+      if (offer.autoBalanceEnabled) {
+        const dist = distributions.get(variantId);
+        if (!dist) return 0;
+        if (dist.isBlocked) return 0;
+        return manualAdjust[variantId] ?? dist.suggestedQty;
       }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [autoBalanceTotal, selectedSizes, availableSizes.length, offer.id, offer.autoBalanceEnabled, offer.requireSizeSelection]);
+      return quantities[variantId] || 0;
+    },
+    [offer.autoBalanceEnabled, distributions, manualAdjust, quantities]
+  );
+
   const totalQty = useMemo(() => {
+    if (offer.autoBalanceEnabled) {
+      let sum = 0;
+      for (const dist of distributions.values()) {
+        if (dist.isBlocked) continue;
+        sum += manualAdjust[dist.variantId] ?? dist.suggestedQty;
+      }
+      return sum;
+    }
     let sum = 0;
     for (const v of offer.variants) sum += quantities[v.id] || 0;
     return sum;
-  }, [quantities, offer.variants]);
+  }, [offer.autoBalanceEnabled, distributions, manualAdjust, quantities, offer.variants]);
 
   const variantPrices = useMemo(() => {
     const map = new Map<number, number>();
     for (const v of offer.variants) {
-      const qty = quantities[v.id] || 0;
+      const qty = effectiveQty(v.id);
       if (qty <= 0) continue;
       let tier = v.tiers.find(
         (t) => qty >= t.minQty && (t.maxQty === null || qty <= t.maxQty)
@@ -191,19 +185,21 @@ export function OfferDetailPublic({
       if (tier) map.set(v.id, tier.unitPrice);
     }
     return map;
-  }, [quantities, offer.variants]);
+  }, [effectiveQty, offer.variants]);
 
   const totalEstimate = useMemo(() => {
     let total = 0;
     for (const v of offer.variants) {
       const p = variantPrices.get(v.id);
       if (p === undefined) continue;
-      total += p * (quantities[v.id] || 0);
+      total += p * effectiveQty(v.id);
     }
     return Math.round(total * 100) / 100;
-  }, [variantPrices, quantities, offer.variants]);
+  }, [variantPrices, effectiveQty, offer.variants]);
 
+  // ============ Bundle rules (manual mode) ============
   const bundleViolations = useMemo(() => {
+    if (offer.autoBalanceEnabled) return [];
     const violations: string[] = [];
     for (const rule of offer.bundleRules || []) {
       const triggerQty = quantities[rule.triggerVariantId] || 0;
@@ -216,102 +212,167 @@ export function OfferDetailPublic({
         const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
         const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
         violations.push(
-          `شراء "${fmtAttrs(tv?.attributes)}" يستلزم ${neededQty} على الأقل من "${fmtAttrs(rv?.attributes)}"${rule.isMultiplied ? ` (${triggerQty}×${rule.minQuantity})` : ""} — لديك: ${requiredQty}`
+          `شراء "${fmtAttrs(tv?.attributes)}" يستلزم ${neededQty} على الأقل من "${fmtAttrs(rv?.attributes)}" — لديك: ${requiredQty}`
         );
       }
     }
     return violations;
-  }, [quantities, offer.bundleRules, offer.variants]);
-
-  const bundleHints = useMemo(() => {
-    const hints = new Map<number, string[]>();
-    for (const rule of offer.bundleRules || []) {
-      const triggerQty = quantities[rule.triggerVariantId] || 0;
-      if (triggerQty === 0) continue;
-      const requiredQty = quantities[rule.requiredVariantId] || 0;
-      const neededQty = rule.isMultiplied
-        ? triggerQty * rule.minQuantity
-        : rule.minQuantity;
-      if (requiredQty < neededQty) {
-        const tv = offer.variants.find((v) => v.id === rule.triggerVariantId);
-        const existing = hints.get(rule.requiredVariantId) || [];
-        existing.push(
-          `مطلوب ≥${neededQty} بسبب "${fmtAttrs(tv?.attributes)}"${rule.isMultiplied ? " (نسبة)" : ""}`
-        );
-        hints.set(rule.requiredVariantId, existing);
-      }
-    }
-    return hints;
-  }, [quantities, offer.bundleRules, offer.variants]);
+  }, [quantities, offer.bundleRules, offer.variants, offer.autoBalanceEnabled]);
 
   const minMet = totalQty === 0 || totalQty >= offer.minOrderQty;
   const maxExceeded = offer.maxOrderQty !== null && totalQty > offer.maxOrderQty;
 
-  const canOrder =
-    !isOwnOffer &&
-    buyerBUs.length > 0 &&
-    totalQty > 0 &&
-    minMet &&
-    !maxExceeded &&
-    bundleViolations.length === 0;
+  const canOrder = useMemo(() => {
+    if (isOwnOffer || buyerBUs.length === 0 || totalQty === 0) return false;
+    if (!minMet || maxExceeded) return false;
 
-  /**
-   * Compute bundle prompt for incrementing a variant.
-   * Returns null if no rules apply, or a prompt if any delta needed.
-   */
-  function buildBundlePrompt(variantId: number): BundlePrompt | null {
-    const rules = (offer.bundleRules || []).filter(
-      (r) => r.triggerVariantId === variantId
-    );
-    if (rules.length === 0) return null;
-
-    const currentTrigger = quantities[variantId] || 0;
-    const newTriggerQty = currentTrigger + 1;
-    const triggerVar = offer.variants.find((v) => v.id === variantId);
-
-    const rows: BundlePromptRow[] = [];
-    let anyDelta = false;
-
-    for (const rule of rules) {
-      const current = quantities[rule.requiredVariantId] || 0;
-      const needed = rule.isMultiplied
-        ? newTriggerQty * rule.minQuantity
-        : rule.minQuantity;
-      const delta = Math.max(0, needed - current);
-      const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
-      const stock = rv?.availableStock ?? 0;
-      const wouldExceed = current + delta > stock;
-      if (delta > 0) anyDelta = true;
-      rows.push({
-        variantId: rule.requiredVariantId,
-        label: fmtAttrs(rv?.attributes),
-        needed,
-        current,
-        delta,
-        stock,
-        wouldExceed,
-      });
+    if (offer.autoBalanceEnabled) {
+      // In auto-balance: all quantities already within [minAllowed, maxAllowed]
+      return true;
     }
 
-    if (!anyDelta) return null;
+    return bundleViolations.length === 0;
+  }, [isOwnOffer, buyerBUs, totalQty, minMet, maxExceeded, offer.autoBalanceEnabled, bundleViolations]);
 
-    return {
-      triggerVariantId: variantId,
-      triggerLabel: fmtAttrs(triggerVar?.attributes),
-      newTriggerQty,
-      rows,
-    };
+  // ============ Auto-balance fetch ============
+  useEffect(() => {
+    if (!offer.autoBalanceEnabled) return;
+
+    const sizesToCompute = Array.from(selectedSizes);
+    if (sizesToCompute.length === 0) {
+      setDistributions(new Map());
+      setManualAdjust({});
+      return;
+    }
+
+    // If requireSizeSelection is on, ensure all selected sizes have a quantity
+    const effective: Array<{ size: string; qty: number }> = [];
+    for (const s of sizesToCompute) {
+      const qty = parseInt(sizeQuantities[s] || "0", 10);
+      if (qty > 0) effective.push({ size: s, qty });
+    }
+    if (effective.length === 0) {
+      setDistributions(new Map());
+      setManualAdjust({});
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setAutoLoading(true);
+      setAutoError("");
+      try {
+        const sizesParam = encodeURIComponent(
+          effective.map((e) => `${e.size}:${e.qty}`).join(",")
+        );
+        const res = await fetch(
+          `/api/wholesale/offers/${offer.id}/auto-balance/compute?sizes=${sizesParam}`
+        );
+        const d = await res.json();
+        if (!d.success) {
+          setAutoError(d.message || "فشل التوزيع");
+          return;
+        }
+        const nextMap = new Map<number, VariantDist>();
+        const nextAdjust: Record<number, number> = {};
+        for (const v of d.variants as VariantDist[]) {
+          nextMap.set(v.variantId, v);
+          if (!v.isBlocked) nextAdjust[v.variantId] = v.suggestedQty;
+        }
+        setDistributions(nextMap);
+        setManualAdjust(nextAdjust);
+      } catch {
+        setAutoError("خطأ في الاتصال");
+      } finally {
+        setAutoLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities]);
+
+  // ============ Handlers ============
+  function toggleSize(size: string) {
+    setSelectedSizes((prev) => {
+      const next = new Set(prev);
+      if (next.has(size)) {
+        next.delete(size);
+        setSizeQuantities((sq) => {
+          const copy = { ...sq };
+          delete copy[size];
+          return copy;
+        });
+      } else {
+        next.add(size);
+      }
+      return next;
+    });
+    setDistributions(new Map());
+    setManualAdjust({});
   }
 
-  function increment(variantId: number) {
-    const max = maxFor(variantId);
+  function setSizeQty(size: string, raw: string) {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    setSizeQuantities((prev) => {
+      const next = { ...prev };
+      if (raw === "" || raw === "0") delete next[size];
+      else next[size] = raw;
+      return next;
+    });
+  }
+
+  function adjustVariant(variantId: number, delta: number) {
+    const dist = distributions.get(variantId);
+    if (!dist || dist.isBlocked) return;
+    const cur = manualAdjust[variantId] ?? dist.suggestedQty;
+    const next = cur + delta;
+    if (next < dist.minAllowed || next > dist.maxAllowed) return;
+    setManualAdjust((prev) => ({ ...prev, [variantId]: next }));
+  }
+
+  function setVariantDirect(variantId: number, raw: string) {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    const dist = distributions.get(variantId);
+    if (!dist || dist.isBlocked) return;
+    let n = raw === "" ? 0 : parseInt(raw, 10);
+    n = Math.max(dist.minAllowed, Math.min(dist.maxAllowed, n));
+    setManualAdjust((prev) => ({ ...prev, [variantId]: n }));
+  }
+
+  // ============ Manual mode handlers ============
+  function maxForManual(variantId: number): number {
+    const v = offer.variants.find((x) => x.id === variantId);
+    return v?.availableStock ?? 0;
+  }
+
+  function incrementManual(variantId: number) {
+    const max = maxForManual(variantId);
     const cur = quantities[variantId] || 0;
     if (cur >= max) return;
 
-    if (!offer.autoBalanceEnabled) {
-      const prompt = buildBundlePrompt(variantId);
-      if (prompt) {
-        setBundlePrompt(prompt);
+    if (!offer.autoBalanceEnabled && (offer.bundleRules || []).some((r) => r.triggerVariantId === variantId)) {
+      const rules = (offer.bundleRules || []).filter((r) => r.triggerVariantId === variantId);
+      const rows: BundlePromptRow[] = [];
+      let anyDelta = false;
+      const newTriggerQty = cur + 1;
+      for (const rule of rules) {
+        const current = quantities[rule.requiredVariantId] || 0;
+        const needed = rule.isMultiplied ? newTriggerQty * rule.minQuantity : rule.minQuantity;
+        const delta = Math.max(0, needed - current);
+        const rv = offer.variants.find((v) => v.id === rule.requiredVariantId);
+        const stock = rv?.availableStock ?? 0;
+        if (delta > 0) anyDelta = true;
+        rows.push({
+          variantId: rule.requiredVariantId,
+          label: fmtAttrs(rv?.attributes),
+          needed,
+          current,
+          delta,
+          stock,
+          wouldExceed: current + delta > stock,
+        });
+      }
+      if (anyDelta) {
+        setBundlePrompt({ triggerVariantId: variantId, triggerLabel: fmtAttrs(offer.variants.find((v) => v.id === variantId)?.attributes), newTriggerQty, rows });
         return;
       }
     }
@@ -320,25 +381,7 @@ export function OfferDetailPublic({
     setPackageFeedback("");
   }
 
-  function confirmBundlePrompt() {
-    if (!bundlePrompt) return;
-    const next = { ...quantities };
-    next[bundlePrompt.triggerVariantId] = bundlePrompt.newTriggerQty;
-    for (const row of bundlePrompt.rows) {
-      if (row.delta > 0) {
-        next[row.variantId] = row.current + row.delta;
-      }
-    }
-    setQuantities(next);
-    setBundlePrompt(null);
-    setPackageFeedback("");
-  }
-
-  function cancelBundlePrompt() {
-    setBundlePrompt(null);
-  }
-
-  function decrement(variantId: number) {
+  function decrementManual(variantId: number) {
     const cur = quantities[variantId] || 0;
     if (cur <= 0) return;
     setQuantities((p) => {
@@ -350,64 +393,11 @@ export function OfferDetailPublic({
     setPackageFeedback("");
   }
 
-  // M10.6: when auto-balance enabled and delta >= 2, redistribute
-  function redistributeLocked(lockedVariantId: number, lockedQty: number) {
-    const totalAfter = Object.entries(quantities).reduce((sum, [vid, q]) => {
-      return sum + (parseInt(vid, 10) === lockedVariantId ? lockedQty : q);
-    }, 0);
-    if (totalAfter < 1) return;
-
-    const params = new URLSearchParams({
-      qty: String(totalAfter),
-      lockedVariantId: String(lockedVariantId),
-      lockedQty: String(lockedQty),
-    });
-    fetch(`/api/wholesale/offers/${offer.id}/auto-balance/compute?${params.toString()}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.success) return;
-        const nextQty: Record<number, number> = {};
-        const nextCaps: Record<number, number> = {};
-        for (const v of d.variants as Array<{
-          variantId: number;
-          suggestedQty: number;
-          isRare: boolean;
-          maxAllowed: number;
-        }>) {
-          if (v.suggestedQty > 0) nextQty[v.variantId] = v.suggestedQty;
-          if (v.isRare) nextCaps[v.variantId] = v.maxAllowed;
-        }
-        setQuantities(nextQty);
-        setRareCaps(nextCaps);
-        setMinDistributed(d.minDistributed || 0);
-        setPackageFeedback("تم إعادة التوزيع تلقائياً");
-        setTimeout(() => setPackageFeedback(""), 3000);
-      })
-      .catch(() => {});
-  }
-
-  function setDirect(variantId: number, raw: string) {
+  function setDirectManual(variantId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;
-    const max = maxFor(variantId);
+    const max = maxForManual(variantId);
     let n = raw === "" ? 0 : parseInt(raw, 10);
     if (n > max) n = max;
-
-    const oldQty = quantities[variantId] || 0;
-    const delta = n - oldQty;
-
-    // Auto-redistribute if delta >= 2 and non-rare and auto-balance on
-    if (offer.autoBalanceEnabled && !rareCaps[variantId] && Math.abs(delta) >= 2) {
-      // Stage the change first
-      setQuantities((p) => {
-        const next = { ...p };
-        if (n === 0) delete next[variantId];
-        else next[variantId] = n;
-        return next;
-      });
-      redistributeLocked(variantId, n);
-      return;
-    }
-
     setQuantities((p) => {
       const next = { ...p };
       if (n === 0) delete next[variantId];
@@ -417,21 +407,23 @@ export function OfferDetailPublic({
     setPackageFeedback("");
   }
 
-  function toggleSize(size: string) {
-    setSelectedSizes((prev) => {
-      const next = new Set(prev);
-      if (next.has(size)) next.delete(size);
-      else next.add(size);
-      return next;
-    });
-    setQuantities({});
-    setRareCaps({});
-    setBlockedVariants(new Set());
-    setMinDistributed(0);
+  function confirmBundlePrompt() {
+    if (!bundlePrompt) return;
+    const next = { ...quantities };
+    next[bundlePrompt.triggerVariantId] = bundlePrompt.newTriggerQty;
+    for (const row of bundlePrompt.rows) {
+      if (row.delta > 0) next[row.variantId] = row.current + row.delta;
+    }
+    setQuantities(next);
+    setBundlePrompt(null);
   }
 
   function clearAll() {
     setQuantities({});
+    setSelectedSizes(new Set());
+    setSizeQuantities({});
+    setDistributions(new Map());
+    setManualAdjust({});
     setPackageFeedback("");
   }
 
@@ -439,7 +431,7 @@ export function OfferDetailPublic({
     const next = { ...quantities };
     let capped = false;
     for (const item of pkg.items) {
-      const max = maxFor(item.variantId);
+      const max = maxForManual(item.variantId);
       const cur = next[item.variantId] || 0;
       const want = cur + item.quantity;
       if (want > max) {
@@ -451,9 +443,7 @@ export function OfferDetailPublic({
     }
     setQuantities(next);
     setPackageFeedback(
-      capped
-        ? `أضيفت "${pkg.name}" — بعض الخيارات تجاوزت المخزون فتم تحديدها بالحد الأقصى`
-        : `أضيفت "${pkg.name}"`
+      capped ? `أضيفت "${pkg.name}" — بعض الخيارات تجاوزت المخزون` : `أضيفت "${pkg.name}"`
     );
     setTimeout(() => setPackageFeedback(""), 4000);
   }
@@ -462,7 +452,7 @@ export function OfferDetailPublic({
     if (!canOrder) return;
     let added = 0;
     for (const v of offer.variants) {
-      const qty = quantities[v.id] || 0;
+      const qty = effectiveQty(v.id);
       if (qty <= 0) continue;
       const price = variantPrices.get(v.id);
       if (price === undefined) continue;
@@ -485,7 +475,10 @@ export function OfferDetailPublic({
     router.push("/wholesale/cart");
   }
 
-  const selectedCount = Object.values(quantities).filter((q) => q > 0).length;
+  const selectedCount = offer.autoBalanceEnabled
+    ? Array.from(distributions.values()).filter((d) => !d.isBlocked && (manualAdjust[d.variantId] ?? d.suggestedQty) > 0).length
+    : Object.values(quantities).filter((q) => q > 0).length;
+
   const hasBlockingRow = bundlePrompt?.rows.some((r) => r.wouldExceed) ?? false;
 
   return (
@@ -529,14 +522,11 @@ export function OfferDetailPublic({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
+          {/* Images */}
           <Card>
             <div className="mb-3 flex aspect-square max-h-[400px] items-center justify-center overflow-hidden rounded-lg bg-gray-50">
               {offer.master.images[activeImage] ? (
-                <img
-                  src={offer.master.images[activeImage]}
-                  alt={offer.master.name}
-                  className="h-full w-full object-contain"
-                />
+                <img src={offer.master.images[activeImage]} alt={offer.master.name} className="h-full w-full object-contain" />
               ) : (
                 <PackageIcon className="h-20 w-20 text-gray-300" />
               )}
@@ -559,6 +549,7 @@ export function OfferDetailPublic({
             )}
           </Card>
 
+          {/* Description */}
           {offer.master.description && (
             <Card>
               <h3 className="mb-2 text-sm font-bold text-gray-900">الوصف</h3>
@@ -566,24 +557,16 @@ export function OfferDetailPublic({
             </Card>
           )}
 
-          {offer.packages && offer.packages.length > 0 && (
+          {/* Packages (manual mode only) */}
+          {!offer.autoBalanceEnabled && offer.packages && offer.packages.length > 0 && (
             <Card>
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Boxes className="h-4 w-4 text-[#ff5c00]" />
                 رزم جاهزة ({offer.packages.length})
               </h3>
-              <p className="mb-3 text-xs text-gray-500">
-                اضغط رزمة لإضافة محتواها مباشرة، ثم عدّل الكميات إن أردت.
-              </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {offer.packages.map((pkg) => {
                   const totalPieces = pkg.items.reduce((s, i) => s + i.quantity, 0);
-                  const summary = pkg.items
-                    .map((i) => {
-                      const v = offer.variants.find((x) => x.id === i.variantId);
-                      return `${i.quantity}× ${fmtAttrs(v?.attributes)}`;
-                    })
-                    .join(" · ");
                   return (
                     <button
                       key={pkg.id}
@@ -593,38 +576,42 @@ export function OfferDetailPublic({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-sm font-bold text-gray-900">{pkg.name}</span>
-                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-[#ff5c00]">
-                          {totalPieces}
-                        </span>
+                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-[#ff5c00]">{totalPieces}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[11px] text-gray-600">{summary}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] text-gray-600">
+                        {pkg.items.map((i) => {
+                          const v = offer.variants.find((x) => x.id === i.variantId);
+                          return `${i.quantity}× ${fmtAttrs(v?.attributes)}`;
+                        }).join(" · ")}
+                      </p>
                     </button>
                   );
                 })}
               </div>
               {packageFeedback && (
-                <div className="mt-3 rounded-lg bg-green-50 p-2 text-xs text-green-800">
-                  {packageFeedback}
-                </div>
+                <div className="mt-3 rounded-lg bg-green-50 p-2 text-xs text-green-800">{packageFeedback}</div>
               )}
             </Card>
           )}
 
+          {/* AUTO-BALANCE PANEL */}
           {offer.autoBalanceEnabled && (
             <Card>
-              <div id="auto-balance-panel" className="space-y-3">
+              <div className="space-y-3">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
                   <Sparkles className="h-4 w-4 text-purple-500" />
                   التوزيع التلقائي
                 </h3>
                 <p className="text-xs text-gray-500">
-                  أدخل الكمية الإجمالية — النظام يوزّعها على الألوان المتوفرة بنسب ذكية. الألوان النادرة تُضاف يدوياً فقط.
+                  اختر المقاسات وأدخل الكمية لكل مقاس. النظام يوزّعها على الألوان المتوفرة تلقائياً.
+                  يمكنك تعديل كل لون بمقدار محدود.
                 </p>
 
-                {offer.requireSizeSelection && availableSizes.length > 0 && (
+                {/* Size picker */}
+                {hasSizes && (
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">
-                      اختر المقاس أولاً ({selectedSizes.size} محدد)
+                      المقاسات المتاحة
                     </label>
                     <div className="flex flex-wrap gap-1.5">
                       {availableSizes.map((s) => (
@@ -642,226 +629,280 @@ export function OfferDetailPublic({
                         </button>
                       ))}
                     </div>
-                    {selectedSizes.size === 0 && (
-                      <p className="mt-1 text-[11px] text-amber-700">اختر مقاساً واحداً على الأقل لبدء التوزيع</p>
-                    )}
                   </div>
                 )}
 
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    الكمية الإجمالية المطلوبة
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={offer.minOrderQty}
-                      max={offer.maxOrderQty ?? undefined}
-                      value={autoBalanceTotal}
-                      onChange={(e) => setAutoBalanceTotal(e.target.value)}
-                      placeholder={`مثال: ${offer.minOrderQty * 5}`}
-                      className="h-10 flex-1 rounded-lg border-2 border-gray-200 px-3 text-sm font-bold focus:border-purple-500 focus:outline-none"
-                    />
-                    {autoBalanceLoading && (
-                      <span className="text-xs text-gray-500">يحسب...</span>
-                    )}
-                  </div>
-                </div>
-
-                {autoBalanceError && (
-                  <div className="rounded-lg bg-red-50 p-2 text-xs text-red-700">
-                    {autoBalanceError}
+                {/* Per-size qty inputs */}
+                {selectedSizes.size > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-gray-700">
+                      الكمية لكل مقاس
+                    </label>
+                    {Array.from(selectedSizes).sort().map((s) => (
+                      <div key={s} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                        <span className="w-12 text-center text-sm font-bold text-gray-900">{s}</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={sizeQuantities[s] || ""}
+                          onChange={(e) => setSizeQty(s, e.target.value)}
+                          placeholder="0"
+                          className="h-9 flex-1 rounded-lg border-2 border-gray-200 px-3 text-sm font-bold focus:border-purple-500 focus:outline-none"
+                        />
+                        {autoLoading && <span className="text-xs text-gray-500">...</span>}
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {minDistributed > 0 && (
-                  <div className="rounded-lg bg-purple-50 p-2 text-xs text-purple-800">
-                    <p>
-                      الحد الأدنى المُوزَّع: <strong>{minDistributed}</strong> قطعة
-                    </p>
-                    <p className="mt-1 text-purple-600">
-                      الألوان النادرة محدودة بـ {minDistributed} قطعة كحد أقصى
-                    </p>
-                  </div>
+                {autoError && (
+                  <div className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{autoError}</div>
                 )}
 
-                {Object.keys(rareCaps).length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                    <p className="font-bold">ألوان نادرة (تُضاف يدوياً):</p>
-                    <ul className="mt-1 list-inside list-disc space-y-0.5">
-                      {offer.variants
-                        .filter((v) => rareCaps[v.id] !== undefined)
-                        .map((v) => (
-                          <li key={v.id}>
-                            {fmtAttrs(v.attributes)} — حد أقصى {rareCaps[v.id]}
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
+                {selectedSizes.size === 0 && hasSizes && (
+                  <p className="text-xs text-amber-700">اختر مقاساً واحداً على الأقل</p>
                 )}
               </div>
             </Card>
           )}
 
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
+          {/* VARIANTS — auto mode: grouped by size + steppers */}
+          {offer.autoBalanceEnabled && selectedSizes.size > 0 && distributions.size > 0 && (
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Layers className="h-4 w-4 text-gray-400" />
-                الخيارات ({offer.variants.length})
+                التوزيع ({Array.from(distributions.values()).filter((d) => !d.isBlocked && (manualAdjust[d.variantId] ?? d.suggestedQty) > 0).length} خيار)
               </h3>
-              {totalQty > 0 && (
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  className="text-xs text-gray-500 underline hover:text-red-600"
-                >
-                  مسح الكل
-                </button>
-              )}
-            </div>
-            <p className="mb-3 text-xs text-gray-500">
-              المجموع ≥ <strong>{offer.minOrderQty}</strong>
-              {offer.maxOrderQty !== null && ` و≤ ${offer.maxOrderQty}`}.
-            </p>
+              <p className="mb-3 text-xs text-gray-500">
+                اضبط كل لون ضمن حدوده ({offer.autoBalanceEnabled ? "يمكن زيادة أو إنقاص بمقدار محدود" : ""}). لتغيير أكبر، عدّل كمية المقاس أعلاه.
+              </p>
 
-            <div className="space-y-2">
-              {offer.variants.map((v) => {
-                const qty = quantities[v.id] || 0;
-                const max = v.availableStock ?? 0;
-                const price = variantPrices.get(v.id);
-                const hints = bundleHints.get(v.id);
-                const isActive = qty > 0;
-                const isMaxed = qty >= max;
-                const isTrigger = (offer.bundleRules || []).some(
-                  (r) => r.triggerVariantId === v.id
-                );
-                const isBlocked = blockedVariants.has(v.id);
+              <div className="space-y-4">
+                {Array.from(selectedSizes).sort().map((size) => {
+                  const sizeVariants = offer.variants
+                    .filter((v) => getSizeFromAttrs(v.attributes) === size)
+                    .map((v) => distributions.get(v.id))
+                    .filter((d): d is VariantDist => !!d && !d.isBlocked);
 
-                return (
-                  <div
-                    key={v.id}
-                    className={`rounded-lg border-2 p-3 transition-colors ${
-                      isBlocked
-                        ? "border-gray-100 bg-gray-50 opacity-60"
-                        : isActive
-                        ? "border-[#ff5c00] bg-orange-50"
-                        : "border-gray-200"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {v.attributes.length === 0 ? (
-                            <span className="text-xs text-gray-500">افتراضي</span>
-                          ) : (
-                            v.attributes.map((a, i) => (
-                              <span
-                                key={i}
-                                className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700"
-                              >
-                                {a.name}: <strong>{a.value}</strong>
-                              </span>
-                            ))
-                          )}
-                          {isTrigger && (
-                            <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                              <Link2 className="h-2.5 w-2.5" /> مرتبط
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
-                          {v.tiers.length > 0 ? (
-                            v.tiers.length === 1 ? (
-                              <span>{formatMoney(v.tiers[0].unitPrice)} د.م</span>
-                            ) : (
-                              <span>
-                                {v.tiers.map((t, i) => (
-                                  <span key={i}>
-                                    {i > 0 && " · "}
-                                    {t.minQty}
-                                    {t.maxQty !== null ? `-${t.maxQty}` : "+"}:{" "}
-                                    {formatMoney(t.unitPrice)}
-                                  </span>
-                                ))}
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-red-600">لا شرائح سعر</span>
-                          )}
-                          <span>
-                            · مخزون:{" "}
-                            <strong className={max === 0 ? "text-red-600" : "text-gray-900"}>
-                              {max}
-                            </strong>
-                          </span>
-                        </div>
-                        {hints && hints.length > 0 && (
-                          <div className="mt-1 space-y-0.5">
-                            {hints.map((h, i) => (
-                              <p key={i} className="text-[11px] text-amber-700">
-                                ⚠ {h}
-                              </p>
-                            ))}
-                          </div>
-                        )}
+                  if (sizeVariants.length === 0) return null;
+
+                  return (
+                    <div key={size} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="rounded bg-purple-500 px-2 py-0.5 text-xs font-bold text-white">
+                          مقاس {size}
+                        </span>
+                        <span className="text-xs text-gray-600">
+                          {sizeQuantities[size] || "0"} قطعة
+                        </span>
                       </div>
+                      <div className="space-y-2">
+                        {sizeVariants.map((dist) => {
+                          const v = offer.variants.find((x) => x.id === dist.variantId);
+                          if (!v) return null;
+                          const qty = manualAdjust[dist.variantId] ?? dist.suggestedQty;
+                          const canDec = qty > dist.minAllowed;
+                          const canInc = qty < dist.maxAllowed;
+                          const price = variantPrices.get(dist.variantId);
+                          const attrsWithoutSize = (v.attributes || []).filter(
+                            (a) => !a.name.toLowerCase().includes("مقاس") && !a.name.toLowerCase().includes("size")
+                          );
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => decrement(v.id)}
-                          disabled={qty <= 0}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-                          aria-label="إنقاص"
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={qty === 0 ? "" : String(qty)}
-                          onChange={(e) => setDirect(v.id, e.target.value)}
-                          placeholder="0"
-                          disabled={isBlocked}
-                          className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none disabled:bg-gray-100"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => increment(v.id)}
-                          disabled={isMaxed || isBlocked}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-                          aria-label="زيادة"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
+                          return (
+                            <div key={dist.variantId} className="rounded-lg bg-white p-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    {attrsWithoutSize.length === 0 ? (
+                                      <span className="text-xs text-gray-500">افتراضي</span>
+                                    ) : (
+                                      attrsWithoutSize.map((a, i) => (
+                                        <span key={i} className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                                          {a.name}: <strong>{a.value}</strong>
+                                        </span>
+                                      ))
+                                    )}
+                                    {dist.isRare && (
+                                      <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                                        نادر
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
+                                    <span>مخزون: {dist.stock}</span>
+                                    {dist.isRare ? (
+                                      <span>· حد أقصى: {dist.maxAllowed}</span>
+                                    ) : (
+                                      <span>· الحد: {dist.minAllowed}–{dist.maxAllowed}</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustVariant(dist.variantId, -1)}
+                                    disabled={!canDec}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                                    aria-label="إنقاص"
+                                  >
+                                    <Minus className="h-4 w-4" />
+                                  </button>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={qty === 0 ? "" : String(qty)}
+                                    onChange={(e) => setVariantDirect(dist.variantId, e.target.value)}
+                                    className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-purple-500 focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustVariant(dist.variantId, 1)}
+                                    disabled={!canInc}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                                    aria-label="زيادة"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                              {price !== undefined && qty > 0 && (
+                                <div className="mt-1 flex items-center justify-between border-t border-gray-100 pt-1 text-[11px]">
+                                  <span className="text-gray-600">{qty} × {formatMoney(price)} د.م</span>
+                                  <span className="font-bold text-[#ff5c00]">{formatMoney(price * qty)} د.م</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
-                    {price !== undefined && qty > 0 && (
-                      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-1 text-xs">
-                        <span className="text-gray-600">
-                          {qty} × {formatMoney(price)} د.م
-                        </span>
-                        <span className="font-bold text-[#ff5c00]">
-                          {formatMoney(price * qty)} د.م
-                        </span>
+          {/* VARIANTS — manual mode */}
+          {!offer.autoBalanceEnabled && (
+            <Card>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                  <Layers className="h-4 w-4 text-gray-400" />
+                  الخيارات ({offer.variants.length})
+                </h3>
+                {totalQty > 0 && (
+                  <button type="button" onClick={clearAll} className="text-xs text-gray-500 underline hover:text-red-600">
+                    مسح الكل
+                  </button>
+                )}
+              </div>
+              <p className="mb-3 text-xs text-gray-500">
+                المجموع ≥ <strong>{offer.minOrderQty}</strong>
+                {offer.maxOrderQty !== null && ` و≤ ${offer.maxOrderQty}`}.
+              </p>
+
+              <div className="space-y-2">
+                {offer.variants.map((v) => {
+                  const qty = quantities[v.id] || 0;
+                  const max = v.availableStock ?? 0;
+                  const price = variantPrices.get(v.id);
+                  const isActive = qty > 0;
+                  const isMaxed = qty >= max;
+                  const isTrigger = (offer.bundleRules || []).some((r) => r.triggerVariantId === v.id);
+
+                  return (
+                    <div
+                      key={v.id}
+                      className={`rounded-lg border-2 p-3 transition-colors ${
+                        isActive ? "border-[#ff5c00] bg-orange-50" : "border-gray-200"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {v.attributes.length === 0 ? (
+                              <span className="text-xs text-gray-500">افتراضي</span>
+                            ) : (
+                              v.attributes.map((a, i) => (
+                                <span key={i} className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                                  {a.name}: <strong>{a.value}</strong>
+                                </span>
+                              ))
+                            )}
+                            {isTrigger && (
+                              <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                                <Link2 className="h-2.5 w-2.5" /> مرتبط
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
+                            {v.tiers.length > 0 ? (
+                              v.tiers.length === 1 ? (
+                                <span>{formatMoney(v.tiers[0].unitPrice)} د.م</span>
+                              ) : (
+                                <span>
+                                  {v.tiers.map((t, i) => (
+                                    <span key={i}>
+                                      {i > 0 && " · "}
+                                      {t.minQty}
+                                      {t.maxQty !== null ? `-${t.maxQty}` : "+"}: {formatMoney(t.unitPrice)}
+                                    </span>
+                                  ))}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-red-600">لا شرائح سعر</span>
+                            )}
+                            <span>
+                              · مخزون: <strong className={max === 0 ? "text-red-600" : "text-gray-900"}>{max}</strong>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => decrementManual(v.id)}
+                            disabled={qty <= 0}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={qty === 0 ? "" : String(qty)}
+                            onChange={(e) => setDirectManual(v.id, e.target.value)}
+                            placeholder="0"
+                            className="h-9 w-14 rounded-lg border-2 border-gray-200 text-center text-sm font-bold focus:border-[#ff5c00] focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => incrementManual(v.id)}
+                            disabled={isMaxed}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500 text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    )}
-                    {isBlocked && (
-                      <p className="mt-1 text-[11px] text-gray-600">خارج المقاسات المختارة</p>
-                    )}
-                    {!isBlocked && isMaxed && max > 0 && (
-                      <p className="mt-1 text-[11px] text-amber-700">
-                        الحد الأقصى المتاح {max} قطعة
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
+                      {price !== undefined && qty > 0 && (
+                        <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-1 text-xs">
+                          <span className="text-gray-600">{qty} × {formatMoney(price)} د.م</span>
+                          <span className="font-bold text-[#ff5c00]">{formatMoney(price * qty)} د.م</span>
+                        </div>
+                      )}
+                      {isMaxed && max > 0 && (
+                        <p className="mt-1 text-[11px] text-amber-700">الحد الأقصى المتاح {max} قطعة</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
         </div>
 
+        {/* Sidebar */}
         <div className="space-y-4">
           <Card>
             <h3 className="mb-3 text-sm font-bold text-gray-900">البائع</h3>
@@ -870,17 +911,13 @@ export function OfferDetailPublic({
                 <Building2 className="h-4 w-4 text-gray-400" />
                 {offer.sellerName}
               </p>
-              <p className="text-xs text-gray-500">
-                {BU_TYPE_LABEL[offer.sellerType] ?? offer.sellerType}
-              </p>
+              <p className="text-xs text-gray-500">{BU_TYPE_LABEL[offer.sellerType] ?? offer.sellerType}</p>
               {offer.sellerVerificationStatus === "VERIFIED" && (
                 <Badge variant="green" size="sm">
                   <ShieldCheck className="h-3 w-3" /> نشاط موثق
                 </Badge>
               )}
-              <p className="text-xs text-gray-500">
-                عضو منذ {formatDate(offer.createdAt)}
-              </p>
+              <p className="text-xs text-gray-500">عضو منذ {formatDate(offer.createdAt)}</p>
             </div>
           </Card>
 
@@ -894,9 +931,7 @@ export function OfferDetailPublic({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">إجمالي القطع</span>
-                  <span className={`font-bold ${minMet ? "text-gray-900" : "text-red-600"}`}>
-                    {totalQty}
-                  </span>
+                  <span className={`font-bold ${minMet ? "text-gray-900" : "text-red-600"}`}>{totalQty}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500">الحد الأدنى</span>
@@ -905,17 +940,13 @@ export function OfferDetailPublic({
                 {offer.maxOrderQty !== null && (
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-500">الحد الأقصى</span>
-                    <span className={maxExceeded ? "font-bold text-red-600" : "text-gray-700"}>
-                      {offer.maxOrderQty}
-                    </span>
+                    <span className={maxExceeded ? "font-bold text-red-600" : "text-gray-700"}>{offer.maxOrderQty}</span>
                   </div>
                 )}
                 {totalEstimate > 0 && (
                   <div className="flex justify-between border-t pt-2 text-base">
                     <span className="font-bold">الإجمالي</span>
-                    <span className="font-black text-[#ff5c00]">
-                      {formatMoney(totalEstimate)} د.م
-                    </span>
+                    <span className="font-black text-[#ff5c00]">{formatMoney(totalEstimate)} د.م</span>
                   </div>
                 )}
               </div>
@@ -961,80 +992,49 @@ export function OfferDetailPublic({
         </div>
       </div>
 
-      {/* Bundle Prompt Modal (M9.5c) */}
+      {/* Bundle Prompt Modal (manual mode only) */}
       {bundlePrompt && !offer.autoBalanceEnabled && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={cancelBundlePrompt}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setBundlePrompt(null)}>
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-base font-bold text-gray-900">
-                <Link2 className="h-5 w-5 text-amber-500" />
-                شرط شراء مرتبط
+                <Link2 className="h-5 w-5 text-amber-500" /> شرط شراء مرتبط
               </h3>
-              <button onClick={cancelBundlePrompt} className="rounded p-1 hover:bg-gray-100">
+              <button onClick={() => setBundlePrompt(null)} className="rounded p-1 hover:bg-gray-100">
                 <X className="h-4 w-4" />
               </button>
             </div>
-
             <p className="mb-3 text-sm text-gray-700">
-              شراء <strong className="text-[#ff5c00]">{bundlePrompt.triggerLabel}</strong>{" "}
-              (سيتحول إلى {bundlePrompt.newTriggerQty}) يتطلب إضافة:
+              شراء <strong className="text-[#ff5c00]">{bundlePrompt.triggerLabel}</strong> (سيتحول إلى {bundlePrompt.newTriggerQty}) يتطلب إضافة:
             </p>
-
             <div className="mb-4 space-y-2">
               {bundlePrompt.rows.map((row) => (
                 <div
                   key={row.variantId}
                   className={`rounded-lg border p-2 text-sm ${
-                    row.wouldExceed
-                      ? "border-red-300 bg-red-50"
-                      : row.delta > 0
-                      ? "border-amber-200 bg-amber-50"
-                      : "border-green-200 bg-green-50"
+                    row.wouldExceed ? "border-red-300 bg-red-50" : row.delta > 0 ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex-1 font-medium text-gray-900">{row.label}</span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                        row.wouldExceed
-                          ? "bg-red-200 text-red-800"
-                          : row.delta > 0
-                          ? "bg-amber-200 text-amber-800"
-                          : "bg-green-200 text-green-800"
+                        row.wouldExceed ? "bg-red-200 text-red-800" : row.delta > 0 ? "bg-amber-200 text-amber-800" : "bg-green-200 text-green-800"
                       }`}
                     >
-                      {row.wouldExceed
-                        ? `⚠ يحتاج ${row.current + row.delta} / متاح ${row.stock}`
-                        : row.delta > 0
-                        ? `+${row.delta}`
-                        : `✓ لديك ${row.current}`}
+                      {row.wouldExceed ? `⚠ يحتاج ${row.current + row.delta} / متاح ${row.stock}` : row.delta > 0 ? `+${row.delta}` : `✓ لديك ${row.current}`}
                     </span>
                   </div>
-                  {row.wouldExceed && (
-                    <p className="mt-1 text-xs text-red-700">
-                      المخزون غير كافٍ — قلل من {bundlePrompt.triggerLabel} أو أزل هذا الخيار
-                    </p>
-                  )}
-                  {!row.wouldExceed && row.delta > 0 && (
-                    <p className="mt-1 text-xs text-amber-700">
-                      المطلوب: {row.needed} — لديك: {row.current}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
-
             {hasBlockingRow && (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                 لا يمكن المتابعة — المخزون غير كافٍ لبعض الخيارات.
               </div>
             )}
-
             <div className="flex gap-2">
-              <button
-                onClick={cancelBundlePrompt}
-                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-              >
+              <button onClick={() => setBundlePrompt(null)} className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">
                 إلغاء
               </button>
               <button
