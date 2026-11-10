@@ -292,13 +292,56 @@ export function OfferDetailPublic({
       setPkgBoosted((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
+
+    // M10.9i: exclude pkgBoosted sizes from fetch (their qty is manual, not size-limited)
+    const pkgBoostedSizes = new Set<string>();
+    for (const v of offer.variants) {
+      if (pkgBoosted.has(v.id)) {
+        const sv = getSizeFromAttrs(v.attributes);
+        if (sv) pkgBoostedSizes.add(sv);
+      }
+    }
+    const sizesForFetch = sizesToCompute.filter((sz) => !pkgBoostedSizes.has(sz));
+
+    // Build synthetic dists for pkgBoosted variants of selected sizes
+    const buildSynthMap = (): Map<number, VariantDist> => {
+      const m = new Map<number, VariantDist>();
+      for (const ov of offer.variants) {
+        if (!pkgBoosted.has(ov.id)) continue;
+        const sizeVal = getSizeFromAttrs(ov.attributes);
+        if (!sizeVal || !sizesToCompute.includes(sizeVal)) continue;
+        m.set(ov.id, {
+          variantId: ov.id,
+          attributes: ov.attributes,
+          sizeValue: sizeVal,
+          stock: ov.availableStock ?? 0,
+          isRare: false,
+          isBlocked: false,
+          baseQty: 0,
+          suggestedQty: 0,
+          minAllowed: 0,
+          maxAllowed: ov.availableStock ?? 0,
+          maxAdjust: 0,
+        });
+      }
+      return m;
+    };
+
+    // If ALL selected sizes are pkgBoosted → skip fetch, just render synthetics
+    if (sizesForFetch.length === 0) {
+      const synth = buildSynthMap();
+      setDistributions((prev) => {
+        if (prev.size === synth.size) {
+          let same = true;
+          for (const k of synth.keys()) if (!prev.has(k)) { same = false; break; }
+          if (same) return prev;
+        }
+        return synth;
+      });
+      return;
+    }
     // Block compute if any size has invalid qty, UNLESS it has a pkgBoosted variant
-    const hasInvalidSize = sizesToCompute.some((s) => {
-      const sizeVariantIds = offer.variants
-        .filter((v) => getSizeFromAttrs(v.attributes) === s)
-        .map((v) => v.id);
-      const anyBoosted = sizeVariantIds.some((id) => pkgBoosted.has(id));
-      if (anyBoosted) return false;
+    const hasInvalidSize = sizesForFetch.some((s) => {
       const raw = sizeQuantities[s];
       const q = raw ? parseInt(raw, 10) : 0;
       const limit = sizeLimitsMap[s] || 0;
@@ -328,6 +371,15 @@ export function OfferDetailPublic({
       setAutoLoading(true);
       setAutoError("");
       try {
+        const effective: Array<{ size: string; qty: number }> = [];
+        for (const sz of sizesForFetch) {
+          const qty = parseInt(sizeQuantities[sz] || "0", 10);
+          if (qty > 0) effective.push({ size: sz, qty });
+        }
+        if (effective.length === 0) {
+          setAutoLoading(false);
+          return;
+        }
         const sizesParam = encodeURIComponent(
           effective.map((e) => `${e.size}:${e.qty}`).join(",")
         );
@@ -340,13 +392,24 @@ export function OfferDetailPublic({
           return;
         }
         const nextMap = new Map<number, VariantDist>();
-        const nextAdjust: Record<number, number> = {};
         for (const v of d.variants as VariantDist[]) {
           nextMap.set(v.variantId, v);
-          if (!v.isBlocked) nextAdjust[v.variantId] = v.suggestedQty;
+        }
+        // Merge pkgBoosted synthetics
+        const synth = buildSynthMap();
+        for (const [k, v] of synth) {
+          if (!nextMap.has(k)) nextMap.set(k, v);
         }
         setDistributions(nextMap);
-        setManualAdjust(nextAdjust);
+        setManualAdjust((prev) => {
+          const next: Record<number, number> = { ...prev };
+          for (const v of d.variants as VariantDist[]) {
+            if (!(v.variantId in next) && !v.isBlocked) {
+              next[v.variantId] = v.suggestedQty;
+            }
+          }
+          return next;
+        });
         if (d.sizeLimits) setSizeLimits(d.sizeLimits as Record<string, number>);
       } catch {
         setAutoError("خطأ في الاتصال");
@@ -379,7 +442,13 @@ export function OfferDetailPublic({
     });
     setDistributions(new Map());
     setManualAdjust({});
-    setPkgBoosted(new Set());
+    setPkgBoosted((prev) => {
+      const next = new Set(prev);
+      for (const v of offer.variants) {
+        if (getSizeFromAttrs(v.attributes) === size) next.delete(v.id);
+      }
+      return next;
+    });
   }
 
   function setSizeQty(size: string, raw: string) {
@@ -390,8 +459,14 @@ export function OfferDetailPublic({
       else next[size] = raw;
       return next;
     });
-    // User took manual control → clear package boost
-    setPkgBoosted(new Set());
+    // Clear pkgBoosted only for variants in THIS size
+    setPkgBoosted((prev) => {
+      const next = new Set(prev);
+      for (const v of offer.variants) {
+        if (getSizeFromAttrs(v.attributes) === size) next.delete(v.id);
+      }
+      return next;
+    });
   }
 
   function adjustVariant(variantId: number, delta: number) {
@@ -399,33 +474,25 @@ export function OfferDetailPublic({
     if (!dist || dist.isBlocked) return;
     const cur = manualAdjust[variantId] ?? dist.suggestedQty;
     const next = cur + delta;
-    const effectiveMax = pkgBoosted.has(variantId) ? dist.stock : dist.maxAllowed;
-    if (next < dist.minAllowed || next > effectiveMax) return;
+    const isBoosted = pkgBoosted.has(variantId);
+    const effectiveMin = isBoosted ? 0 : dist.minAllowed;
+    const effectiveMax = isBoosted ? dist.stock : dist.maxAllowed;
+    if (next < effectiveMin || next > effectiveMax) return;
     setManualAdjust((prev) => ({ ...prev, [variantId]: next }));
-    if (next <= dist.maxAllowed) {
-      setPkgBoosted((prev) => {
-        const c = new Set(prev);
-        c.delete(variantId);
-        return c;
-      });
-    }
+    // pkgBoosted persists — only setSizeQty/toggleSize clear it
   }
 
   function setVariantDirect(variantId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;
     const dist = distributions.get(variantId);
     if (!dist || dist.isBlocked) return;
-    const effectiveMax = pkgBoosted.has(variantId) ? dist.stock : dist.maxAllowed;
+    const isBoosted = pkgBoosted.has(variantId);
+    const effectiveMin = isBoosted ? 0 : dist.minAllowed;
+    const effectiveMax = isBoosted ? dist.stock : dist.maxAllowed;
     let n = raw === "" ? 0 : parseInt(raw, 10);
-    n = Math.max(dist.minAllowed, Math.min(effectiveMax, n));
+    n = Math.max(effectiveMin, Math.min(effectiveMax, n));
     setManualAdjust((prev) => ({ ...prev, [variantId]: n }));
-    if (n <= dist.maxAllowed) {
-      setPkgBoosted((prev) => {
-        const c = new Set(prev);
-        c.delete(variantId);
-        return c;
-      });
-    }
+    // pkgBoosted persists — only setSizeQty/toggleSize clear it
   }
 
   // ============ Manual mode handlers ============
@@ -564,7 +631,7 @@ export function OfferDetailPublic({
         const applied = Math.min(wanted, dist.stock);
         if (applied < wanted) capped = true;
         next[item.variantId] = applied;
-        if (applied > dist.maxAllowed) nextBoosted.add(item.variantId);
+        nextBoosted.add(item.variantId); // M10.9i: always boost on package apply
       }
 
       // Update selected sizes (no limit)
