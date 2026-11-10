@@ -110,6 +110,7 @@ export function OfferDetailPublic({
   const [autoError, setAutoError] = useState("");
   const [manualAdjust, setManualAdjust] = useState<Record<number, number>>({});
   const [pendingPackage, setPendingPackage] = useState<{ name: string; items: Array<{ variantId: number; quantity: number }> } | null>(null);
+  const [pkgBoosted, setPkgBoosted] = useState<Set<number>>(new Set());
   const [sizeLimits, setSizeLimits] = useState<Record<string, number>>({});
 
   const availableSizes = useMemo(() => {
@@ -142,6 +143,15 @@ export function OfferDetailPublic({
       const qty = raw ? parseInt(raw, 10) : 0;
       const limit = sizeLimitsMap[s] || 0;
       const maxQ = maxSizeQty(s);
+      // M10.9f: if all variants in this size are pkgBoosted, skip limit checks
+      const sizeVariantIds = offer.variants
+        .filter((v) => getSizeFromAttrs(v.attributes) === s)
+        .map((v) => v.id);
+      const allBoosted = sizeVariantIds.length > 0 && sizeVariantIds.every((id) => pkgBoosted.has(id));
+      if (allBoosted) {
+        errs[s] = null;
+        continue;
+      }
       if (!qty || qty < 1) {
         errs[s] = "الكمية مطلوبة";
       } else if (qty < limit) {
@@ -153,7 +163,7 @@ export function OfferDetailPublic({
       }
     }
     return errs;
-  }, [selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
+  }, [selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty, pkgBoosted, offer.variants]);
 
   // Group variants by size (for display)
   const variantsBySize = useMemo(() => {
@@ -276,6 +286,7 @@ export function OfferDetailPublic({
     if (sizesToCompute.length === 0) {
       setDistributions(new Map());
       setManualAdjust({});
+      setPkgBoosted(new Set());
       return;
     }
     // M10.9d2: block compute if any size has invalid qty (below min or above stock)
@@ -327,6 +338,7 @@ export function OfferDetailPublic({
         }
         setDistributions(nextMap);
         setManualAdjust(nextAdjust);
+        setPkgBoosted(new Set());
         if (d.sizeLimits) setSizeLimits(d.sizeLimits as Record<string, number>);
       } catch {
         setAutoError("خطأ في الاتصال");
@@ -338,30 +350,6 @@ export function OfferDetailPublic({
     return () => clearTimeout(timer);
   }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
   // M10.9e: apply pending package once distributions are ready
-  useEffect(() => {
-    if (!pendingPackage) return;
-    if (distributions.size === 0) return;
-    if (autoLoading) return;
-
-    const next = { ...manualAdjust };
-    let anyCapped = false;
-    for (const item of pendingPackage.items) {
-      const dist = distributions.get(item.variantId);
-      if (!dist || dist.isBlocked) continue;
-      const current = next[item.variantId] ?? dist.suggestedQty;
-      const wanted = current + item.quantity;
-      const capped = Math.min(wanted, dist.maxAllowed);
-      if (capped < wanted) anyCapped = true;
-      next[item.variantId] = capped;
-    }
-    setManualAdjust(next);
-    setPackageFeedback(
-      anyCapped ? `أضيفت "${pendingPackage.name}" — بعض الخيارات وصلت للسقف` : `أضيفت "${pendingPackage.name}"`
-    );
-    setTimeout(() => setPackageFeedback(""), 4000);
-    setPendingPackage(null);
-  }, [pendingPackage, distributions, autoLoading]);
-
   // ============ Handlers ============
   function toggleSize(size: string) {
     setSelectedSizes((prev) => {
@@ -400,17 +388,33 @@ export function OfferDetailPublic({
     if (!dist || dist.isBlocked) return;
     const cur = manualAdjust[variantId] ?? dist.suggestedQty;
     const next = cur + delta;
-    if (next < dist.minAllowed || next > dist.maxAllowed) return;
+    const effectiveMax = pkgBoosted.has(variantId) ? dist.stock : dist.maxAllowed;
+    if (next < dist.minAllowed || next > effectiveMax) return;
     setManualAdjust((prev) => ({ ...prev, [variantId]: next }));
+    if (next <= dist.maxAllowed) {
+      setPkgBoosted((prev) => {
+        const c = new Set(prev);
+        c.delete(variantId);
+        return c;
+      });
+    }
   }
 
   function setVariantDirect(variantId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;
     const dist = distributions.get(variantId);
     if (!dist || dist.isBlocked) return;
+    const effectiveMax = pkgBoosted.has(variantId) ? dist.stock : dist.maxAllowed;
     let n = raw === "" ? 0 : parseInt(raw, 10);
-    n = Math.max(dist.minAllowed, Math.min(dist.maxAllowed, n));
+    n = Math.max(dist.minAllowed, Math.min(effectiveMax, n));
     setManualAdjust((prev) => ({ ...prev, [variantId]: n }));
+    if (n <= dist.maxAllowed) {
+      setPkgBoosted((prev) => {
+        const c = new Set(prev);
+        c.delete(variantId);
+        return c;
+      });
+    }
   }
 
   // ============ Manual mode handlers ============
@@ -504,7 +508,13 @@ export function OfferDetailPublic({
 
   function applyPackage(pkg: { name: string; items: Array<{ variantId: number; quantity: number }> }) {
     if (offer.autoBalanceEnabled) {
-      // M10.9e: extract sizes from package items
+      // M10.9f: package applies DIRECTLY (bypasses auto-balance constraints)
+      // - No compute needed
+      // - Bypasses maxAllowed/maxManualAdjustment
+      // - Bypasses sizeLimits
+      // - Only stock is the cap
+
+      // Auto-select sizes from package (no sizeLimit constraint)
       const pkgSizes = new Set<string>();
       const qtyPerSize: Record<string, number> = {};
       for (const item of pkg.items) {
@@ -517,51 +527,59 @@ export function OfferDetailPublic({
         }
       }
 
-      // Check if all package sizes are already selected with valid qty
-      const allSelected = Array.from(pkgSizes).every(
-        (s) => selectedSizes.has(s) && parseInt(sizeQuantities[s] || "0", 10) > 0
-      );
-      const hasDistributions = distributions.size > 0;
-
-      if (!hasDistributions || !allSelected) {
-        // Auto-select missing sizes with initial qty >= limit & package qty
-        const nextSelected = new Set(selectedSizes);
-        const nextQty = { ...sizeQuantities };
-        for (const s of pkgSizes) {
-          const limit = sizeLimitsMap[s] || 0;
-          const pkgQty = qtyPerSize[s] || 0;
-          const initial = Math.max(limit, offer.minOrderQty, pkgQty);
-          if (!nextSelected.has(s) || parseInt(nextQty[s] || "0", 10) < initial) {
-            nextSelected.add(s);
-            nextQty[s] = String(initial);
-          }
-        }
-        setSelectedSizes(nextSelected);
-        setSizeQuantities(nextQty);
-        setPendingPackage(pkg);
-        setPackageFeedback(`جاري تطبيق "${pkg.name}"...`);
-        return;
-      }
-
-      // All sizes ready → apply directly
+      // Build next manualAdjust + pkgBoosted
       const next = { ...manualAdjust };
-      let anyCapped = false;
+      const nextBoosted = new Set(pkgBoosted);
+      let capped = false;
+
       for (const item of pkg.items) {
         const dist = distributions.get(item.variantId);
-        if (!dist || dist.isBlocked) continue;
+        if (!dist || dist.isBlocked) {
+          // No distribution yet (compute not run) — find variant manually
+          const v = offer.variants.find((x) => x.id === item.variantId);
+          if (!v) continue;
+          const stock = v.availableStock ?? 0;
+          if (stock <= 0) continue;
+          const current = next[item.variantId] ?? 0;
+          const wanted = current + item.quantity;
+          const applied = Math.min(wanted, stock);
+          if (applied < wanted) capped = true;
+          next[item.variantId] = applied;
+          nextBoosted.add(item.variantId);
+          continue;
+        }
         const current = next[item.variantId] ?? dist.suggestedQty;
         const wanted = current + item.quantity;
-        const capped = Math.min(wanted, dist.maxAllowed);
-        if (capped < wanted) anyCapped = true;
-        next[item.variantId] = capped;
+        const applied = Math.min(wanted, dist.stock);
+        if (applied < wanted) capped = true;
+        next[item.variantId] = applied;
+        if (applied > dist.maxAllowed) nextBoosted.add(item.variantId);
       }
+
+      // Update selected sizes (no limit)
+      const nextSelected = new Set(selectedSizes);
+      const nextSizeQty = { ...sizeQuantities };
+      for (const s of pkgSizes) {
+        nextSelected.add(s);
+        const current = parseInt(nextSizeQty[s] || "0", 10) || 0;
+        const wanted = current + (qtyPerSize[s] || 0);
+        nextSizeQty[s] = String(wanted);
+      }
+
+      setSelectedSizes(nextSelected);
+      setSizeQuantities(nextSizeQty);
       setManualAdjust(next);
+      setPkgBoosted(nextBoosted);
       setPackageFeedback(
-        anyCapped ? `أضيفت "${pkg.name}" — بعض الخيارات وصلت للسقف` : `أضيفت "${pkg.name}"`
+        capped
+          ? `أضيفت "${pkg.name}" — بعض الخيارات وصلت لحد المخزون`
+          : `أضيفت "${pkg.name}"`
       );
       setTimeout(() => setPackageFeedback(""), 4000);
       return;
     }
+
+    // Manual mode: unchanged
     const next = { ...quantities };
     let capped = false;
     for (const item of pkg.items) {
@@ -887,6 +905,10 @@ export function OfferDetailPublic({
                                     {dist.isRare && (
                                       <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
                                         نادر
+                                      </span>
+                                    )}                                    {pkgBoosted.has(dist.variantId) && (
+                                      <span className="rounded bg-blue-400 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        🎁 رزمة
                                       </span>
                                     )}
                                   </div>
