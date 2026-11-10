@@ -122,6 +122,38 @@ export function OfferDetailPublic({
 
   const hasSizes = availableSizes.length > 0;
 
+  const sizeLimitsMap = offer.sizeLimits ?? {};
+
+  const maxSizeQty = useCallback((size: string): number => {
+    let sum = 0;
+    for (const v of offer.variants) {
+      if (getSizeFromAttrs(v.attributes) === size) {
+        sum += v.availableStock ?? 0;
+      }
+    }
+    return sum;
+  }, [offer.variants]);
+
+  const sizeErrors = useMemo(() => {
+    const errs: Record<string, string | null> = {};
+    for (const s of selectedSizes) {
+      const raw = sizeQuantities[s];
+      const qty = raw ? parseInt(raw, 10) : 0;
+      const limit = sizeLimitsMap[s] || 0;
+      const maxQ = maxSizeQty(s);
+      if (!qty || qty < 1) {
+        errs[s] = "الكمية مطلوبة";
+      } else if (qty < limit) {
+        errs[s] = "أقل من الحد الأدنى (" + limit + ")";
+      } else if (maxQ > 0 && qty > maxQ) {
+        errs[s] = "أكثر من المخزون المتاح (" + maxQ + ")";
+      } else {
+        errs[s] = null;
+      }
+    }
+    return errs;
+  }, [selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
+
   // Group variants by size (for display)
   const variantsBySize = useMemo(() => {
     const map = new Map<string, Array<{ id: number; attributes: Array<{ name: string; value: string }>; availableStock: number }>>();
@@ -245,6 +277,19 @@ export function OfferDetailPublic({
       setManualAdjust({});
       return;
     }
+    // M10.9d2: block compute if any size has invalid qty (below min or above stock)
+    const hasInvalidSize = sizesToCompute.some((s) => {
+      const raw = sizeQuantities[s];
+      const q = raw ? parseInt(raw, 10) : 0;
+      const limit = sizeLimitsMap[s] || 0;
+      const maxQ = maxSizeQty(s);
+      return q < 1 || q < limit || (maxQ > 0 && q > maxQ);
+    });
+    if (hasInvalidSize) {
+      setDistributions(new Map());
+      setManualAdjust({});
+      return;
+    }
 
     // If requireSizeSelection is on, ensure all selected sizes have a quantity
     const effective: Array<{ size: string; qty: number }> = [];
@@ -290,7 +335,7 @@ export function OfferDetailPublic({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities]);
+  }, [offer.autoBalanceEnabled, offer.id, selectedSizes, sizeQuantities, sizeLimitsMap, maxSizeQty]);
 
   // ============ Handlers ============
   function toggleSize(size: string) {
@@ -305,6 +350,9 @@ export function OfferDetailPublic({
         });
       } else {
         next.add(size);
+        const limit = sizeLimitsMap[size] || 0;
+        const initial = Math.max(limit, offer.minOrderQty);
+        setSizeQuantities((sq) => ({ ...sq, [size]: String(initial) }));
       }
       return next;
     });
@@ -430,6 +478,26 @@ export function OfferDetailPublic({
   }
 
   function applyPackage(pkg: { name: string; items: Array<{ variantId: number; quantity: number }> }) {
+    if (offer.autoBalanceEnabled) {
+      if (distributions.size === 0) return;
+      const next = { ...manualAdjust };
+      let anyCapped = false;
+      for (const item of pkg.items) {
+        const dist = distributions.get(item.variantId);
+        if (!dist || dist.isBlocked) continue;
+        const current = next[item.variantId] ?? dist.suggestedQty;
+        const wanted = current + item.quantity;
+        const capped = Math.min(wanted, dist.maxAllowed);
+        if (capped < wanted) anyCapped = true;
+        next[item.variantId] = capped;
+      }
+      setManualAdjust(next);
+      setPackageFeedback(
+        anyCapped ? `أضيفت "${pkg.name}" — بعض الخيارات وصلت للسقف` : `أضيفت "${pkg.name}"`
+      );
+      setTimeout(() => setPackageFeedback(""), 4000);
+      return;
+    }
     const next = { ...quantities };
     let capped = false;
     for (const item of pkg.items) {
@@ -560,7 +628,7 @@ export function OfferDetailPublic({
           )}
 
           {/* Packages (manual mode only) */}
-          {!offer.autoBalanceEnabled && offer.packages && offer.packages.length > 0 && (
+          {offer.packages && offer.packages.length > 0 && (
             <Card>
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
                 <Boxes className="h-4 w-4 text-[#ff5c00]" />
@@ -574,7 +642,8 @@ export function OfferDetailPublic({
                       key={pkg.id}
                       type="button"
                       onClick={() => applyPackage(pkg)}
-                      className="rounded-lg border-2 border-gray-200 bg-white p-3 text-right transition hover:border-[#ff5c00] hover:bg-orange-50"
+                      disabled={offer.autoBalanceEnabled && distributions.size === 0}
+                      className="rounded-lg border-2 border-gray-200 bg-white p-3 text-right transition hover:border-[#ff5c00] hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-sm font-bold text-gray-900">{pkg.name}</span>
@@ -616,20 +685,29 @@ export function OfferDetailPublic({
                       المقاسات المتاحة
                     </label>
                     <div className="flex flex-wrap gap-1.5">
-                      {availableSizes.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => toggleSize(s)}
-                          className={`rounded-lg border-2 px-3 py-1.5 text-xs font-bold transition ${
-                            selectedSizes.has(s)
-                              ? "border-purple-500 bg-purple-500 text-white"
-                              : "border-gray-200 bg-white text-gray-700 hover:border-purple-300"
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
+                      {availableSizes.map((s) => {
+                        const limit = sizeLimitsMap[s] || 0;
+                        const isSelected = selectedSizes.has(s);
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => toggleSize(s)}
+                            className={`rounded-lg border-2 px-3 py-1.5 text-xs font-bold transition ${
+                              isSelected
+                                ? "border-purple-500 bg-purple-500 text-white"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-purple-300"
+                            }`}
+                          >
+                            {s}
+                            {limit > 1 && (
+                              <span className="ml-1 text-[10px] opacity-80">
+                                (≥{limit})
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -640,20 +718,38 @@ export function OfferDetailPublic({
                     <label className="block text-xs font-medium text-gray-700">
                       الكمية لكل مقاس
                     </label>
-                    {Array.from(selectedSizes).sort().map((s) => (
-                      <div key={s} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
-                        <span className="w-12 text-center text-sm font-bold text-gray-900">{s}</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={sizeQuantities[s] || ""}
-                          onChange={(e) => setSizeQty(s, e.target.value)}
-                          placeholder="0"
-                          className="h-9 flex-1 rounded-lg border-2 border-gray-200 px-3 text-sm font-bold focus:border-purple-500 focus:outline-none"
-                        />
-                        {autoLoading && <span className="text-xs text-gray-500">...</span>}
-                      </div>
-                    ))}
+                    {Array.from(selectedSizes).sort().map((s) => {
+                      const err = sizeErrors[s];
+                      const limit = sizeLimitsMap[s] || 0;
+                      return (
+                        <div key={s} className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                            <span className="w-12 text-center text-sm font-bold text-gray-900">{s}</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={sizeQuantities[s] || ""}
+                              onChange={(e) => setSizeQty(s, e.target.value)}
+                              placeholder="0"
+                              className={`h-9 flex-1 rounded-lg border-2 px-3 text-sm font-bold focus:outline-none ${
+                                err
+                                  ? "border-red-400 bg-red-50 focus:border-red-500"
+                                  : "border-gray-200 focus:border-purple-500"
+                              }`}
+                            />
+                            {limit > 0 && (
+                              <span className="text-[10px] text-gray-500">
+                                ≥{limit}
+                              </span>
+                            )}
+                            {autoLoading && <span className="text-xs text-gray-500">...</span>}
+                          </div>
+                          {err && (
+                            <p className="text-[11px] text-red-600 px-14">{err}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
