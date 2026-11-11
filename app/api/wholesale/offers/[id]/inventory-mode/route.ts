@@ -6,6 +6,10 @@ import { SessionService } from "@/services/session.service";
 const postSchema = z.object({
   mode: z.enum(["SHARED", "SPLIT"]),
   retailSplit: z.number().int().min(0).optional(),
+  variantSplits: z.array(z.object({
+    masterVariantId: z.number().int().positive(),
+    retailQty: z.number().int().min(0),
+  })).optional(),
 });
 
 async function ensureOwner(offerId: number, userId: number) {
@@ -154,7 +158,7 @@ export async function POST(
       );
     }
 
-    const { mode, retailSplit } = parsed.data;
+    const { mode, retailSplit, variantSplits } = parsed.data;
 
     const pool = await prisma.inventoryPool.findUnique({
       where: { businessUnitId_masterId: { businessUnitId: offer.businessUnitId, masterId: offer.masterId } },
@@ -164,7 +168,7 @@ export async function POST(
 
     // M11.9c: allow SPLIT→SPLIT with new retailSplit (re-distribute)
     // Only skip when mode === SHARED (already unified) OR SPLIT without new retailSplit
-    if (pool.mode === mode && (mode === "SHARED" || retailSplit === undefined)) {
+    if (pool.mode === mode && (mode === "SHARED" || (retailSplit === undefined && !variantSplits))) {
       return NextResponse.json({ success: true, mode, changed: false });
     }
 
@@ -226,60 +230,96 @@ export async function POST(
           where: { id: pool.id },
           data: { mode: "SHARED" },
         });
-      });
+      }, { timeout: 30000, maxWait: 10000 });
     } else {
-      // mode === "SPLIT" — separate retail vs wholesale
+      // mode === "SPLIT" — per-variant retail/wholesale split (batched)
       const wasShared = pool.mode === "SHARED";
+      
+      const splitMap = new Map<number, number>();
+      if (variantSplits) {
+        for (const vs of variantSplits) {
+          splitMap.set(vs.masterVariantId, vs.retailQty);
+        }
+      }
+      
       await prisma.$transaction(async (tx) => {
-        for (const mvId of masterVariantIds) {
-          const poolVar = pool.variants.find((v) => v.masterVariantId === mvId)!;
+        const allPvs = await tx.productVariant.findMany({
+          where: { sellerId: seller.id, masterVariantId: { in: masterVariantIds } },
+          select: {
+            id: true,
+            masterVariantId: true,
+            inventory: { select: { id: true, quantity: true } },
+          },
+        });
+        
+        const pvsByMv = new Map<number, typeof allPvs>();
+        for (const pv of allPvs) {
+          if (!pv.masterVariantId) continue;
+          if (!pvsByMv.has(pv.masterVariantId)) pvsByMv.set(pv.masterVariantId, []);
+          pvsByMv.get(pv.masterVariantId)!.push(pv);
+        }
+        
+        const zeroInventoryIds: number[] = [];
+        const poolUpdates: Array<{ id: number; quantity: number }> = [];
+        const invUpdates: Array<{ id: number; quantity: number }> = [];
+        
+        for (const poolVar of pool.variants) {
+          const mvId = poolVar.masterVariantId;
+          const pvs = pvsByMv.get(mvId) ?? [];
+          const currentRetail = pvs.reduce((s, pv) => s + (pv.inventory?.quantity ?? 0), 0);
+          const totalQty = wasShared ? poolVar.quantity : poolVar.quantity + currentRetail;
           
-          // M11.9a: if coming from SHARED, pool===inv (already synced) → total = pool.
-          // If already SPLIT, total = pool + current retail.
-          const pvsForTotal = await tx.productVariant.findMany({
-            where: { sellerId: seller.id, masterVariantId: mvId },
-            select: { inventory: { select: { quantity: true } } },
-          });
-          const currentRetail = pvsForTotal.reduce(
-            (s, pv) => s + (pv.inventory?.quantity ?? 0),
-            0
-          );
-          const totalQty = wasShared
-            ? poolVar.quantity
-            : poolVar.quantity + currentRetail;
-          const splitQty = retailSplit ?? Math.floor(totalQty / 2);
-          const clampedRetail = Math.max(0, Math.min(totalQty, splitQty));
+          let retailTarget: number;
+          if (splitMap.has(mvId)) {
+            retailTarget = splitMap.get(mvId)!;
+          } else if (retailSplit !== undefined) {
+            retailTarget = retailSplit;
+          } else {
+            retailTarget = Math.floor(totalQty / 2);
+          }
+          
+          const clampedRetail = Math.max(0, Math.min(totalQty, retailTarget));
           const wholesaleQty = totalQty - clampedRetail;
-
-          await tx.inventoryPoolVariant.update({
-            where: { id: poolVar.id },
-            data: { quantity: wholesaleQty },
-          });
-
-          const pvs = await tx.productVariant.findMany({
-            where: { sellerId: seller.id, masterVariantId: mvId },
-            select: { inventory: { select: { id: true } } },
-          });
+          
+          poolUpdates.push({ id: poolVar.id, quantity: wholesaleQty });
+          
           if (pvs.length > 0 && pvs[0].inventory) {
-            await tx.inventory.update({ where: { id: pvs[0].inventory.id }, data: { quantity: clampedRetail } });
+            invUpdates.push({ id: pvs[0].inventory.id, quantity: clampedRetail });
             for (let i = 1; i < pvs.length; i++) {
-              if (pvs[i].inventory) {
-                await tx.inventory.update({ where: { id: pvs[i].inventory!.id }, data: { quantity: 0 } });
-              }
+              if (pvs[i].inventory) zeroInventoryIds.push(pvs[i].inventory!.id);
             }
           }
         }
-
+        
+        await Promise.all(
+          poolUpdates.map((u) =>
+            tx.inventoryPoolVariant.update({ where: { id: u.id }, data: { quantity: u.quantity } })
+          )
+        );
+        
+        await Promise.all(
+          invUpdates.map((u) =>
+            tx.inventory.update({ where: { id: u.id }, data: { quantity: u.quantity } })
+          )
+        );
+        
+        if (zeroInventoryIds.length > 0) {
+          await tx.inventory.updateMany({
+            where: { id: { in: zeroInventoryIds } },
+            data: { quantity: 0 },
+          });
+        }
+        
         await tx.product.updateMany({
           where: { poolId: pool.id },
           data: { poolId: null },
         });
-
+        
         await tx.inventoryPool.update({
           where: { id: pool.id },
           data: { mode: "SPLIT" },
         });
-      });
+      }, { timeout: 30000, maxWait: 10000 });
     }
 
     return NextResponse.json({ success: true, mode, changed: true });
