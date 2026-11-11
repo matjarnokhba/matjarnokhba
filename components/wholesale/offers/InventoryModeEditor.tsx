@@ -165,10 +165,13 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
                   المخزون الكلي: {state.totalWholesale} قطعة
                 </div>
               ) : (
-                <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
-                  <span>إجمالي التجزئة: {state.totalRetail}</span>
-                  <span>·</span>
-                  <span>إجمالي الجملة: {state.totalWholesale}</span>
+                <div className="mt-1 space-y-1">
+                  <div className="rounded bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">
+                    المخزون الكلي: {state.totalRetail + state.totalWholesale} قطعة
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    تجزئة: {state.totalRetail} · جملة: {state.totalWholesale}
+                  </p>
                 </div>
               )}
             </div>
