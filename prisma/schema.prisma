@@ -631,8 +631,10 @@ model Category {
 }
 
 model Product {
-  id                   Int           @id @default(autoincrement())
-  productCode          String        @unique @default(uuid())
+  poolId               Int?
+  pool                 InventoryPool? @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  id                   Int            @id @default(autoincrement())
+  productCode          String         @unique @default(uuid())
   sellerId             Int
   categoryId           Int
   name                 String
@@ -640,17 +642,17 @@ model Product {
   description          String?
   brand                String?
   badge                String?
-  rating               Float         @default(0)
-  reviewsCount         Int           @default(0)
-  sold                 Int           @default(0)
-  freeShipping         Boolean       @default(false)
-  status               ProductStatus @default(DRAFT)
-  pendingOwnerApproval Boolean       @default(false)
+  rating               Float          @default(0)
+  reviewsCount         Int            @default(0)
+  sold                 Int            @default(0)
+  freeShipping         Boolean        @default(false)
+  status               ProductStatus  @default(DRAFT)
+  pendingOwnerApproval Boolean        @default(false)
   createdByStaffId     Int?
-  isFeatured           Boolean       @default(false)
-  isNew                Boolean       @default(false)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  isFeatured           Boolean        @default(false)
+  isNew                Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
   deletedAt            DateTime?
 
   // ═══ Catalog v2 ═══
@@ -2745,6 +2747,7 @@ model BusinessUnit {
 
   // ─── M5.4 Transfers ───
   inventoryTransfers InventoryTransfer[]
+  inventoryPools     InventoryPool[]
 
   @@index([ownerId, status])
   @@index([type, status])
@@ -2787,6 +2790,8 @@ model AccountingGroup {
 }
 
 model MerchantProduct {
+  poolId                 Int?
+  pool                   InventoryPool?        @relation(fields: [poolId], references: [id], onDelete: SetNull)
   id                     Int                   @id @default(autoincrement())
   businessUnitId         Int
   masterId               Int
@@ -2811,6 +2816,45 @@ model MerchantProduct {
   @@index([businessUnitId, status])
   @@index([masterId])
   @@index([isFromWholesale])
+}
+
+enum PoolMode {
+  SHARED
+  SPLIT
+}
+
+model InventoryPool {
+  id             Int      @id @default(autoincrement())
+  businessUnitId Int
+  masterId       Int
+  mode           PoolMode @default(SPLIT)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businessUnit     BusinessUnit           @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master           MasterProduct          @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  variants         InventoryPoolVariant[]
+  products         Product[]
+  merchantProducts MerchantProduct[]
+
+  @@unique([businessUnitId, masterId])
+  @@index([businessUnitId])
+}
+
+model InventoryPoolVariant {
+  id               Int      @id @default(autoincrement())
+  poolId           Int
+  masterVariantId  Int
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pool          InventoryPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  masterVariant MasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, masterVariantId])
+  @@index([poolId])
 }
 
 model MerchantVariant {
@@ -2919,7 +2963,8 @@ model MasterProduct {
   merchantProducts MerchantProduct[]
 
   // ─── M1.2 back-relations ───
-  offers WholesaleOffer[]
+  offers         WholesaleOffer[]
+  inventoryPools InventoryPool[]
 
   @@index([categoryId, status])
   @@index([barcode])
@@ -2947,6 +2992,7 @@ model MasterVariant {
 
   // ─── M1.3 back-relations ───
   priceComparisons PriceComparisonCache[]
+  poolVariants     InventoryPoolVariant[]
 
   @@unique([masterId, attributesHash])
   @@index([barcode])
