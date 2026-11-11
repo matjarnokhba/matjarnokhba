@@ -190,10 +190,15 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
           {/* Variants + tiers */}
           <Card padding="none">
             <div className="border-b border-gray-100 p-4">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
-                <Layers className="h-4 w-4 text-gray-400" />
-                المتغيرات والأسعار ({offer.variants.length})
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                  <Layers className="h-4 w-4 text-gray-400" />
+                  المتغيرات والأسعار ({offer.variants.length})
+                </h3>
+                <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-bold text-[#ff5c00]">
+                  المجموع: ${offer.variants.reduce((s, v) => s + (v.availableStock ?? 0), 0)} قطعة
+                </span>
+              </div>
             </div>
             <div className="divide-y divide-gray-100">
               {offer.variants.map((v) => (

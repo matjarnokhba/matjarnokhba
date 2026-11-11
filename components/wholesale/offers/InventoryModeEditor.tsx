@@ -167,10 +167,14 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               {state.mode === "SHARED" ? (
                 <div className="mt-1 space-y-1">
                   <div className="rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
-                    المخزون الحقيقي: {state.totalRetail} قطعة
+                    {state.mode === "SHARED"
+                      ? `المخزون الحقيقي: ${realTotal} قطعة`
+                      : `عند التفعيل: ${realTotal} قطعة`}
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    رقم واحد — يظهر في: متجر التجزئة · المحل · الجملة
+                    {state.mode === "SHARED"
+                      ? "رقم واحد — يظهر في: متجر التجزئة · المحل · الجملة"
+                      : `(سيُدمج تجزئة ${state.totalRetail} + جملة ${state.totalWholesale})`}
                   </p>
                   <p className="text-[10px] text-indigo-600">
                     ✓ أي بيع من أي قناة ينقص هذا الرقم
@@ -179,10 +183,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               ) : (
                 <div className="mt-1 space-y-1">
                   <div className="rounded bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">
-                    الإجمالي: {state.totalRetail + state.totalWholesale} قطعة
+                    الإجمالي: {realTotal} قطعة
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    تجزئة {state.totalRetail} + جملة {state.totalWholesale} = {state.totalRetail + state.totalWholesale}
+                    تجزئة {state.totalRetail} + جملة {state.totalWholesale}
                   </p>
                   <p className="text-[10px] text-amber-600">
                     ✓ مخزونان منفصلان — البيع من أحدهما لا يؤثر على الآخر
