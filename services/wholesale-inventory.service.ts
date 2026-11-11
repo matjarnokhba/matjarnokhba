@@ -848,19 +848,38 @@ export const WholesaleInventoryService = {
         expiresAt: { lt: new Date() },
       },
       take: limit,
-      select: { id: true },
+      select: {
+        id: true,
+        merchantVariantId: true,
+        quantity: true,
+      },
     });
 
     let released = 0;
     for (const r of expired) {
       try {
-        const updated = await prisma.stockReservation.updateMany({
-          where: { id: r.id, status: "ACTIVE" },
-          data: { status: "EXPIRED" },
+        // M11.3c: wrap in transaction to handle SHARED pool release atomically
+        await prisma.$transaction(async (tx) => {
+          const updated = await tx.stockReservation.updateMany({
+            where: { id: r.id, status: "ACTIVE" },
+            data: { status: "EXPIRED" },
+          });
+          if (updated.count === 0) return;
+
+          // SHARED pool: release reservedQuantity
+          const shared = await resolveSharedPool(tx, r.merchantVariantId);
+          if (shared) {
+            await PoolService.releaseInTx(
+              tx,
+              shared.poolId,
+              shared.masterVariantId,
+              r.quantity
+            );
+          }
         });
-        if (updated.count > 0) released++;
+        released++;
       } catch {
-        // skip
+        // skip — next cron will retry if still ACTIVE
       }
     }
 
