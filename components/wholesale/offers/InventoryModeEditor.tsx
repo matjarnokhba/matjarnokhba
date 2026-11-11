@@ -160,11 +160,17 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <p className="mt-0.5 text-[11px] text-gray-600">
                 المخزون مشترك بين متجرك والجملة — أي بيع ينقص من نفس الرصيد
               </p>
-              <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
-                <span>إجمالي التجزئة: {state.totalRetail}</span>
-                <span>·</span>
-                <span>إجمالي الجملة: {state.totalWholesale}</span>
-              </div>
+              {state.mode === "SHARED" ? (
+                <div className="mt-1 rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
+                  المخزون الكلي: {state.totalWholesale} قطعة
+                </div>
+              ) : (
+                <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
+                  <span>إجمالي التجزئة: {state.totalRetail}</span>
+                  <span>·</span>
+                  <span>إجمالي الجملة: {state.totalWholesale}</span>
+                </div>
+              )}
             </div>
             {state.mode === "SHARED" && (
               <CheckCircle2 className="h-5 w-5 text-indigo-600" />
@@ -191,6 +197,13 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <p className="mt-0.5 text-[11px] text-gray-600">
                 كمية مستقلة للتجزئة وكمية مستقلة للجملة — لا تؤثر إحداهما في الأخرى
               </p>
+              <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
+                <span>تجزئة: {state.totalRetail}</span>
+                <span>·</span>
+                <span>جملة: {state.totalWholesale}</span>
+                <span>·</span>
+                <span className="font-bold text-amber-700">إجمالي: {state.totalRetail + state.totalWholesale}</span>
+              </div>
             </div>
             {state.mode === "SPLIT" && (
               <CheckCircle2 className="h-5 w-5 text-amber-600" />
@@ -236,7 +249,8 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               فصل المخزون
             </h3>
             <p className="mb-3 text-sm text-gray-700">
-              إجمالي المخزون الحالي: <strong>{totalForSplit}</strong>. حدد كم يبقى للتجزئة. الباقي يذهب للجملة.
+              إجمالي المخزون: <strong>{totalForSplit}</strong> قطعة (تجزئة {state.totalRetail} + جملة {state.totalWholesale}).
+              حدد كم يبقى للتجزئة. الباقي يذهب للجملة.
             </p>
             <div className="mb-3">
               <label className="mb-1 block text-xs font-medium text-gray-700">
@@ -253,6 +267,11 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <p className="mt-1 text-[11px] text-gray-500">
                 يبقى للجملة: {Math.max(0, totalForSplit - (parseInt(splitQty, 10) || 0))}
               </p>
+              {(parseInt(splitQty, 10) || 0) > totalForSplit && (
+                <p className="mt-1 rounded bg-amber-50 p-1 text-[11px] text-amber-700">
+                  ⚠ الرقم أكبر من المتاح ({totalForSplit}). سيُقص إلى {totalForSplit}.
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <button
