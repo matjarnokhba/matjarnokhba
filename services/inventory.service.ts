@@ -1,3 +1,5 @@
+import { PoolService } from "./pool.service";
+
 // ═══════════════════════════════════════════
 // InventoryService
 // البوابة الوحيدة لتعديل المخزون
@@ -73,6 +75,9 @@ export const InventoryService = {
       data: { quantity: afterQty },
     });
 
+    // M11.4b: mirror decrement to shared pool (if linked)
+    await PoolService.syncInventoryToPool(tx, variantId, -quantity);
+
     await tx.inventoryMovement.create({
       data: {
         inventoryId: inv.id,
@@ -125,6 +130,9 @@ export const InventoryService = {
       data: { quantity: afterQty },
     });
 
+    // M11.4b: mirror increment to shared pool (if linked)
+    await PoolService.syncInventoryToPool(tx, variantId, quantity);
+
     await tx.inventoryMovement.create({
       data: {
         inventoryId: inv.id,
@@ -175,6 +183,9 @@ export const InventoryService = {
       data: { quantity: afterQty },
     });
 
+    // M11.4b: mirror increment to shared pool (if linked)
+    await PoolService.syncInventoryToPool(tx, variantId, quantity);
+
     await tx.inventoryMovement.create({
       data: {
         inventoryId: inv.id,
@@ -217,6 +228,11 @@ export const InventoryService = {
       where: { id: inv.id },
       data: { quantity: newQuantity },
     });
+
+    // M11.4b: mirror change to shared pool (if linked)
+    if (change !== 0) {
+      await PoolService.syncInventoryToPool(tx, variantId, change);
+    }
 
     await tx.inventoryMovement.create({
       data: {

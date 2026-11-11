@@ -114,15 +114,18 @@ export const PoolService = {
     if (!Number.isInteger(qty) || qty <= 0) {
       throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
     }
-    await prisma.inventoryPoolVariant.upsert({
-      where: { poolId_masterVariantId: { poolId, masterVariantId } },
-      create: {
-        poolId,
-        masterVariantId,
-        quantity: qty,
-        reservedQuantity: 0,
-      },
-      update: { quantity: { increment: qty } },
+    await prisma.$transaction(async (tx) => {
+      await tx.inventoryPoolVariant.upsert({
+        where: { poolId_masterVariantId: { poolId, masterVariantId } },
+        create: {
+          poolId,
+          masterVariantId,
+          quantity: qty,
+          reservedQuantity: 0,
+        },
+        update: { quantity: { increment: qty } },
+      });
+      await PoolService.syncPoolToInventory(tx, poolId, masterVariantId, qty);
     });
   },
 
@@ -135,17 +138,20 @@ export const PoolService = {
     if (!Number.isInteger(qty) || qty <= 0) {
       throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
     }
-    const result = await prisma.inventoryPoolVariant.updateMany({
-      where: {
-        poolId,
-        masterVariantId,
-        quantity: { gte: qty },
-      },
-      data: { quantity: { decrement: qty } },
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.inventoryPoolVariant.updateMany({
+        where: {
+          poolId,
+          masterVariantId,
+          quantity: { gte: qty },
+        },
+        data: { quantity: { decrement: qty } },
+      });
+      if (result.count === 0) {
+        throw new ConflictError("المخزون غير كافٍ");
+      }
+      await PoolService.syncPoolToInventory(tx, poolId, masterVariantId, -qty);
     });
-    if (result.count === 0) {
-      throw new ConflictError("المخزون غير كافٍ");
-    }
   },
 
   /**
@@ -215,21 +221,24 @@ export const PoolService = {
     if (!Number.isInteger(qty) || qty <= 0) {
       throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
     }
-    const result = await prisma.inventoryPoolVariant.updateMany({
-      where: {
-        poolId,
-        masterVariantId,
-        quantity: { gte: qty },
-        reservedQuantity: { gte: qty },
-      },
-      data: {
-        quantity: { decrement: qty },
-        reservedQuantity: { decrement: qty },
-      },
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.inventoryPoolVariant.updateMany({
+        where: {
+          poolId,
+          masterVariantId,
+          quantity: { gte: qty },
+          reservedQuantity: { gte: qty },
+        },
+        data: {
+          quantity: { decrement: qty },
+          reservedQuantity: { decrement: qty },
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictError("لا يمكن إتمام العملية — حجز أو كمية غير كافية");
+      }
+      await PoolService.syncPoolToInventory(tx, poolId, masterVariantId, -qty);
     });
-    if (result.count === 0) {
-      throw new ConflictError("لا يمكن إتمام العملية — حجز أو كمية غير كافية");
-    }
   },
 
   /** Change pool mode (caller must have confirmed with seller). */
@@ -332,6 +341,89 @@ export const PoolService = {
     });
     if (result.count === 0) {
       throw new ConflictError("لا يمكن إتمام العملية — حجز أو كمية غير كافية");
+    }
+    // M11.4b: mirror decrement to retail Inventory
+    await PoolService.syncPoolToInventory(tx, poolId, masterVariantId, -qty);
+  },
+  // ═══ M11.4b: two-way quantity sync (SHARED only) ═══
+  /**
+   * When retail mutates Inventory.quantity, mirror to InventoryPoolVariant.quantity.
+   * Delta negative = decrement (validates sufficient stock).
+   * Delta positive = increment.
+   */
+  async syncInventoryToPool(
+    tx: any,
+    productVariantId: number,
+    delta: number
+  ): Promise<void> {
+    if (delta === 0) return;
+    const pv = await tx.productVariant.findUnique({
+      where: { id: productVariantId },
+      select: {
+        masterVariantId: true,
+        product: { select: { pool: { select: { id: true, mode: true } } } },
+      },
+    });
+    if (!pv?.masterVariantId) return;
+    const pool = pv.product?.pool;
+    if (!pool || pool.mode !== "SHARED") return;
+
+    if (delta < 0) {
+      const result = await tx.inventoryPoolVariant.updateMany({
+        where: {
+          poolId: pool.id,
+          masterVariantId: pv.masterVariantId,
+          quantity: { gte: -delta },
+        },
+        data: { quantity: { increment: delta } },
+      });
+      if (result.count === 0) {
+        throw new ConflictError("المخزون المشترك غير كافٍ");
+      }
+    } else {
+      await tx.inventoryPoolVariant.updateMany({
+        where: { poolId: pool.id, masterVariantId: pv.masterVariantId },
+        data: { quantity: { increment: delta } },
+      });
+    }
+  },
+
+  /**
+   * When wholesale mutates InventoryPoolVariant.quantity, mirror to all linked
+   * ProductVariant.Inventory.quantity (SHARED only).
+   */
+  async syncPoolToInventory(
+    tx: any,
+    poolId: number,
+    masterVariantId: number,
+    delta: number
+  ): Promise<void> {
+    if (delta === 0) return;
+    const pool = await tx.inventoryPool.findUnique({
+      where: { id: poolId },
+      select: { mode: true },
+    });
+    if (!pool || pool.mode !== "SHARED") return;
+
+    const pvs = await tx.productVariant.findMany({
+      where: { masterVariantId, product: { poolId } },
+      select: { id: true },
+    });
+    for (const pv of pvs) {
+      if (delta < 0) {
+        const result = await tx.inventory.updateMany({
+          where: { variantId: pv.id, quantity: { gte: -delta } },
+          data: { quantity: { increment: delta } },
+        });
+        if (result.count === 0) {
+          throw new ConflictError("مخزون التجزئة غير كافٍ");
+        }
+      } else {
+        await tx.inventory.updateMany({
+          where: { variantId: pv.id },
+          data: { quantity: { increment: delta } },
+        });
+      }
     }
   },
 };
