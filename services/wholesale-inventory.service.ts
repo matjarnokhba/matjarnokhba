@@ -8,7 +8,29 @@ import {
   ValidationError,
 } from "@/lib/wholesale/errors";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
+import { PoolService } from "./pool.service";
 
+// M11.3: resolve SHARED inventory pool for a merchant variant (null if SPLIT/legacy)
+async function resolveSharedPool(
+  tx: any,
+  merchantVariantId: number
+): Promise<{ poolId: number; masterVariantId: number } | null> {
+  const mv = await tx.merchantVariant.findUnique({
+    where: { id: merchantVariantId },
+    select: {
+      masterVariantId: true,
+      merchantProduct: {
+        select: {
+          pool: { select: { id: true, mode: true } },
+        },
+      },
+    },
+  });
+  if (!mv?.masterVariantId) return null;
+  const pool = mv.merchantProduct?.pool;
+  if (!pool || pool.mode !== "SHARED") return null;
+  return { poolId: pool.id, masterVariantId: mv.masterVariantId };
+}
 type InventoryMovementType =
   | "PURCHASE_IN"
   | "SALE_OUT"
@@ -328,6 +350,47 @@ export const WholesaleInventoryService = {
     if (!Number.isInteger(input.quantity) || input.quantity < 1) {
       throw new ValidationError("الكمية يجب أن تكون عددًا صحيحًا موجبًا");
     }
+
+    // M11.3: SHARED pool branch — bypass InventoryBalance, use pool
+    const sharedPool = await resolveSharedPool(tx, input.merchantVariantId);
+    if (sharedPool) {
+      await PoolService.reserveInTx(
+        tx,
+        sharedPool.poolId,
+        sharedPool.masterVariantId,
+        input.quantity
+      );
+      const stage0 = input.stage ?? "TEMP";
+      let expiresAt0: Date | null = input.expiresAt ?? null;
+      if (stage0 === "TEMP" && !expiresAt0) {
+        expiresAt0 = new Date(
+          Date.now() + WHOLESALE_CONFIG.TEMP_RESERVATION_MINUTES * 60 * 1000
+        );
+      }
+      if (stage0 === "CONFIRMED") expiresAt0 = null;
+      const res0 = await tx.stockReservation.create({
+        data: {
+          merchantVariantId: input.merchantVariantId,
+          inventoryAccountId: input.inventoryAccountId,
+          quantity: input.quantity,
+          stage: stage0 as any,
+          status: "ACTIVE",
+          expiresAt: expiresAt0,
+          referenceType: input.referenceType,
+          referenceId: input.referenceId,
+        },
+      });
+      await logWholesaleAction(tx, {
+        userId: input.userId ?? null,
+        action: "inventory.reserved",
+        entityType: "StockReservation",
+        entityId: res0.id,
+        after: { poolId: sharedPool.poolId, qty: input.quantity, mode: "SHARED" },
+      });
+      return { reservationId: res0.id };
+    }
+
+    // SPLIT mode — existing logic continues
 
     // M10.8a: auto-backfill from retail if no balance exists
     let locked = await lockBalance(

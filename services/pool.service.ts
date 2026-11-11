@@ -258,4 +258,80 @@ export const PoolService = {
       data: { poolId },
     });
   },
+  // ═══ M11.3: tx-aware variants (caller manages transaction) ═══
+  async reserveInTx(
+    tx: any,
+    poolId: number,
+    masterVariantId: number,
+    qty: number
+  ): Promise<void> {
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
+    }
+    const rows = await tx.$queryRaw<
+      Array<{ id: number; quantity: number; reservedQuantity: number }>
+    >`SELECT id, quantity, "reservedQuantity" FROM "InventoryPoolVariant"
+      WHERE "poolId" = ${poolId} AND "masterVariantId" = ${masterVariantId}
+      FOR UPDATE`;
+    const row = rows[0];
+    if (!row) throw new NotFoundError("InventoryPoolVariant", 0);
+    const available = row.quantity - row.reservedQuantity;
+    if (available < qty) {
+      throw new ConflictError(
+        `المخزون المتاح (${available}) أقل من المطلوب (${qty})`
+      );
+    }
+    await tx.inventoryPoolVariant.update({
+      where: { id: row.id },
+      data: { reservedQuantity: { increment: qty } },
+    });
+  },
+
+  async releaseInTx(
+    tx: any,
+    poolId: number,
+    masterVariantId: number,
+    qty: number
+  ): Promise<void> {
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
+    }
+    const result = await tx.inventoryPoolVariant.updateMany({
+      where: {
+        poolId,
+        masterVariantId,
+        reservedQuantity: { gte: qty },
+      },
+      data: { reservedQuantity: { decrement: qty } },
+    });
+    if (result.count === 0) {
+      throw new ConflictError("لا يوجد حجز بهذه الكمية");
+    }
+  },
+
+  async commitInTx(
+    tx: any,
+    poolId: number,
+    masterVariantId: number,
+    qty: number
+  ): Promise<void> {
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new ValidationError("qty يجب أن يكون عدداً صحيحاً موجباً");
+    }
+    const result = await tx.inventoryPoolVariant.updateMany({
+      where: {
+        poolId,
+        masterVariantId,
+        quantity: { gte: qty },
+        reservedQuantity: { gte: qty },
+      },
+      data: {
+        quantity: { decrement: qty },
+        reservedQuantity: { decrement: qty },
+      },
+    });
+    if (result.count === 0) {
+      throw new ConflictError("لا يمكن إتمام العملية — حجز أو كمية غير كافية");
+    }
+  },
 };
