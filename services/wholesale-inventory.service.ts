@@ -540,6 +540,17 @@ export const WholesaleInventoryService = {
     if (!r) throw new NotFoundError("StockReservation", reservationId);
     if (r.status !== "ACTIVE") return; // already released/consumed
 
+    // M11.3: SHARED pool release (restore reservedQuantity in pool)
+    const relShared = await resolveSharedPool(tx, r.merchantVariantId);
+    if (relShared) {
+      await PoolService.releaseInTx(
+        tx,
+        relShared.poolId,
+        relShared.masterVariantId,
+        r.quantity
+      );
+    }
+
     await tx.stockReservation.update({
       where: { id: reservationId },
       data: { status: "RELEASED" },
@@ -574,6 +585,33 @@ export const WholesaleInventoryService = {
     }
     if (r.expiresAt && r.expiresAt < new Date()) {
       throw new ReservationExpiredError();
+    }
+
+    // M11.3: SHARED pool commit (bypass InventoryBalance + FIFO)
+    const comShared = await resolveSharedPool(tx, r.merchantVariantId);
+    if (comShared) {
+      await PoolService.commitInTx(
+        tx,
+        comShared.poolId,
+        comShared.masterVariantId,
+        r.quantity
+      );
+      await tx.stockReservation.update({
+        where: { id: reservationId },
+        data: { status: "CONSUMED" },
+      });
+      await logWholesaleAction(tx, {
+        userId: userId ?? null,
+        action: "inventory.reservation_committed",
+        entityType: "StockReservation",
+        entityId: reservationId,
+        after: {
+          poolId: comShared.poolId,
+          quantity: r.quantity,
+          mode: "SHARED",
+        },
+      });
+      return { ledgerId: 0 }; // SHARED mode: no InventoryLedger entry
     }
 
     const out = await applyOutMovement(
