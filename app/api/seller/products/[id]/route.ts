@@ -441,7 +441,17 @@ export async function PATCH(
         const invMap = new Map(allInventories.map((i) => [i.variantId, i]));
 
         const variantUpdates: Array<{ id: number; price?: number; barcode: string }> = [];
-        const stockUpdates: Array<{ variantId: number; stock: number }> = [];
+        const pvData = await tx.productVariant.findMany({
+          where: { id: { in: targetIds } },
+          select: {
+            id: true,
+            masterVariantId: true,
+            product: { select: { pool: { select: { id: true, mode: true } } } },
+          },
+        });
+        const pvMap = new Map(pvData.map((p) => [p.id, p]));
+
+        const stockUpdates: Array<{ variantId: number; stock: number; oldQty: number }> = [];
 
         for (let vIdx = 0; vIdx < data.variants.length; vIdx++) {
           const vPatch = data.variants[vIdx];
@@ -467,7 +477,7 @@ export async function PATCH(
                 `لا يمكن تخفيض مخزون المتغير #${vIdx + 1} إلى ${vPatch.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة.`
               );
             }
-            stockUpdates.push({ variantId: vPatch.id, stock: vPatch.stock });
+            stockUpdates.push({ variantId: vPatch.id, stock: vPatch.stock, oldQty: inv.quantity });
           }
         }
 
@@ -492,6 +502,41 @@ export async function PATCH(
             })
           )
         );
+        // M12.2: sync pool for SHARED mode
+        const deltaByPoolMv = new Map<string, number>();
+        for (const su of stockUpdates) {
+          const pvInfo = pvMap.get(su.variantId);
+          const pool = pvInfo?.product?.pool;
+          if (!pvInfo?.masterVariantId || !pool || pool.mode !== "SHARED") continue;
+          const delta = su.stock - su.oldQty;
+          if (delta === 0) continue;
+          const key = `${pool.id}:${pvInfo.masterVariantId}`;
+          deltaByPoolMv.set(key, (deltaByPoolMv.get(key) || 0) + delta);
+        }
+
+        for (const [key, delta] of deltaByPoolMv) {
+          const [poolIdStr, mvIdStr] = key.split(":");
+          const poolId = parseInt(poolIdStr, 10);
+          const mvId = parseInt(mvIdStr, 10);
+          if (delta < 0) {
+            const r = await tx.inventoryPoolVariant.updateMany({
+              where: {
+                poolId,
+                masterVariantId: mvId,
+                quantity: { gte: -delta },
+              },
+              data: { quantity: { increment: delta } },
+            });
+            if (r.count === 0) {
+              throw new Error("لا يمكن تقليل المخزون المشترك — الكمية أقل من المتاح في الجملة");
+            }
+          } else {
+            await tx.inventoryPoolVariant.updateMany({
+              where: { poolId, masterVariantId: mvId },
+              data: { quantity: { increment: delta } },
+            });
+          }
+        }
       }
 
       // Base variant (no variants case) — same guard
