@@ -754,7 +754,9 @@ model ProductVariant {
   inventory      Inventory?
   storeSaleItems StoreSaleItem[]
 
-  orderItems OrderItem[]
+  orderItems      OrderItem[]
+  masterVariant   MasterVariant? @relation(fields: [masterVariantId], references: [id])
+  masterVariantId Int?
 
   @@unique([productId, optionsHash])
   @@unique([sellerId, sku])
@@ -2993,6 +2995,7 @@ model MasterVariant {
   // ─── M1.3 back-relations ───
   priceComparisons PriceComparisonCache[]
   poolVariants     InventoryPoolVariant[]
+  retailVariants   ProductVariant[]
 
   @@unique([masterId, attributesHash])
   @@index([barcode])
