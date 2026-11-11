@@ -74,6 +74,7 @@ export type MarketplaceFilters = {
   claimVerified: string;
   minPrice: string;
   maxPrice: string;
+  sort: string;
 };
 
 export function formatNumber(n: number): string {

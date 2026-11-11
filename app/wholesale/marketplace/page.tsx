@@ -19,6 +19,7 @@ export default async function MarketplacePage({
     claimVerified?: string;
     minPrice?: string;
     maxPrice?: string;
+    sort?: string;
     page?: string;
   }>;
 }) {
@@ -32,6 +33,7 @@ export default async function MarketplacePage({
   const claimVerifiedRaw = params.claimVerified || "";
   const minPriceRaw = params.minPrice || "";
   const maxPriceRaw = params.maxPrice || "";
+  const sort = params.sort || "";
   const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
 
   // Verify user has at least one active BU with WHOLESALE_BUY capability
@@ -114,11 +116,30 @@ export default async function MarketplacePage({
     ];
   }
 
+  let orderBy: any;
+  switch (sort) {
+    case "price_asc":
+      orderBy = [{ wholesalePrice: "asc" }, { createdAt: "desc" }];
+      break;
+    case "price_desc":
+      orderBy = [{ wholesalePrice: "desc" }, { createdAt: "desc" }];
+      break;
+    case "moq_asc":
+      orderBy = [{ minOrderQty: "asc" }, { createdAt: "desc" }];
+      break;
+    case "verified_first":
+      orderBy = [{ claimVerified: "desc" }, { createdAt: "desc" }];
+      break;
+    case "newest":
+    default:
+      orderBy = [{ createdAt: "desc" }];
+  }
+
   const [total, rows] = await Promise.all([
     prisma.wholesaleOffer.count({ where }),
     prisma.wholesaleOffer.findMany({
       where,
-      orderBy: [{ claimVerified: "desc" }, { createdAt: "desc" }],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       include: {
@@ -194,6 +215,7 @@ export default async function MarketplacePage({
         claimVerified: claimVerifiedRaw,
         minPrice: minPriceRaw,
         maxPrice: maxPriceRaw,
+        sort,
       }}
       pagination={{
         page,
