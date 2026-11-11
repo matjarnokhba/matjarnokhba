@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { SessionService } from "@/services/session.service";
 import { prisma } from "@/lib/prisma";
+import { resolveOfferStockMap } from "@/lib/wholesale/stock-resolver";
 import { OfferDetail } from "@/components/wholesale/offers/OfferDetail";
 import type { OfferDetail as OfferDetailType } from "@/components/wholesale/offers/types";
 
@@ -140,6 +141,8 @@ export default async function OfferDetailPage({
   const isMember = offer.businessUnit.members.length > 0;
   if (!isOwner && !isMember && !isAdmin) notFound();
 
+  const stockMap = await resolveOfferStockMap(offer);
+
   const serialized: OfferDetailType = {
     id: offer.id,
     masterId: offer.master.id,
@@ -191,7 +194,7 @@ export default async function OfferDetailPage({
           name: string;
           value: string;
         }>) ?? [],
-      availableStock: availableStockByVariantId.get(v.id) ?? 0,
+      availableStock: stockMap.get(v.id) ?? 0,
       tiers: v.tiers.map((t) => ({
         id: t.id,
         minQty: t.minQty,

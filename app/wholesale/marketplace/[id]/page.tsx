@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { SessionService } from "@/services/session.service";
 import { prisma } from "@/lib/prisma";
+import { resolveOfferStockMap } from "@/lib/wholesale/stock-resolver";
 import { OfferDetailPublic } from "@/components/marketplace/OfferDetailPublic";
 import type {
   PublicOfferDetail,
@@ -193,6 +194,8 @@ export default async function MarketplaceOfferDetailPage({
     }
   }
 
+  const stockMap = await resolveOfferStockMap(offer);
+
   const serialized: PublicOfferDetail = {
     id: offer.id,
     masterId: offer.masterId,
@@ -239,9 +242,7 @@ export default async function MarketplaceOfferDetailPage({
         maxQty: t.maxQty,
         unitPrice: Number(t.unitPrice),
       })),
-      availableStock: v.merchantVariantId != null
-        ? (availableStockByMerchantVariant.get(v.merchantVariantId) ?? 0)
-        : null,
+      availableStock: stockMap.get(v.id) ?? 0,
     })),
     bundleRules: offer.bundleRules.map((r) => ({
       id: r.id,
