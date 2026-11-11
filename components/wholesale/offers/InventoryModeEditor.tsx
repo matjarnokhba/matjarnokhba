@@ -128,7 +128,11 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     );
   }
 
-  const totalForSplit = state.totalWholesale + state.totalRetail;
+  // M12.6: realTotal per mode (SHARED: retail=pool=same stock)
+  const realTotal = state.mode === "SHARED"
+    ? state.totalRetail
+    : state.totalRetail + state.totalWholesale;
+  const totalForSplit = realTotal;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -163,19 +167,25 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               {state.mode === "SHARED" ? (
                 <div className="mt-1 space-y-1">
                   <div className="rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
-                    المخزون الكلي: {state.totalRetail} قطعة
+                    المخزون الحقيقي: {state.totalRetail} قطعة
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    رقم واحد يظهر في: متجر التجزئة · المحل · الجملة
+                    رقم واحد — يظهر في: متجر التجزئة · المحل · الجملة
+                  </p>
+                  <p className="text-[10px] text-indigo-600">
+                    ✓ أي بيع من أي قناة ينقص هذا الرقم
                   </p>
                 </div>
               ) : (
                 <div className="mt-1 space-y-1">
                   <div className="rounded bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">
-                    المخزون الكلي: {state.totalRetail + state.totalWholesale} قطعة
+                    الإجمالي: {state.totalRetail + state.totalWholesale} قطعة
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    تجزئة: {state.totalRetail} · جملة: {state.totalWholesale} (مستقلان)
+                    تجزئة {state.totalRetail} + جملة {state.totalWholesale} = {state.totalRetail + state.totalWholesale}
+                  </p>
+                  <p className="text-[10px] text-amber-600">
+                    ✓ مخزونان منفصلان — البيع من أحدهما لا يؤثر على الآخر
                   </p>
                 </div>
               )}
@@ -262,10 +272,17 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <Split className="h-5 w-5 text-amber-600" />
               فصل المخزون
             </h3>
-            <p className="mb-3 text-sm text-gray-700">
-              إجمالي المخزون: <strong>{totalForSplit}</strong> قطعة (تجزئة {state.totalRetail} + جملة {state.totalWholesale}).
-              حدد كم يبقى للتجزئة. الباقي يذهب للجملة.
-            </p>
+            {state.mode === "SHARED" ? (
+              <p className="mb-3 text-sm text-gray-700">
+                المخزون الحقيقي: <strong>{realTotal}</strong> قطعة (رقم واحد في كل القنوات).
+                عند الفصل، حدد كم يبقى للتجزئة، والباقي يذهب للجملة.
+              </p>
+            ) : (
+              <p className="mb-3 text-sm text-gray-700">
+                الحالي: تجزئة {state.totalRetail} + جملة {state.totalWholesale} = <strong>{realTotal}</strong>.
+                حدد كم يبقى للتجزئة.
+              </p>
+            )}
             <div className="mb-3">
               <label className="mb-1 block text-xs font-medium text-gray-700">
                 للتجزئة
