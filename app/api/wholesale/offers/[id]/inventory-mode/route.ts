@@ -162,7 +162,9 @@ export async function POST(
     });
     if (!pool) return NextResponse.json({ success: false, message: "pool غير موجود" }, { status: 404 });
 
-    if (pool.mode === mode) {
+    // M11.9c: allow SPLIT→SPLIT with new retailSplit (re-distribute)
+    // Only skip when mode === SHARED (already unified) OR SPLIT without new retailSplit
+    if (pool.mode === mode && (mode === "SHARED" || retailSplit === undefined)) {
       return NextResponse.json({ success: true, mode, changed: false });
     }
 
