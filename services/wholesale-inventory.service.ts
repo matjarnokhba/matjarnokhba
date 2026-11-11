@@ -11,10 +11,12 @@ import { logWholesaleAction } from "@/lib/wholesale/audit";
 import { PoolService } from "./pool.service";
 
 // M11.3: resolve SHARED inventory pool for a merchant variant (null if SPLIT/legacy)
-async function resolveSharedPool(
+// M11.10: pool is source of truth for BOTH SPLIT and SHARED.
+// Returns pool info whenever a pool exists for the product.
+async function resolvePool(
   tx: any,
   merchantVariantId: number
-): Promise<{ poolId: number; masterVariantId: number } | null> {
+): Promise<{ poolId: number; masterVariantId: number; mode: string } | null> {
   const mv = await tx.merchantVariant.findUnique({
     where: { id: merchantVariantId },
     select: {
@@ -28,8 +30,8 @@ async function resolveSharedPool(
   });
   if (!mv?.masterVariantId) return null;
   const pool = mv.merchantProduct?.pool;
-  if (!pool || pool.mode !== "SHARED") return null;
-  return { poolId: pool.id, masterVariantId: mv.masterVariantId };
+  if (!pool) return null;
+  return { poolId: pool.id, masterVariantId: mv.masterVariantId, mode: pool.mode };
 }
 type InventoryMovementType =
   | "PURCHASE_IN"
@@ -351,13 +353,13 @@ export const WholesaleInventoryService = {
       throw new ValidationError("الكمية يجب أن تكون عددًا صحيحًا موجبًا");
     }
 
-    // M11.3: SHARED pool branch — bypass InventoryBalance, use pool
-    const sharedPool = await resolveSharedPool(tx, input.merchantVariantId);
-    if (sharedPool) {
+    // M11.10: pool branch for both SPLIT and SHARED
+    const pool = await resolvePool(tx, input.merchantVariantId);
+    if (pool) {
       await PoolService.reserveInTx(
         tx,
-        sharedPool.poolId,
-        sharedPool.masterVariantId,
+        pool.poolId,
+        pool.masterVariantId,
         input.quantity
       );
       const stage0 = input.stage ?? "TEMP";
@@ -385,12 +387,12 @@ export const WholesaleInventoryService = {
         action: "inventory.reserved",
         entityType: "StockReservation",
         entityId: res0.id,
-        after: { poolId: sharedPool.poolId, qty: input.quantity, mode: "SHARED" },
+        after: { poolId: pool.poolId, qty: input.quantity, mode: pool.mode },
       });
       return { reservationId: res0.id };
     }
 
-    // SPLIT mode — existing logic continues
+    // Legacy fallback (no pool) — InventoryBalance path
 
     // M10.8a: auto-backfill from retail if no balance exists
     let locked = await lockBalance(
@@ -540,13 +542,13 @@ export const WholesaleInventoryService = {
     if (!r) throw new NotFoundError("StockReservation", reservationId);
     if (r.status !== "ACTIVE") return; // already released/consumed
 
-    // M11.3: SHARED pool release (restore reservedQuantity in pool)
-    const relShared = await resolveSharedPool(tx, r.merchantVariantId);
-    if (relShared) {
+    // M11.10: pool release (both modes)
+    const relPool = await resolvePool(tx, r.merchantVariantId);
+    if (relPool) {
       await PoolService.releaseInTx(
         tx,
-        relShared.poolId,
-        relShared.masterVariantId,
+        relPool.poolId,
+        relPool.masterVariantId,
         r.quantity
       );
     }
@@ -587,13 +589,13 @@ export const WholesaleInventoryService = {
       throw new ReservationExpiredError();
     }
 
-    // M11.3: SHARED pool commit (bypass InventoryBalance + FIFO)
-    const comShared = await resolveSharedPool(tx, r.merchantVariantId);
-    if (comShared) {
+    // M11.10: pool commit (both modes)
+    const comPool = await resolvePool(tx, r.merchantVariantId);
+    if (comPool) {
       await PoolService.commitInTx(
         tx,
-        comShared.poolId,
-        comShared.masterVariantId,
+        comPool.poolId,
+        comPool.masterVariantId,
         r.quantity
       );
       await tx.stockReservation.update({
@@ -606,12 +608,12 @@ export const WholesaleInventoryService = {
         entityType: "StockReservation",
         entityId: reservationId,
         after: {
-          poolId: comShared.poolId,
+          poolId: comPool.poolId,
           quantity: r.quantity,
-          mode: "SHARED",
+          mode: comPool.mode,
         },
       });
-      return { ledgerId: 0 }; // SHARED mode: no InventoryLedger entry
+      return { ledgerId: 0 }; // Pool-based: no InventoryLedger entry
     }
 
     const out = await applyOutMovement(
@@ -866,15 +868,10 @@ export const WholesaleInventoryService = {
           });
           if (updated.count === 0) return;
 
-          // SHARED pool: release reservedQuantity
-          const shared = await resolveSharedPool(tx, r.merchantVariantId);
-          if (shared) {
-            await PoolService.releaseInTx(
-              tx,
-              shared.poolId,
-              shared.masterVariantId,
-              r.quantity
-            );
+          // M11.10: pool release (both modes)
+          const p = await resolvePool(tx, r.merchantVariantId);
+          if (p) {
+            await PoolService.releaseInTx(tx, p.poolId, p.masterVariantId, r.quantity);
           }
         });
         released++;
