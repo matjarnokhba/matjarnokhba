@@ -163,10 +163,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               {state.mode === "SHARED" ? (
                 <div className="mt-1 space-y-1">
                   <div className="rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
-                    المخزون الكلي: {Math.max(state.totalRetail, state.totalWholesale)} قطعة
+                    المخزون الكلي: {state.totalRetail} قطعة
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    رقم واحد يظهر في كل القنوات (متجر · محل · جملة)
+                    رقم واحد يظهر في: متجر التجزئة · المحل · الجملة
                   </p>
                 </div>
               ) : (
@@ -229,8 +229,14 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
             {state.variants.map((v) => (
               <div key={v.masterVariantId} className="flex justify-between gap-2">
                 <span className="flex-1 truncate text-gray-700">{fmtAttrs(v.attributes)}</span>
-                <span className="text-gray-500">تجزئة: {v.retailQty}</span>
-                <span className="text-gray-500">جملة: {v.wholesaleQty}</span>
+                {state.mode === "SHARED" ? (
+                  <span className="font-bold text-indigo-700">{Math.max(v.retailQty, v.wholesaleQty)}</span>
+                ) : (
+                  <>
+                    <span className="text-gray-500">تجزئة: {v.retailQty}</span>
+                    <span className="text-gray-500">جملة: {v.wholesaleQty}</span>
+                  </>
+                )}
               </div>
             ))}
           </div>
