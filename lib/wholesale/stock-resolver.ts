@@ -1,11 +1,16 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * M11.7: resolve available stock for an offer's variants.
- * - SHARED mode → InventoryPoolVariant (quantity - reservedQuantity)
- * - SPLIT/legacy → InventoryBalance[WHOLESALE] - active reservations
+ * M11.7 + M11.9d: resolve available stock for an offer's variants.
  *
- * Returns Map<offerVariantId, availableStock>
+ * Pool is the SINGLE source of truth for wholesale stock.
+ *   - SHARED mode: pool.quantity = total (retail + wholesale)
+ *   - SPLIT mode:  pool.quantity = wholesale only
+ *
+ * StockReservation is the single source of truth for holds.
+ * Available = pool.quantity - sum(active StockReservation).
+ *
+ * Legacy fallback: if no pool exists → InventoryBalance[WHOLESALE].
  */
 export async function resolveOfferStockMap(offer: {
   businessUnitId: number;
@@ -28,16 +33,41 @@ export async function resolveOfferStockMap(offer: {
     include: { variants: true },
   });
 
-  if (pool?.mode === "SHARED") {
+  if (pool) {
     const poolByMv = new Map(pool.variants.map((v) => [v.masterVariantId, v]));
+
+    // Compute active reservations per merchantVariantId
+    const merchantVariantIds = offer.variants
+      .map((v) => v.merchantVariantId)
+      .filter((id): id is number => typeof id === "number");
+
+    const reservedByMv = new Map<number, number>();
+    if (merchantVariantIds.length > 0) {
+      const reservations = await prisma.stockReservation.findMany({
+        where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
+        select: { merchantVariantId: true, quantity: true },
+      });
+      for (const r of reservations) {
+        reservedByMv.set(
+          r.merchantVariantId,
+          (reservedByMv.get(r.merchantVariantId) || 0) + r.quantity
+        );
+      }
+    }
+
     for (const ov of offer.variants) {
       const pv = poolByMv.get(ov.masterVariantId);
-      result.set(ov.id, pv ? Math.max(0, pv.quantity - pv.reservedQuantity) : 0);
+      const poolQty = pv?.quantity ?? 0;
+      const reserved =
+        ov.merchantVariantId != null
+          ? (reservedByMv.get(ov.merchantVariantId) ?? 0)
+          : 0;
+      result.set(ov.id, Math.max(0, poolQty - reserved));
     }
     return result;
   }
 
-  // SPLIT
+  // Legacy fallback: no pool → InventoryBalance[WHOLESALE]
   const merchantVariantIds = offer.variants
     .map((v) => v.merchantVariantId)
     .filter((id): id is number => typeof id === "number");
@@ -64,10 +94,7 @@ export async function resolveOfferStockMap(offer: {
             select: { merchantVariantId: true, quantity: true },
           }),
           prisma.stockReservation.findMany({
-            where: {
-              merchantVariantId: { in: merchantVariantIds },
-              status: "ACTIVE",
-            },
+            where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
             select: { merchantVariantId: true, quantity: true },
           }),
         ]);
