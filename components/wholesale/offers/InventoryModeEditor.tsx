@@ -219,13 +219,20 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <p className="mt-0.5 text-[11px] text-gray-600">
                 كمية مستقلة للتجزئة وكمية مستقلة للجملة — لا تؤثر إحداهما في الأخرى
               </p>
-              <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
-                <span>تجزئة: {state.totalRetail}</span>
-                <span>·</span>
-                <span>جملة: {state.totalWholesale}</span>
-                <span>·</span>
-                <span className="font-bold text-amber-700">إجمالي: {state.totalRetail + state.totalWholesale}</span>
-              </div>
+              {state.mode === "SHARED" ? (
+                <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-[10px] text-amber-800">
+                  المخزون مشترك حالياً — إجمالي {state.totalWholesale} قطعة
+                  (التحويل إلى منفصل سيتطلب تحديد التوزيع)
+                </div>
+              ) : (
+                <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
+                  <span>تجزئة: {state.totalRetail}</span>
+                  <span>·</span>
+                  <span>جملة: {state.totalWholesale}</span>
+                  <span>·</span>
+                  <span className="font-bold text-amber-700">إجمالي: {state.totalRetail + state.totalWholesale}</span>
+                </div>
+              )}
             </div>
             {state.mode === "SPLIT" && (
               <CheckCircle2 className="h-5 w-5 text-amber-600" />
