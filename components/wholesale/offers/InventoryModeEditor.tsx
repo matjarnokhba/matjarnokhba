@@ -161,8 +161,13 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
                 المخزون مشترك بين متجرك والجملة — أي بيع ينقص من نفس الرصيد
               </p>
               {state.mode === "SHARED" ? (
-                <div className="mt-1 rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
-                  المخزون الكلي: {state.totalWholesale} قطعة
+                <div className="mt-1 space-y-1">
+                  <div className="rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
+                    المخزون الكلي: {Math.max(state.totalRetail, state.totalWholesale)} قطعة
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    رقم واحد يظهر في كل القنوات (متجر · محل · جملة)
+                  </p>
                 </div>
               ) : (
                 <div className="mt-1 space-y-1">
@@ -170,7 +175,7 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
                     المخزون الكلي: {state.totalRetail + state.totalWholesale} قطعة
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    تجزئة: {state.totalRetail} · جملة: {state.totalWholesale}
+                    تجزئة: {state.totalRetail} · جملة: {state.totalWholesale} (مستقلان)
                   </p>
                 </div>
               )}
