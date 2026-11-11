@@ -227,10 +227,24 @@ export async function POST(
       });
     } else {
       // mode === "SPLIT" — separate retail vs wholesale
+      const wasShared = pool.mode === "SHARED";
       await prisma.$transaction(async (tx) => {
         for (const mvId of masterVariantIds) {
           const poolVar = pool.variants.find((v) => v.masterVariantId === mvId)!;
-          const totalQty = poolVar.quantity;
+          
+          // M11.9a: if coming from SHARED, pool===inv (already synced) → total = pool.
+          // If already SPLIT, total = pool + current retail.
+          const pvsForTotal = await tx.productVariant.findMany({
+            where: { sellerId: seller.id, masterVariantId: mvId },
+            select: { inventory: { select: { quantity: true } } },
+          });
+          const currentRetail = pvsForTotal.reduce(
+            (s, pv) => s + (pv.inventory?.quantity ?? 0),
+            0
+          );
+          const totalQty = wasShared
+            ? poolVar.quantity
+            : poolVar.quantity + currentRetail;
           const splitQty = retailSplit ?? Math.floor(totalQty / 2);
           const clampedRetail = Math.max(0, Math.min(totalQty, splitQty));
           const wholesaleQty = totalQty - clampedRetail;
