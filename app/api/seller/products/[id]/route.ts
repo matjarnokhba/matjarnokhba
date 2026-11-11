@@ -431,53 +431,67 @@ export async function PATCH(
       }
 
       // Variant updates with INVENTORY GUARD
+            // Variant updates with INVENTORY GUARD (batch-optimized)
       if (data.variants && data.variants.length > 0) {
+        const targetIds = data.variants.map((v) => v.id);
+        const allInventories = await tx.inventory.findMany({
+          where: { variantId: { in: targetIds } },
+          select: { variantId: true, reservedQuantity: true, quantity: true },
+        });
+        const invMap = new Map(allInventories.map((i) => [i.variantId, i]));
+
+        const variantUpdates: Array<{ id: number; price?: number; barcode: string }> = [];
+        const stockUpdates: Array<{ variantId: number; stock: number }> = [];
+
         for (let vIdx = 0; vIdx < data.variants.length; vIdx++) {
           const vPatch = data.variants[vIdx];
-          const existingVariant = product.variants.find(
-            (v) => v.id === vPatch.id
-          );
+          const existingVariant = product.variants.find((v) => v.id === vPatch.id);
           if (!existingVariant) continue;
-
-          const variantUpdate: Record<string, unknown> = {};
-          if (vPatch.price !== undefined) variantUpdate.price = vPatch.price;
 
           let finalBc: string;
           if (vPatch.barcode === undefined) {
-            finalBc =
-              existingVariant.barcode || `NK-${productId}-${existingVariant.id}`;
+            finalBc = existingVariant.barcode || `NK-${productId}-${existingVariant.id}`;
           } else if (!vPatch.barcode || !vPatch.barcode.trim()) {
             finalBc = `NK-${productId}-${existingVariant.id}`;
           } else {
             finalBc = vPatch.barcode.trim();
           }
-          variantUpdate.barcode = finalBc;
 
-          if (Object.keys(variantUpdate).length > 0) {
-            await tx.productVariant.update({
-              where: { id: vPatch.id },
-              data: variantUpdate,
-            });
-          }
+          variantUpdates.push({ id: vPatch.id, price: vPatch.price, barcode: finalBc });
 
-          // 🛡️ INVENTORY GUARD
           if (vPatch.stock !== undefined) {
-            const inv = await tx.inventory.findUnique({
-              where: { variantId: vPatch.id },
-              select: { reservedQuantity: true, quantity: true },
-            });
+            const inv = invMap.get(vPatch.id);
             if (!inv) throw new Error("inventory غير موجود");
             if (vPatch.stock < inv.reservedQuantity) {
               throw new Error(
-                `لا يمكن تخفيض مخزون المتغير #${vIdx + 1} إلى ${vPatch.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة لطلبات حالية.`
+                `لا يمكن تخفيض مخزون المتغير #${vIdx + 1} إلى ${vPatch.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة.`
               );
             }
-            await tx.inventory.updateMany({
-              where: { variantId: vPatch.id },
-              data: { quantity: vPatch.stock },
-            });
+            stockUpdates.push({ variantId: vPatch.id, stock: vPatch.stock });
           }
         }
+
+        await Promise.all(
+          variantUpdates.map((u) => {
+            const payload: Record<string, unknown> = { barcode: u.barcode };
+            if (u.price !== undefined) payload.price = u.price;
+            return tx.productVariant.update({ where: { id: u.id }, data: payload });
+          })
+        );
+
+        const stockGroups = new Map<number, number[]>();
+        for (const su of stockUpdates) {
+          if (!stockGroups.has(su.stock)) stockGroups.set(su.stock, []);
+          stockGroups.get(su.stock)!.push(su.variantId);
+        }
+        await Promise.all(
+          Array.from(stockGroups.entries()).map(([stock, ids]) =>
+            tx.inventory.updateMany({
+              where: { variantId: { in: ids } },
+              data: { quantity: stock },
+            })
+          )
+        );
       }
 
       // Base variant (no variants case) — same guard
@@ -547,7 +561,7 @@ export async function PATCH(
         requiresReapproval,
         changedFields: changedKeys,
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     try {
     } catch (e) {

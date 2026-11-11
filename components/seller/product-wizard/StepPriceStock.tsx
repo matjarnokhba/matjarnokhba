@@ -113,11 +113,11 @@ export default function StepPriceStock({
     field: "price" | "stock" | "barcode",
     value: number | string
   ) {
-    setEditVariants((prev) => {
-      const next = prev.map((v) => (v.id === id ? { ...v, [field]: value } : v));
-      update("existingVariants", next);
-      return next;
-    });
+    const next = editVariants.map((v) =>
+      v.id === id ? { ...v, [field]: value } : v
+    );
+    setEditVariants(next);
+    update("existingVariants", next);
   }
 
   return (
