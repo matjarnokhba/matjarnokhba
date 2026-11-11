@@ -8,7 +8,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Store,
-  Building2,
 } from "lucide-react";
 
 type Props = {
@@ -48,7 +47,7 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showSplitDialog, setShowSplitDialog] = useState(false);
-  const [splitQty, setSplitQty] = useState("");
+  const [splitMap, setSplitMap] = useState<Record<number, string>>({});
 
   useEffect(() => {
     load();
@@ -69,7 +68,12 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     }
   }
 
-  async function applyMode(mode: "SHARED" | "SPLIT", retailSplit?: number) {
+  async function applyShared() {
+    if (!state || readOnly) return;
+    if (!state.hasRetailProduct) {
+      setError("لا يوجد منتج تجزئة مرتبط. أضف المنتج إلى متجرك أولاً.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     setSuccess("");
@@ -77,14 +81,63 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
       const res = await fetch(`/api/wholesale/offers/${offerId}/inventory-mode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, retailSplit }),
+        body: JSON.stringify({ mode: "SHARED" }),
       });
       const d = await res.json();
       if (!d.success) {
         setError(d.message || "فشل التبديل");
         return;
       }
-      setSuccess(mode === "SHARED" ? "تم تفعيل المخزون الموحد" : "تم فصل المخزون");
+      setSuccess("تم تفعيل المخزون الموحد");
+      await load();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch {
+      setError("خطأ في الاتصال");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleSplitClick() {
+    if (!state || readOnly) return;
+    const map: Record<number, string> = {};
+    for (const v of state.variants) {
+      map[v.masterVariantId] = String(v.retailQty);
+    }
+    setSplitMap(map);
+    setShowSplitDialog(true);
+  }
+
+  function setVariantSplit(mvId: number, raw: string) {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    setSplitMap((prev) => ({ ...prev, [mvId]: raw }));
+  }
+
+  async function applySplit() {
+    if (!state || readOnly) return;
+    const variantSplits: Array<{ masterVariantId: number; retailQty: number }> = [];
+    for (const v of state.variants) {
+      const total = v.wholesaleQty + v.retailQty;
+      const input = parseInt(splitMap[v.masterVariantId] || "0", 10) || 0;
+      const clamped = Math.max(0, Math.min(total, input));
+      variantSplits.push({ masterVariantId: v.masterVariantId, retailQty: clamped });
+    }
+
+    setSubmitting(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch(`/api/wholesale/offers/${offerId}/inventory-mode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "SPLIT", variantSplits }),
+      });
+      const d = await res.json();
+      if (!d.success) {
+        setError(d.message || "فشل التبديل");
+        return;
+      }
+      setSuccess("تم فصل المخزون");
       setShowSplitDialog(false);
       await load();
       setTimeout(() => setSuccess(""), 3000);
@@ -95,19 +148,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     }
   }
 
-  function handleSharedClick() {
-    if (!state || readOnly) return;
-    if (!state.hasRetailProduct) {
-      setError("لا يوجد منتج تجزئة مرتبط. أضف المنتج إلى متجرك أولاً.");
-      return;
-    }
-    applyMode("SHARED");
-  }
-
-  function handleSplitClick() {
-    if (!state || readOnly) return;
-    setSplitQty(String(Math.floor(state.totalWholesale / 2)));
-    setShowSplitDialog(true);
+  function resetSplitDialog() {
+    setShowSplitDialog(false);
+    setSplitMap({});
+    setError("");
   }
 
   if (loading) {
@@ -128,11 +172,11 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     );
   }
 
-  // M12.6: realTotal per mode (SHARED: retail=pool=same stock)
-  const realTotal = state.mode === "SHARED"
-    ? state.totalRetail
-    : state.totalRetail + state.totalWholesale;
-  const totalForSplit = realTotal;
+  const grandTotal = state.totalWholesale + state.totalRetail;
+  const totalRetailInput = Object.values(splitMap).reduce(
+    (s, v) => s + (parseInt(v, 10) || 0),
+    0
+  );
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -145,11 +189,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
       </p>
 
       <div className="space-y-2">
-        {/* SHARED */}
         <button
           type="button"
-          onClick={handleSharedClick}
-          disabled={readOnly || submitting}
+          onClick={applyShared}
+          disabled={readOnly || submitting || state.mode === "SHARED"}
           className={`w-full rounded-lg border-2 p-3 text-right transition disabled:opacity-50 ${
             state.mode === "SHARED"
               ? "border-indigo-500 bg-indigo-50"
@@ -165,32 +208,12 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
                 المخزون مشترك بين متجرك والجملة — أي بيع ينقص من نفس الرصيد
               </p>
               {state.mode === "SHARED" ? (
-                <div className="mt-1 space-y-1">
-                  <div className="rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
-                    {state.mode === "SHARED"
-                      ? `المخزون الحقيقي: ${realTotal} قطعة`
-                      : `عند التفعيل: ${realTotal} قطعة`}
-                  </div>
-                  <p className="text-[10px] text-gray-500">
-                    {state.mode === "SHARED"
-                      ? "رقم واحد — يظهر في: متجر التجزئة · المحل · الجملة"
-                      : `(سيُدمج تجزئة ${state.totalRetail} + جملة ${state.totalWholesale})`}
-                  </p>
-                  <p className="text-[10px] text-indigo-600">
-                    ✓ أي بيع من أي قناة ينقص هذا الرقم
-                  </p>
+                <div className="mt-1 rounded bg-indigo-100 px-2 py-1 text-[11px] font-bold text-indigo-800">
+                  المخزون الكلي: {grandTotal} قطعة
                 </div>
               ) : (
-                <div className="mt-1 space-y-1">
-                  <div className="rounded bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">
-                    الإجمالي: {realTotal} قطعة
-                  </div>
-                  <p className="text-[10px] text-gray-500">
-                    تجزئة {state.totalRetail} + جملة {state.totalWholesale}
-                  </p>
-                  <p className="text-[10px] text-amber-600">
-                    ✓ مخزونان منفصلان — البيع من أحدهما لا يؤثر على الآخر
-                  </p>
+                <div className="mt-1 text-[10px] text-gray-500">
+                  إجمالي: {grandTotal}
                 </div>
               )}
             </div>
@@ -200,7 +223,6 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
           </div>
         </button>
 
-        {/* SPLIT */}
         <button
           type="button"
           onClick={handleSplitClick}
@@ -217,22 +239,15 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
                 <Split className="h-3.5 w-3.5" /> مخزون منفصل
               </p>
               <p className="mt-0.5 text-[11px] text-gray-600">
-                كمية مستقلة للتجزئة وكمية مستقلة للجملة — لا تؤثر إحداهما في الأخرى
+                كمية مستقلة للتجزئة وكمية مستقلة للجملة لكل خيار
               </p>
-              {state.mode === "SHARED" ? (
-                <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-[10px] text-amber-800">
-                  المخزون مشترك حالياً — إجمالي {state.totalWholesale} قطعة
-                  (التحويل إلى منفصل سيتطلب تحديد التوزيع)
-                </div>
-              ) : (
-                <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
-                  <span>تجزئة: {state.totalRetail}</span>
-                  <span>·</span>
-                  <span>جملة: {state.totalWholesale}</span>
-                  <span>·</span>
-                  <span className="font-bold text-amber-700">إجمالي: {state.totalRetail + state.totalWholesale}</span>
-                </div>
-              )}
+              <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
+                <span>تجزئة: {state.totalRetail}</span>
+                <span>·</span>
+                <span>جملة: {state.totalWholesale}</span>
+                <span>·</span>
+                <span className="font-bold text-amber-700">إجمالي: {grandTotal}</span>
+              </div>
             </div>
             {state.mode === "SPLIT" && (
               <CheckCircle2 className="h-5 w-5 text-amber-600" />
@@ -250,14 +265,8 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
             {state.variants.map((v) => (
               <div key={v.masterVariantId} className="flex justify-between gap-2">
                 <span className="flex-1 truncate text-gray-700">{fmtAttrs(v.attributes)}</span>
-                {state.mode === "SHARED" ? (
-                  <span className="font-bold text-indigo-700">{Math.max(v.retailQty, v.wholesaleQty)}</span>
-                ) : (
-                  <>
-                    <span className="text-gray-500">تجزئة: {v.retailQty}</span>
-                    <span className="text-gray-500">جملة: {v.wholesaleQty}</span>
-                  </>
-                )}
+                <span className="text-gray-500">تجزئة: {v.retailQty}</span>
+                <span className="text-gray-500">جملة: {v.wholesaleQty}</span>
               </div>
             ))}
           </div>
@@ -275,57 +284,80 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
         </div>
       )}
 
-      {/* Split dialog */}
       {showSplitDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowSplitDialog(false)}>
-          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={resetSplitDialog}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-2 flex items-center gap-2 text-base font-bold text-gray-900">
               <Split className="h-5 w-5 text-amber-600" />
-              فصل المخزون
+              فصل المخزون — لكل خيار
             </h3>
-            {state.mode === "SHARED" ? (
-              <p className="mb-3 text-sm text-gray-700">
-                المخزون الحقيقي: <strong>{realTotal}</strong> قطعة (رقم واحد في كل القنوات).
-                عند الفصل، حدد كم يبقى للتجزئة، والباقي يذهب للجملة.
-              </p>
-            ) : (
-              <p className="mb-3 text-sm text-gray-700">
-                الحالي: تجزئة {state.totalRetail} + جملة {state.totalWholesale} = <strong>{realTotal}</strong>.
-                حدد كم يبقى للتجزئة.
-              </p>
-            )}
-            <div className="mb-3">
-              <label className="mb-1 block text-xs font-medium text-gray-700">
-                للتجزئة
-              </label>
-              <input
-                type="number"
-                min="0"
-                max={totalForSplit}
-                value={splitQty}
-                onChange={(e) => setSplitQty(e.target.value)}
-                className="h-10 w-full rounded-lg border-2 border-gray-200 px-3 text-sm font-bold focus:border-amber-500 focus:outline-none"
-              />
-              <p className="mt-1 text-[11px] text-gray-500">
-                يبقى للجملة: {Math.max(0, totalForSplit - (parseInt(splitQty, 10) || 0))}
-              </p>
-              {(parseInt(splitQty, 10) || 0) > totalForSplit && (
-                <p className="mt-1 rounded bg-amber-50 p-1 text-[11px] text-amber-700">
-                  ⚠ الرقم أكبر من المتاح ({totalForSplit}). سيُقص إلى {totalForSplit}.
-                </p>
-              )}
+            <p className="mb-3 text-sm text-gray-700">
+              إجمالي المخزون: <strong>{grandTotal}</strong> قطعة.
+              حدد لكل خيار كم يبقى للتجزئة، والباقي يذهب للجملة.
+            </p>
+
+            <div className="mb-3 max-h-72 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+              {state.variants.map((v) => {
+                const total = v.wholesaleQty + v.retailQty;
+                const rawInput = splitMap[v.masterVariantId] || "";
+                const inputVal = parseInt(rawInput, 10) || 0;
+                const clamped = Math.max(0, Math.min(total, inputVal));
+                const wholesaleRemains = total - clamped;
+                const overLimit = inputVal > total;
+
+                return (
+                  <div key={v.masterVariantId} className="rounded-lg border border-gray-200 bg-white p-2">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-900">
+                        {fmtAttrs(v.attributes)}
+                      </span>
+                      <span className="text-[10px] text-gray-500">إجمالي: {total}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <label className="block text-[10px] text-gray-500">للتجزئة</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={total}
+                          value={rawInput}
+                          onChange={(e) => setVariantSplit(v.masterVariantId, e.target.value)}
+                          className={`h-8 w-full rounded border px-2 text-xs font-bold focus:outline-none ${
+                            overLimit ? "border-amber-400 bg-amber-50" : "border-gray-200"
+                          }`}
+                        />
+                      </div>
+                      <div className="w-20 text-center">
+                        <div className="text-[10px] text-gray-500">للجملة</div>
+                        <div className="text-sm font-bold text-amber-700">{wholesaleRemains}</div>
+                      </div>
+                    </div>
+                    {overLimit && (
+                      <p className="mt-1 text-[10px] text-amber-700">
+                        ⚠ يتجاوز الإجمالي ({total}). سيُقص.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+
+            <div className="mb-3 flex justify-between rounded bg-amber-50 p-2 text-xs">
+              <span>تجزئة: <strong>{totalRetailInput}</strong></span>
+              <span>جملة: <strong>{grandTotal - totalRetailInput}</strong></span>
+            </div>
+
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setShowSplitDialog(false)}
+                onClick={resetSplitDialog}
                 className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
               >
                 إلغاء
               </button>
               <button
                 type="button"
-                onClick={() => applyMode("SPLIT", parseInt(splitQty, 10) || 0)}
+                onClick={applySplit}
                 disabled={submitting}
                 className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
               >
