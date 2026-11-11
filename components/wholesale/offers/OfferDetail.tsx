@@ -26,6 +26,7 @@ import BundleRulesEditor from "./BundleRulesEditor";
 import PackagesEditor from "./PackagesEditor";
 import AutoBalanceEditor from "./AutoBalanceEditor";
 import SizeLimitsEditor from "./SizeLimitsEditor";
+import InventoryModeEditor from "./InventoryModeEditor";
 import {
   OFFER_STATUS_LABEL,
   OFFER_STATUS_VARIANT,
@@ -380,6 +381,13 @@ export function OfferDetail({ offer, isAdmin, isOwner }: OfferDetailProps) {
                 </button>
               </div>
             </Card>
+          )}
+
+          {isOwner && currentStatus !== "ARCHIVED" && (
+            <InventoryModeEditor
+              offerId={offer.id}
+              readOnly={currentStatus === "SUSPENDED"}
+            />
           )}
 
           {isOwner && currentStatus !== "ARCHIVED" && currentStatus !== "SUSPENDED" && (
