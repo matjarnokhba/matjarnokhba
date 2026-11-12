@@ -65,6 +65,7 @@ export default function AutoBalanceEditor({
   const [previewError, setPreviewError] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [savingToggle, setSavingToggle] = useState(false);
   const [requireSizeSelection, setRequireSizeSelection] = useState(initialRequireSizeSelection);
   const [maxManualAdjustment, setMaxManualAdjustment] = useState(initialMaxManualAdjustment);
 
@@ -83,6 +84,12 @@ export default function AutoBalanceEditor({
 
   useEffect(() => {
     if (!enabled) { setPreview(null); setPreviewError(""); return; }
+    // M12.6: prevent preview/toggle race
+    if (savingToggle) {
+      setPreview(null);
+      setPreviewError("جارٍ الحفظ...");
+      return;
+    }
     // Skip fetch when requireSizeSelection (seller preview only supports wildcard)
     if (requireSizeSelection && availableSizes.length > 0) {
       setPreview(null);
@@ -113,7 +120,7 @@ export default function AutoBalanceEditor({
       finally { setPreviewLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
-  }, [enabled, previewQty, offerId, requireSizeSelection, availableSizes]);
+  }, [enabled, previewQty, offerId, requireSizeSelection, savingToggle, availableSizes]);
 
   async function handleToggle() {
     setError("");
@@ -151,6 +158,7 @@ export default function AutoBalanceEditor({
     const prev = requireSizeSelection;
     setRequireSizeSelection(next);
     if (!enabled) return;
+    setSavingToggle(true);
     try {
       const res = await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
         method: "POST",
@@ -174,6 +182,8 @@ export default function AutoBalanceEditor({
     } catch {
       setRequireSizeSelection(prev);
       setError("خطأ في الاتصال");
+    } finally {
+      setSavingToggle(false);
     }
   }
   async function updateMaxManualAdjustment(next: number) {
@@ -244,7 +254,7 @@ export default function AutoBalanceEditor({
               checked={requireSizeSelection}
               onChange={(e) => updateRequireSizeSelection(e.target.checked)}
               className="mt-0.5 h-4 w-4"
-              disabled={readOnly || toggling}
+              disabled={readOnly || toggling || savingToggle}
             />
             <div className="flex-1">
               <p className="text-xs font-bold text-gray-900">إلزام المشتري باختيار المقاس</p>
