@@ -102,7 +102,11 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     if (!state || readOnly) return;
     const map: Record<number, string> = {};
     for (const v of state.variants) {
-      map[v.masterVariantId] = String(v.retailQty);
+      const total =
+        state.mode === "SHARED"
+          ? v.wholesaleQty
+          : v.wholesaleQty + v.retailQty;
+      map[v.masterVariantId] = String(Math.floor(total / 2));
     }
     setSplitMap(map);
     setShowSplitDialog(true);
@@ -117,7 +121,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     if (!state || readOnly) return;
     const variantSplits: Array<{ masterVariantId: number; retailQty: number }> = [];
     for (const v of state.variants) {
-      const total = v.wholesaleQty + v.retailQty;
+      const total =
+                  state.mode === "SHARED"
+                    ? v.wholesaleQty
+                    : v.wholesaleQty + v.retailQty;
       const input = parseInt(splitMap[v.masterVariantId] || "0", 10) || 0;
       const clamped = Math.max(0, Math.min(total, input));
       variantSplits.push({ masterVariantId: v.masterVariantId, retailQty: clamped });
@@ -172,7 +179,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
     );
   }
 
-  const grandTotal = state.totalWholesale + state.totalRetail;
+  const grandTotal =
+    state.mode === "SHARED"
+      ? state.totalWholesale
+      : state.totalWholesale + state.totalRetail;
   const totalRetailInput = Object.values(splitMap).reduce(
     (s, v) => s + (parseInt(v, 10) || 0),
     0
@@ -241,13 +251,19 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
               <p className="mt-0.5 text-[11px] text-gray-600">
                 كمية مستقلة للتجزئة وكمية مستقلة للجملة لكل خيار
               </p>
-              <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
-                <span>تجزئة: {state.totalRetail}</span>
-                <span>·</span>
-                <span>جملة: {state.totalWholesale}</span>
-                <span>·</span>
-                <span className="font-bold text-amber-700">إجمالي: {grandTotal}</span>
-              </div>
+              {state.mode === "SHARED" ? (
+                <div className="mt-1 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700">
+                  المخزون مشترك حالياً — إجمالي {state.totalWholesale} قطعة
+                </div>
+              ) : (
+                <div className="mt-1 flex gap-2 text-[10px] text-gray-500">
+                  <span>تجزئة: {state.totalRetail}</span>
+                  <span>·</span>
+                  <span>جملة: {state.totalWholesale}</span>
+                  <span>·</span>
+                  <span className="font-bold text-amber-700">إجمالي: {grandTotal}</span>
+                </div>
+              )}
             </div>
             {state.mode === "SPLIT" && (
               <CheckCircle2 className="h-5 w-5 text-amber-600" />
@@ -298,7 +314,10 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
 
             <div className="mb-3 max-h-72 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
               {state.variants.map((v) => {
-                const total = v.wholesaleQty + v.retailQty;
+                const total =
+                  state.mode === "SHARED"
+                    ? v.wholesaleQty
+                    : v.wholesaleQty + v.retailQty;
                 const rawInput = splitMap[v.masterVariantId] || "";
                 const inputVal = parseInt(rawInput, 10) || 0;
                 const clamped = Math.max(0, Math.min(total, inputVal));
@@ -345,6 +364,7 @@ export default function InventoryModeEditor({ offerId, readOnly }: Props) {
             <div className="mb-3 flex justify-between rounded bg-amber-50 p-2 text-xs">
               <span>تجزئة: <strong>{totalRetailInput}</strong></span>
               <span>جملة: <strong>{grandTotal - totalRetailInput}</strong></span>
+              <span className="text-gray-500">إجمالي: <strong>{grandTotal}</strong></span>
             </div>
 
             <div className="flex gap-2">
