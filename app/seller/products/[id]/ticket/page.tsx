@@ -103,7 +103,7 @@ export default function ProductTicketPage() {
       try {
         if (qrCanvasRef.current) {
           await QRCode.toCanvas(qrCanvasRef.current, currentProductUrl, {
-            width: 800,
+            width: 600,
             margin: 0, // تقليل الهوامش
             color: { dark: "#0a1f44", light: "#ffffff" },
             errorCorrectionLevel: "H",
@@ -297,7 +297,7 @@ export default function ProductTicketPage() {
 
   if (error || !product || !seller) {
     return (
-      <div className="p-4 pt-16 lg:p-8 lg:pt-8">
+      <div className="overflow-x-hidden p-3 pt-14 sm:p-4 sm:pt-16 lg:p-8 lg:pt-8">
         <div className="rounded-xl bg-red-50 p-8 text-center text-red-700">
           {error || "حدث خطأ"}
         </div>
@@ -306,7 +306,7 @@ export default function ProductTicketPage() {
   }
 
   return (
-    <div className="p-4 pt-16 lg:p-8 lg:pt-8">
+    <div className="overflow-x-hidden p-3 pt-14 sm:p-4 sm:pt-16 lg:p-8 lg:pt-8">
       <canvas ref={qrCanvasRef} style={{ display: "none" }} />
       <svg ref={barcodeRef} style={{ display: "none" }} />
 
@@ -318,7 +318,7 @@ export default function ProductTicketPage() {
         رجوع للمنتج
       </Link>
 
-      <div className="mb-6">
+      <div className="mb-4 sm:mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-black text-gray-900">
           <QrCode className="h-6 w-6 text-[#ff5c00]" />
           بطاقة المنتج (QR Ticket)
@@ -328,24 +328,24 @@ export default function ProductTicketPage() {
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 sm:gap-5 lg:grid-cols-2">
         <div className="flex justify-center">
           
           {/* ═══ المعاينة على الشاشة ═══ */}
-          <div className="w-full max-w-[340px] overflow-hidden rounded-xl border-2 border-[#0a1f44] bg-white shadow-lg flex flex-col">
+          <div className="flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border-2 border-[#0a1f44] bg-white shadow-lg sm:max-w-[340px]">
             <div className="bg-[#0a1f44] text-white text-center py-2 px-3 text-lg font-black">
               {seller.storeName}
             </div>
             
-            <div className="flex p-2 gap-2 bg-gray-50 border-b-2 border-dashed border-gray-300">
-              <div className="w-1/2 aspect-square bg-white border-2 border-[#0a1f44] rounded-lg p-1 flex items-center justify-center overflow-hidden">
+            <div className="flex min-w-0 gap-2 border-b-2 border-dashed border-gray-300 bg-gray-50 p-2">
+              <div className="flex aspect-square min-w-0 flex-1 items-center justify-center overflow-hidden rounded-lg border-2 border-[#0a1f44] bg-white p-1">
                 {qrDataUrl ? (
                   <img src={qrDataUrl} alt="QR" className="w-full h-full object-contain" />
                 ) : (
                   <Loader2 className="h-6 w-6 animate-spin text-[#ff5c00]" />
                 )}
               </div>
-              <div className="w-1/2 aspect-square bg-white border-2 border-[#0a1f44] rounded-lg overflow-hidden flex items-center justify-center">
+              <div className="flex aspect-square min-w-0 flex-1 items-center justify-center overflow-hidden rounded-lg border-2 border-[#0a1f44] bg-white">
                 {product.imageUrls[0] ? (
                   <img src={product.imageUrls[0]} alt="" className="w-full h-full object-cover" />
                 ) : (
@@ -365,7 +365,7 @@ export default function ProductTicketPage() {
 
             {barcodeDataUrl && (
               <div className="bg-white py-1.5 px-2 text-center border-t border-dashed border-gray-300">
-                <img src={barcodeDataUrl} alt="barcode" className="w-full max-h-[50px] mx-auto block" />
+                <img src={barcodeDataUrl} alt="barcode" className="mx-auto block max-h-[40px] w-full object-contain sm:max-h-[50px]" />
               </div>
             )}
 
@@ -378,8 +378,8 @@ export default function ProductTicketPage() {
 
         </div>
 
-        <div className="space-y-4">
-          <div className="rounded-xl bg-white p-5 shadow-sm">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5">
             <h3 className="mb-3 text-sm font-black text-gray-700">الإجراءات</h3>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -401,7 +401,7 @@ export default function ProductTicketPage() {
             </div>
           </div>
 
-          <div className="rounded-xl bg-white p-5 shadow-sm">
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-gray-700">رابط المنتج</h3>
               <button
