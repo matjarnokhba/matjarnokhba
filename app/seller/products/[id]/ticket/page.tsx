@@ -29,6 +29,27 @@ type SellerInfo = {
   slug: string;
 };
 
+type PrintLayoutId = "4" | "6" | "8" | "9" | "12" | "16" | "24" | "30" | "50" | "100";
+
+const PRINT_LAYOUTS: Array<{
+  id: PrintLayoutId;
+  cols: number;
+  rows: number;
+  tickets: number;
+  label: string;
+  content: "full" | "medium" | "small" | "qr-only";
+}> = [
+  { id: "4", cols: 2, rows: 2, tickets: 4, label: "كبير", content: "full" },
+  { id: "6", cols: 2, rows: 3, tickets: 6, label: "كبير", content: "full" },
+  { id: "8", cols: 2, rows: 4, tickets: 8, label: "كبير", content: "full" },
+  { id: "9", cols: 3, rows: 3, tickets: 9, label: "متوسط", content: "medium" },
+  { id: "12", cols: 3, rows: 4, tickets: 12, label: "متوسط", content: "medium" },
+  { id: "16", cols: 4, rows: 4, tickets: 16, label: "صغير", content: "small" },
+  { id: "24", cols: 4, rows: 6, tickets: 24, label: "صغير", content: "small" },
+  { id: "30", cols: 5, rows: 6, tickets: 30, label: "صغير جداً", content: "qr-only" },
+  { id: "50", cols: 5, rows: 10, tickets: 50, label: "QR فقط", content: "qr-only" },
+  { id: "100", cols: 10, rows: 10, tickets: 100, label: "ملصقات", content: "qr-only" },
+];
 export default function ProductTicketPage() {
   const params = useParams();
   const productId = params.id as string;
@@ -42,6 +63,7 @@ export default function ProductTicketPage() {
   const [productUrl, setProductUrl] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [qrGenerating, setQrGenerating] = useState(false);
+  const [printLayout, setPrintLayout] = useState<PrintLayoutId>("4");
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
@@ -174,118 +196,50 @@ export default function ProductTicketPage() {
 
   function handlePrint() {
     if (!qrDataUrl || !product || !seller) return;
-
+    const layout = PRINT_LAYOUTS.find((l) => l.id === printLayout);
+    if (!layout) return;
     const win = window.open("", "_blank");
     if (!win) return;
-
     const mainImage = product.imageUrls[0] || "";
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Ticket — ${product.name}</title>
-        <style>
-          @page { margin: 0; } /* إزالة هوامش المتصفح */
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            background: #f3f4f6;
-            padding: 20px;
-            display: flex;
-            justify-content: center; /* توسيط أفقي فقط */
-            align-items: flex-start; /* منع التوسيط العمودي الذي يسبب الفراغات */
-            min-height: auto;
-          }
-          .ticket {
-            width: 340px;
-            background: #fff;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 2px solid #0a1f44;
-          }
-          .ticket-header {
-            background: #0a1f44;
-            color: #fff;
-            text-align: center;
-            padding: 8px;
-            font-size: 18px;
-            font-weight: 900;
-          }
-          .ticket-body {
-            display: flex;
-            padding: 8px;
-            gap: 8px;
-            background: #f9fafb;
-            border-bottom: 2px dashed #cbd5e1;
-          }
-          .qr-container, .image-container {
-            width: 50%;
-            aspect-ratio: 1 / 1;
-            background: #fff;
-            border: 2px solid #0a1f44;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-          }
-          .qr-container img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
-          .image-container img { width: 100%; height: 100%; object-fit: cover; }
-          .image-placeholder { font-size: 40px; color: #cbd5e1; }
-          
-          .product-info { text-align: center; padding: 10px 8px; background: #fff; }
-          .product-name { font-size: 20px; font-weight: 900; color: #111827; line-height: 1.2; }
-          .brand-badge { display: inline-block; background: #ff5c00; color: #fff; font-size: 12px; font-weight: 800; padding: 2px 10px; border-radius: 20px; margin-top: 4px; }
-          
-          .barcode-section {
-            background: #fff;
-            padding: 6px 8px;
-            text-align: center;
-            border-top: 1px dashed #cbd5e1;
-          }
-          .barcode-section img { width: 100%; max-height: 50px; display: block; margin: 0 auto; }
-          
-          .ticket-footer {
-            background: #0a1f44;
-            color: #fff;
-            text-align: center;
-            padding: 6px;
-            font-size: 11px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-          }
-          
-          @media print {
-            body { background: #fff; padding: 0; display: block; } /* إزالة التوسيط عند الطباعة */
-            .ticket { box-shadow: none; margin: 0 auto; page-break-inside: avoid; } /* في أعلى الصفحة بدون فراغات */
-          }
-        </style>
-      </head>
-      <body>
-        <div class="ticket">
-          <div class="ticket-header">${seller.storeName}</div>
-          <div class="ticket-body">
-            <div class="qr-container"><img src="${qrDataUrl}" alt="QR" /></div>
-            <div class="image-container">${mainImage ? `<img src="${mainImage}" alt="" />` : `<span class="image-placeholder">📦</span>`}</div>
-          </div>
-          <div class="product-info">
-            <div class="product-name">${product.name}</div>
-            ${product.brand ? `<div class="brand-badge">🏷️ ${product.brand}</div>` : ''}
-          </div>
-          ${barcodeDataUrl ? `<div class="barcode-section"><img src="${barcodeDataUrl}" alt="barcode" /></div>` : ''}
-          <div class="ticket-footer"><span>📱</span><span>امسح رمز QR للمزيد من التفاصيل</span></div>
-        </div>
-        <script>window.onload = () => { setTimeout(() => { window.print(); }, 500); };</script>
-      </body>
-      </html>
-    `);
+    const single = `<div class="ticket size-${layout.content}">
+${layout.content === "full" ? `<div class="ticket-header">${seller.storeName}</div>` : ""}
+<div class="ticket-body">
+<div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
+${layout.content === "full" || layout.content === "medium" ? `<div class="img-box">${mainImage ? `<img src="${mainImage}" alt="" class="img-cover"/>` : "<span>📦</span>"}</div>` : ""}
+</div>
+${layout.content !== "qr-only" ? `<div class="ticket-name">${product.name}</div>` : `<div class="ticket-name-qr">${product.name}</div>`}
+${layout.content === "full" && product.brand ? `<div class="ticket-brand">${product.brand}</div>` : ""}
+${layout.content === "full" && barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt="barcode"/></div>` : ""}
+</div>`;
+    const all = Array(layout.tickets).fill(single).join("");
+    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>Print — ${product.name}</title><style>
+@page{size:A4 portrait;margin:5mm}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff}
+.sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm}
+.ticket{container-type:inline-size;font-size:5cqw;display:flex;flex-direction:column;overflow:hidden;border:1px dashed #999;break-inside:avoid;background:#fff}
+.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:.4em .5em;font-size:1.3em;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-body{display:flex;gap:.4em;padding:.4em;background:#f9fafb;flex:1;min-height:0}
+.qr-box,.img-box{flex:1;min-width:0;border:1px solid #0a1f44;border-radius:.4em;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}
+.qr-box img{width:100%;height:100%;object-fit:contain;padding:.3em}
+.img-box img{width:100%;height:100%;object-fit:cover}
+.ticket-name{font-size:1.1em;font-weight:900;text-align:center;padding:.3em .4em;color:#111827;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-name-qr{font-size:.6em;font-weight:700;text-align:center;padding:.1em .2em;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-brand{display:block;text-align:center;padding:.2em;background:#ff5c00;color:#fff;font-size:.7em;font-weight:800}
+.ticket-barcode{background:#fff;padding:.2em .4em;text-align:center;border-top:1px dashed #cbd5e1}
+.ticket-barcode img{width:100%;max-height:7cqw;object-fit:contain;display:block}
+.size-medium .ticket-brand,.size-medium .ticket-barcode,.size-small .ticket-brand,.size-small .ticket-barcode,.size-qr-only .ticket-brand,.size-qr-only .ticket-barcode{display:none}
+.size-small .img-box,.size-qr-only .img-box{display:none}
+.size-qr-only .ticket-body{flex:0 0 auto;padding:.3em;background:#fff}
+.size-qr-only .qr-box{border:none}
+.size-qr-only .qr-box img{padding:0}
+.size-qr-only{font-size:6cqw}
+@media print{body{background:#fff}}
+</style></head><body><div class="sheet">${all}</div><script>window.onload=()=>{setTimeout(()=>{window.print()},300)};</script></body></html>`;
+    win.document.write(html);
     win.document.close();
   }
+
 
   if (loading) {
     return (
@@ -380,6 +334,34 @@ export default function ProductTicketPage() {
 
         <div className="space-y-3 sm:space-y-4">
           <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-sm font-black text-gray-700">حجم الورقة والكمية</h3>
+            <p className="mb-3 text-[11px] text-gray-500">
+              اختر عدد التيكيتات لكل ورقة A4. الأصغر = أكثر في الورقة، لكن تفاصيل أقل.
+            </p>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 sm:gap-2">
+              {PRINT_LAYOUTS.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setPrintLayout(l.id)}
+                  disabled={!qrDataUrl || qrGenerating}
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border-2 p-2 transition disabled:opacity-40 ${
+                    printLayout === l.id
+                      ? "border-[#ff5c00] bg-[#fff4ed]"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <span className={`text-base font-black ${printLayout === l.id ? "text-[#ff5c00]" : "text-gray-700"}`}>
+                    {l.tickets}
+                  </span>
+                  <span className="text-[9px] font-bold text-gray-600">{l.label}</span>
+                  <span className="text-[8px] text-gray-400" dir="ltr">{l.cols}×{l.rows}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5">
             <h3 className="mb-3 text-sm font-black text-gray-700">الإجراءات</h3>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -388,7 +370,7 @@ export default function ProductTicketPage() {
                 className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
                 {qrGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                طباعة
+                طباعة {PRINT_LAYOUTS.find((l) => l.id === printLayout)?.tickets || 4} تيكيت
               </button>
               <button
                 onClick={handleDownloadQR}
