@@ -15,12 +15,13 @@ const schema = z.object({
   wholesalePrice: z.number().positive(),
   minOrderQty: z.number().int().min(1),
   maxOrderQty: z.number().int().min(1).nullable().optional(),
-  transferQuantities: z.array(
+  inventoryMode: z.enum(["SHARED", "SPLIT"]),
+  variantSplits: z.array(
     z.object({
       variantId: z.number().int().positive(),
-      quantity: z.number().int().min(1),
+      retailQty: z.number().int().min(0),
     })
-  ).min(1),
+  ).optional(),
 });
 
 export async function POST(
@@ -47,7 +48,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    const { businessUnitId, wholesalePrice, minOrderQty, maxOrderQty, transferQuantities } = parsed.data;
+    const { businessUnitId, wholesalePrice, minOrderQty, maxOrderQty, inventoryMode, variantSplits } = parsed.data;
 
     const ctx = await getBusinessUnitContext(current.user.id, businessUnitId);
     assertBusinessUnitCapability(ctx, "WHOLESALE_SELL");
@@ -82,26 +83,56 @@ export async function POST(
       return NextResponse.json({ success: false, message: "المنتج غير موجود" }, { status: 404 });
     }
 
-    // 1. Check inventory and find any existing masterId
-    let masterId: number | null = null;
-    for (const t of transferQuantities) {
-      const rv = product.variants.find((v) => v.id === t.variantId);
-      if (!rv) {
-        return NextResponse.json({ success: false, message: `الخيار ${t.variantId} غير موجود` }, { status: 400 });
+    // 1. Build variants list + validate (M13.1a)
+    type VariantProcess = { retailVariantId: number; retailQty: number; originalQty: number };
+    const variantsToProcess: VariantProcess[] = [];
+    
+    if (inventoryMode === "SHARED") {
+      for (const pv of product.variants) {
+        variantsToProcess.push({
+          retailVariantId: pv.id,
+          retailQty: 0,
+          originalQty: pv.inventory?.quantity ?? 0,
+        });
       }
-      if ((rv.inventory?.quantity ?? 0) < t.quantity) {
+    } else {
+      if (!variantSplits || variantSplits.length === 0) {
         return NextResponse.json(
-          { success: false, message: `المخزون المتاح للتجزئة (${rv.inventory?.quantity ?? 0}) أقل من الكمية (${t.quantity})` },
+          { success: false, message: "في وضع SPLIT يجب تحديد كمية التجزئة لكل خيار" },
           { status: 400 }
         );
       }
-
-      if (!masterId) {
-        let mv: any = null;
-        if (rv.barcode) mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode } });
-        if (!mv && rv.sku) mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku } });
-        if (mv) masterId = mv.masterId;
+      for (const split of variantSplits) {
+        const rv = product.variants.find((v) => v.id === split.variantId);
+        if (!rv) {
+          return NextResponse.json(
+            { success: false, message: `الخيار ${split.variantId} غير موجود` },
+            { status: 400 }
+          );
+        }
+        const originalQty = rv.inventory?.quantity ?? 0;
+        if (split.retailQty > originalQty) {
+          return NextResponse.json(
+            { success: false, message: `الكمية المطلوبة للتجزئة (${split.retailQty}) تتجاوز المتاح (${originalQty})` },
+            { status: 400 }
+          );
+        }
+        variantsToProcess.push({
+          retailVariantId: rv.id,
+          retailQty: split.retailQty,
+          originalQty,
+        });
       }
+    }
+    
+    let masterId: number | null = null;
+    for (const vp of variantsToProcess) {
+      const rv = product.variants.find((v) => v.id === vp.retailVariantId);
+      if (!rv) continue;
+      let mv: any = null;
+      if (rv.barcode) mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode } });
+      if (!mv && rv.sku) mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku } });
+      if (mv) { masterId = mv.masterId; break; }
     }
 
     // 2. Auto-create MasterProduct & variants if none found
@@ -150,22 +181,32 @@ export async function POST(
       }
     }
 
-    // 3. Map quantities to the master variants
-    const matched: Array<{ retailVariantId: number; masterVariantId: number; masterId: number; quantity: number }> = [];
-    for (const t of transferQuantities) {
-      const rv = product.variants.find((v) => v.id === t.variantId)!;
-      
+    // 3. Map retail → master variants
+    const matched: Array<{
+      retailVariantId: number;
+      masterVariantId: number;
+      masterId: number;
+      retailQty: number;
+      originalQty: number;
+    }> = [];
+    for (const vp of variantsToProcess) {
+      const rv = product.variants.find((v) => v.id === vp.retailVariantId)!;
       let mv: any = null;
       if (rv.barcode) mv = await prisma.masterVariant.findFirst({ where: { barcode: rv.barcode } });
       if (!mv && rv.sku) mv = await prisma.masterVariant.findFirst({ where: { sku: rv.sku } });
-      
       if (!mv) {
         return NextResponse.json(
-          { success: false, message: `الخيار "${rv.sku || rv.id}" لا يطابق أي منتج أصلي — حدث خطأ غير متوقع.` },
+          { success: false, message: `الخيار "${rv.sku || rv.id}" لا يطابق أي منتج أصلي.` },
           { status: 500 }
         );
       }
-      matched.push({ retailVariantId: rv.id, masterVariantId: mv.id, masterId: mv.masterId, quantity: t.quantity });
+      matched.push({
+        retailVariantId: rv.id,
+        masterVariantId: mv.id,
+        masterId: mv.masterId,
+        retailQty: vp.retailQty,
+        originalQty: vp.originalQty,
+      });
     }
 
     // Create offer (M6.2 auto-creates MerchantProduct)
@@ -241,74 +282,62 @@ export async function POST(
       }
     }
 
-    // Ensure InventoryLocation + WHOLESALE account
-    let loc = await prisma.inventoryLocation.findFirst({
-      where: { businessUnitId, isActive: true },
-      orderBy: { id: "asc" },
-    });
-    if (!loc) {
-      loc = await prisma.inventoryLocation.create({
-        data: { businessUnitId, name: "الموقع الافتراضي", type: "SHOP_FLOOR", isActive: true },
-      });
-    }
-    let wholesaleAcc = await prisma.inventoryAccount.findFirst({
-      where: { locationId: loc.id, type: "WHOLESALE", isActive: true },
-    });
-    if (!wholesaleAcc) {
-      wholesaleAcc = await prisma.inventoryAccount.create({
-        data: { locationId: loc.id, businessUnitId, type: "WHOLESALE", isActive: true },
-      });
-    }
-
-    // Get MerchantProduct that M6.2 just created
+    // M13.1a: Pool-based inventory
     const mp = await prisma.merchantProduct.findFirst({
       where: { businessUnitId, masterId, deletedAt: null },
-      include: { variants: { select: { id: true, masterVariantId: true } } },
+      select: { id: true },
     });
     if (!mp) {
       return NextResponse.json({ success: false, message: "خطأ داخلي: MerchantProduct لم يُنشأ" }, { status: 500 });
     }
-
-    // Transfer stock (retail → wholesale)
-    for (const m of matched) {
-      const mv = mp.variants.find((v) => v.masterVariantId === m.masterVariantId);
-      if (!mv) continue;
-
-      await prisma.inventory.updateMany({
-        where: { variantId: m.retailVariantId },
-        data: { quantity: { decrement: m.quantity } },
+    
+    await prisma.$transaction(async (tx) => {
+      let pool = await tx.inventoryPool.findUnique({
+        where: { businessUnitId_masterId: { businessUnitId, masterId } },
+        include: { variants: true },
       });
-
-      await prisma.inventoryBalance.upsert({
-        where: {
-          merchantVariantId_inventoryAccountId: {
-            merchantVariantId: mv.id,
-            inventoryAccountId: wholesaleAcc.id,
+      
+      if (!pool) {
+        const mvs = await tx.masterVariant.findMany({ where: { masterId }, select: { id: true } });
+        pool = await tx.inventoryPool.create({
+          data: {
+            businessUnitId,
+            masterId,
+            mode: "SPLIT",
+            variants: {
+              create: mvs.map((mv) => ({ masterVariantId: mv.id, quantity: 0, reservedQuantity: 0 })),
+            },
           },
-        },
-        create: {
-          merchantVariantId: mv.id,
-          inventoryAccountId: wholesaleAcc.id,
-          quantity: m.quantity,
-        },
-        update: { quantity: { increment: m.quantity } },
-      });
-
-      await prisma.inventoryLedger.create({
-        data: {
-          merchantVariantId: mv.id,
-          inventoryAccountId: wholesaleAcc.id,
-          businessUnitId,
-          type: "ADJUSTMENT",
-          quantity: m.quantity,
-          referenceType: "OFFER_FROM_RETAIL",
-          referenceId: offerId,
-          createdByUserId: current.user.id,
-        },
-      });
-    }
-
-    if (reactivated) {
+          include: { variants: true },
+        });
+      }
+      
+      await tx.merchantProduct.update({ where: { id: mp.id }, data: { poolId: pool.id } });
+      
+      for (const m of matched) {
+        const poolVar = pool.variants.find((p) => p.masterVariantId === m.masterVariantId);
+        if (!poolVar) continue;
+        
+        if (inventoryMode === "SHARED") {
+          const merged = poolVar.quantity + m.originalQty;
+          await tx.inventoryPoolVariant.update({ where: { id: poolVar.id }, data: { quantity: merged } });
+          await tx.inventory.updateMany({ where: { variantId: m.retailVariantId }, data: { quantity: merged } });
+        } else {
+          const wholesaleQty = m.originalQty - m.retailQty;
+          await tx.inventory.updateMany({ where: { variantId: m.retailVariantId }, data: { quantity: m.retailQty } });
+          await tx.inventoryPoolVariant.update({ where: { id: poolVar.id }, data: { quantity: { increment: wholesaleQty } } });
+        }
+      }
+      
+      if (inventoryMode === "SHARED") {
+        await tx.product.update({ where: { id: productId }, data: { poolId: pool.id } });
+      } else {
+        await tx.product.update({ where: { id: productId }, data: { poolId: null } });
+      }
+      
+      await tx.inventoryPool.update({ where: { id: pool.id }, data: { mode: inventoryMode } });
+    }, { timeout: 30000, maxWait: 10000 });
+if (reactivated) {
       // M10.10c: reactivated offers auto-verified + active
       await prisma.wholesaleOffer.update({
         where: { id: offerId },
@@ -335,9 +364,11 @@ export async function POST(
         minOrderQty,
         maxOrderQty,
         variantsCount: variantsForOffer.length,
-        transferredQuantities: matched.map((m) => ({
+        inventoryMode,
+        perVariant: matched.map((m) => ({
           masterVariantId: m.masterVariantId,
-          quantity: m.quantity,
+          retailQty: m.retailQty,
+          originalQty: m.originalQty,
         })),
       },
     });
