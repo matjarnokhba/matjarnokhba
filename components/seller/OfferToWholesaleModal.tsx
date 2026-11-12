@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, X, Tag, AlertCircle, Store, CheckCircle2, Zap } from "lucide-react";
+import {
+  Loader2, X, Tag, AlertCircle, Store, CheckCircle2, Zap,
+  Layers, Split, Boxes, Package, Info,
+} from "lucide-react";
 
 type DisplayAttribute = { name: string; value: string; order: number };
 
@@ -24,13 +27,15 @@ function formatAttributes(attrs: DisplayAttribute[] | undefined): string {
 
 type PrepareData = {
   needsSetup: boolean;
-  product: { id: number; name: string; price: number };
+  product: { id: number; name: string; price: number; totalStock?: number };
   businessUnits: Array<{ id: number; name: string; type: string }>;
   variants: PrepareVariant[];
   masterId: number | null;
   hasAmbiguousMaster: boolean;
   matchedCount: number;
   unmatchableVariants: Array<string | number>;
+  existingOfferId?: number | null;
+  existingPoolMode?: string | null;
 };
 
 type Props = {
@@ -50,7 +55,9 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
   const [wholesalePrice, setWholesalePrice] = useState("");
   const [minOrderQty, setMinOrderQty] = useState("1");
   const [maxOrderQty, setMaxOrderQty] = useState("");
-  const [transferMap, setTransferMap] = useState<Record<number, string>>({});
+
+  const [inventoryMode, setInventoryMode] = useState<"SHARED" | "SPLIT">("SHARED");
+  const [splitMap, setSplitMap] = useState<Record<number, string>>({});
 
   const [setupName, setSetupName] = useState("نشاط الجملة");
   const [setupType, setSetupType] = useState("WHOLESALER");
@@ -61,7 +68,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     setLoading(true);
     setError("");
     setData(null);
-    setTransferMap({});
+    setSplitMap({});
     (async () => {
       try {
         const res = await fetch(`/api/seller/products/${productId}/offer-to-wholesale/prepare`);
@@ -70,6 +77,19 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
         setData(d);
         if (d.businessUnits?.length > 0) setBusinessUnitId(d.businessUnits[0].id);
         if (d.product?.price) setWholesalePrice(String(Math.round(d.product.price * 0.7)));
+        
+        // Set initial inventory mode from existing pool
+        const initialMode: "SHARED" | "SPLIT" = d.existingPoolMode === "SPLIT" ? "SPLIT" : "SHARED";
+        setInventoryMode(initialMode);
+        
+        // Init splitMap (retailQty per variant)
+        const map: Record<number, string> = {};
+        for (const v of d.variants as PrepareVariant[]) {
+          if (v.masterVariantId !== null && v.retailStock > 0) {
+            map[v.id] = String(Math.floor(v.retailStock / 2));
+          }
+        }
+        setSplitMap(map);
       } catch { setError("خطأ في الاتصال"); }
       finally { setLoading(false); }
     })();
@@ -82,7 +102,6 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     setSetupSubmitting(true);
     setError("");
     try {
-      // Step 1: try to upgrade an existing BU (RETAIL-only) instead of creating duplicate
       const listRes = await fetch("/api/wholesale/business-units");
       const listData = await listRes.json();
       const existingBUs = listData?.items ?? listData?.businessUnits ?? [];
@@ -106,7 +125,6 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
         }
       }
 
-      // Step 2: no upgradeable BU → create new
       const res = await fetch("/api/wholesale/business-units", {
         method: "POST",
         headers: {
@@ -130,6 +148,30 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     finally { setSetupSubmitting(false); }
   }
 
+  function setSplitForVariant(variantId: number, raw: string) {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    setSplitMap((prev) => ({ ...prev, [variantId]: raw }));
+  }
+
+  const matchedVariants = data ? data.variants.filter((v) => v.masterVariantId !== null) : [];
+  const totalStock = data?.product.totalStock ?? matchedVariants.reduce((s, v) => s + v.retailStock, 0);
+
+  // SHARED: everything goes to wholesale
+  // SPLIT: user sets retail; rest goes to wholesale
+  const wholesaleTotal = (() => {
+    if (!data) return 0;
+    if (inventoryMode === "SHARED") return totalStock;
+    let wholesale = 0;
+    for (const v of matchedVariants) {
+      const raw = splitMap[v.id] || "0";
+      const retail = Math.max(0, Math.min(v.retailStock, parseInt(raw, 10) || 0));
+      wholesale += v.retailStock - retail;
+    }
+    return wholesale;
+  })();
+
+  const retailTotal = inventoryMode === "SHARED" ? totalStock : totalStock - wholesaleTotal;
+
   const canSubmit = (): boolean => {
     if (!data || !businessUnitId) return false;
     if (data.hasAmbiguousMaster) return false;
@@ -138,8 +180,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     if (!price || price <= 0) return false;
     const minQ = parseInt(minOrderQty);
     if (!minQ || minQ < 1) return false;
-    const transfers = Object.values(transferMap).map((q) => parseInt(q || "0")).filter((q) => q > 0);
-    if (transfers.length === 0) return false;
+    if (wholesaleTotal <= 0) return false;
     return true;
   };
 
@@ -150,19 +191,36 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
     const maxQ = maxOrderQty ? parseInt(maxOrderQty) : null;
     if (maxQ && maxQ < minQ) { setError("الحد الأقصى يجب أن يكون ≥ الحد الأدنى"); return; }
 
-    const transferQuantities = Object.entries(transferMap)
-      .map(([vid, q]) => ({ variantId: parseInt(vid), quantity: parseInt(q || "0") }))
-      .filter((t) => t.quantity > 0);
-
-    if (transferQuantities.length === 0) { setError("حدد كمية واحدة على الأقل"); return; }
+    if (wholesaleTotal <= 0) {
+      setError("لا يوجد مخزون كافٍ للجملة");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
+
+    const payload: Record<string, unknown> = {
+      businessUnitId,
+      wholesalePrice: price,
+      minOrderQty: minQ,
+      maxOrderQty: maxQ,
+      inventoryMode,
+    };
+
+    if (inventoryMode === "SPLIT") {
+      const variantSplits = matchedVariants.map((v) => {
+        const raw = splitMap[v.id] || "0";
+        const retail = Math.max(0, Math.min(v.retailStock, parseInt(raw, 10) || 0));
+        return { variantId: v.id, retailQty: retail };
+      });
+      payload.variantSplits = variantSplits;
+    }
+
     try {
       const res = await fetch(`/api/seller/products/${productId}/offer-to-wholesale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessUnitId, wholesalePrice: price, minOrderQty: minQ, maxOrderQty: maxQ, transferQuantities }),
+        body: JSON.stringify(payload),
       });
       const d = await res.json();
       if (d.success) { onSuccess(d.offerId); }
@@ -172,7 +230,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose} dir="rtl">
       <div className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold">
@@ -183,6 +241,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
 
         {loading && <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>}
 
+        {/* === needsSetup flow (unchanged) === */}
         {!loading && data?.needsSetup && (
           <div className="space-y-4">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -197,22 +256,12 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
 
             <div>
               <label className="mb-1 block text-sm font-medium">اسم النشاط</label>
-              <input
-                type="text"
-                value={setupName}
-                onChange={(e) => setSetupName(e.target.value)}
-                className="w-full rounded-lg border p-2 text-sm"
-                placeholder="مثال: نشاط الجملة"
-              />
+              <input type="text" value={setupName} onChange={(e) => setSetupName(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium">نوع النشاط</label>
-              <select
-                value={setupType}
-                onChange={(e) => setSetupType(e.target.value)}
-                className="w-full rounded-lg border p-2 text-sm"
-              >
+              <select value={setupType} onChange={(e) => setSetupType(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
                 <option value="WHOLESALER">موزع بالجملة</option>
                 <option value="IMPORTER">مستورد</option>
                 <option value="DISTRIBUTOR">موزع</option>
@@ -225,11 +274,7 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
 
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50">إلغاء</button>
-              <button
-                onClick={handleEnableWholesale}
-                disabled={setupSubmitting}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
-              >
+              <button onClick={handleEnableWholesale} disabled={setupSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2">
                 {setupSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 {setupSubmitting ? "جارٍ التفعيل..." : "تفعيل البيع بالجملة"}
               </button>
@@ -237,17 +282,36 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
           </div>
         )}
 
+        {/* === Main form === */}
         {!loading && data && !data.needsSetup && (
           <div className="space-y-4">
+            {/* Product card */}
             <div className="rounded-lg border bg-gray-50 p-3">
-              <div className="flex items-center gap-2 text-sm">
-                <Store className="h-4 w-4 text-gray-500" />
-                <span className="font-medium">{data.product.name}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-gray-500" />
+                  <span className="font-semibold text-sm">{data.product.name}</span>
+                </div>
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                  {totalStock} قطعة
+                </span>
               </div>
-              <p className="mt-2 text-xs text-gray-600">
-                خيارات مطابقة للمنتج الأصلي: <strong>{data.matchedCount}</strong> من <strong>{data.variants.length}</strong>
+              <p className="mt-1 text-xs text-gray-600">
+                خيارات مطابقة: <strong>{data.matchedCount}</strong> من <strong>{data.variants.length}</strong>
               </p>
             </div>
+
+            {/* Existing offer warning */}
+            {data.existingOfferId && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800">
+                <div className="flex items-start gap-1">
+                  <Info className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                  <span>
+                    يوجد عرض سابق (#{data.existingOfferId}). سيتم تحديثه وليس إنشاء عرض مكرر.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {data.hasAmbiguousMaster && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -259,17 +323,18 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
             )}
 
             {data.unmatchableVariants.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                <div className="flex items-start gap-1">
+                  <AlertCircle className="mt-0.5 h-3 w-3 flex-shrink-0" />
                   <div>
-                    <p>خيارات بلا هوية أصلية مطابقة:</p>
-                    <p className="mt-1 font-mono text-xs">{data.unmatchableVariants.join(", ")}</p>
+                    <p>خيارات بلا هوية أصلية مطابقة — لن تُضاف للعرض:</p>
+                    <p className="mt-1 font-mono text-[10px]">{data.unmatchableVariants.join(", ")}</p>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* BU + Pricing */}
             <div>
               <label className="mb-1 block text-sm font-medium">النشاط التجاري</label>
               <select value={businessUnitId ?? ""} onChange={(e) => setBusinessUnitId(parseInt(e.target.value))} className="w-full rounded-lg border p-2 text-sm">
@@ -292,34 +357,117 @@ export default function OfferToWholesaleModal({ productId, onClose, onSuccess }:
               </div>
             </div>
 
+            {/* Inventory Mode */}
             <div>
-              <label className="mb-2 block text-sm font-medium">الكميات التي ستُنقل إلى الجملة</label>
-              <div className="space-y-2 max-h-64 overflow-y-auto rounded-lg border p-2">
-                {data.variants.map((v) => {
-                  const matched = v.masterVariantId !== null;
-                  return (
-                    <div key={v.id} className={`flex items-center justify-between gap-3 rounded-lg p-2 text-sm ${matched ? "bg-white" : "bg-red-50"}`}>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium truncate">
+              <label className="mb-2 block text-sm font-bold text-gray-900">طريقة المخزون</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setInventoryMode("SHARED")}
+                  className={`rounded-lg border-2 p-3 text-right transition ${
+                    inventoryMode === "SHARED" ? "border-indigo-500 bg-indigo-50" : "border-gray-200 hover:border-indigo-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Layers className={`h-5 w-5 flex-shrink-0 ${inventoryMode === "SHARED" ? "text-indigo-600" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold">مخزون موحد</p>
+                      <p className="mt-0.5 text-[11px] text-gray-600">
+                        كل المخزون يُدمج في رصيد واحد مشترك بين متجرك والجملة
+                      </p>
+                    </div>
+                    {inventoryMode === "SHARED" && <CheckCircle2 className="h-5 w-5 text-indigo-600 flex-shrink-0" />}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInventoryMode("SPLIT")}
+                  className={`rounded-lg border-2 p-3 text-right transition ${
+                    inventoryMode === "SPLIT" ? "border-amber-500 bg-amber-50" : "border-gray-200 hover:border-amber-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Split className={`h-5 w-5 flex-shrink-0 ${inventoryMode === "SPLIT" ? "text-amber-600" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold">مخزون منفصل</p>
+                      <p className="mt-0.5 text-[11px] text-gray-600">
+                        تحدد لكل خيار كم يبقى في التجزئة، والباقي للجملة
+                      </p>
+                    </div>
+                    {inventoryMode === "SPLIT" && <CheckCircle2 className="h-5 w-5 text-amber-600 flex-shrink-0" />}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* SHARED — summary */}
+            {inventoryMode === "SHARED" && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm">
+                <p className="font-bold text-indigo-900">سيتم دمج كل المخزون</p>
+                <p className="mt-1 text-xs text-indigo-800">
+                  {totalStock} قطعة تصبح مخزونًا واحدًا مشتركًا. البيع من التجزئة أو الجملة ينقص الرصيد نفسه.
+                </p>
+              </div>
+            )}
+
+            {/* SPLIT — per-variant inputs */}
+            {inventoryMode === "SPLIT" && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="mb-2 text-xs font-bold text-gray-900">لكل خيار: كم يبقى في التجزئة؟</p>
+                <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+                  {matchedVariants.map((v) => {
+                    const raw = splitMap[v.id] || "0";
+                    const retail = Math.max(0, Math.min(v.retailStock, parseInt(raw, 10) || 0));
+                    const wholesale = v.retailStock - retail;
+                    const overLimit = (parseInt(raw, 10) || 0) > v.retailStock;
+                    return (
+                      <div key={v.id} className="rounded border border-gray-100 bg-gray-50 p-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-medium truncate">
                             {formatAttributes(v.displayAttributes) || v.sku}
                           </p>
-                          {matched ? <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" /> : <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                          <span className="text-[10px] text-gray-500 flex-shrink-0">إجمالي: {v.retailStock}</span>
                         </div>
-                        <p className="text-xs text-gray-400 truncate font-mono">{v.sku}</p>
-                        <p className="text-xs text-gray-500">متاح: {v.retailStock}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[10px] text-gray-500">تجزئة</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={v.retailStock}
+                              value={raw}
+                              onChange={(e) => setSplitForVariant(v.id, e.target.value)}
+                              className={`h-8 w-full rounded border px-2 text-xs font-bold focus:outline-none ${
+                                overLimit ? "border-amber-400 bg-amber-50" : "border-gray-200"
+                              }`}
+                            />
+                          </div>
+                          <div className="w-20 text-center">
+                            <div className="text-[10px] text-gray-500">جملة</div>
+                            <div className="text-sm font-bold text-amber-700">{wholesale}</div>
+                          </div>
+                        </div>
+                        {overLimit && (
+                          <p className="mt-1 text-[10px] text-amber-700">⚠ يتجاوز المتاح ({v.retailStock}). سيُقص.</p>
+                        )}
                       </div>
-                      <input
-                        type="number" min="0" max={v.retailStock}
-                        value={transferMap[v.id] ?? ""}
-                        onChange={(e) => setTransferMap({ ...transferMap, [v.id]: e.target.value })}
-                        placeholder="0"
-                        disabled={!matched}
-                        className="w-24 rounded border p-1.5 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed flex-shrink-0"
-                      />
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex justify-between rounded bg-amber-50 p-2 text-[11px]">
+                  <span>تجزئة: <strong>{retailTotal}</strong></span>
+                  <span>جملة: <strong>{wholesaleTotal}</strong></span>
+                  <span className="text-gray-500">إجمالي: <strong>{totalStock}</strong></span>
+                </div>
+              </div>
+            )}
+
+            {/* Total to wholesale preview */}
+            <div className="rounded-lg bg-emerald-50 p-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-emerald-800">سيُضاف للجملة:</span>
+                <span className="font-bold text-emerald-900">{wholesaleTotal} قطعة</span>
               </div>
             </div>
 
