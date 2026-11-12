@@ -148,10 +148,11 @@ export default function AutoBalanceEditor({
   }
 
   async function updateRequireSizeSelection(next: boolean) {
+    const prev = requireSizeSelection;
     setRequireSizeSelection(next);
     if (!enabled) return;
     try {
-      await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
+      const res = await fetch(`/api/wholesale/offers/${offerId}/auto-balance/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -159,7 +160,21 @@ export default function AutoBalanceEditor({
           requireSizeSelection: next,
         }),
       });
-    } catch { /* silent */ }
+      const d = await res.json();
+      if (!d.success) {
+        // Revert local state — server rejected
+        setRequireSizeSelection(prev);
+        setError(d.message || "فشل التحديث");
+        if (d.requiresConfirmation) {
+          setError(d.message + " — احذف قواعد الشراء أولاً");
+        }
+      } else {
+        setError("");
+      }
+    } catch {
+      setRequireSizeSelection(prev);
+      setError("خطأ في الاتصال");
+    }
   }
   async function updateMaxManualAdjustment(next: number) {
     setMaxManualAdjustment(next);
