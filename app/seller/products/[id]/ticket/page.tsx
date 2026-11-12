@@ -201,13 +201,14 @@ export default function ProductTicketPage() {
     if (!win) return;
     const mainImage = product.imageUrls[0] || "";
 
-    // Ticket — fixed aspect ratio 100:143. All content always visible.
-    // Sizes below scale uniformly via cqw (container-query-width).
-    const single = `<div class="cell"><div class="ticket">
+    // Ticket — fixed reference 100×143px. Wrapped in .cell that uses JS to
+    // compute scale = min(cellW/100, cellH/143) and applies transform:scale().
+    // Result: same structure, same aspect ratio, uniformly scaled at every size.
+    const single = `<div class="cell"><div class="box">
 <div class="ticket-header">${seller.storeName}</div>
 <div class="ticket-body">
 <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
-<div class="img-box">${mainImage ? `<img src="${mainImage}" alt="" class="img-cover"/>` : `<span class="ph">📦</span>`}</div>
+<div class="img-box">${mainImage ? `<img src="${mainImage}" alt=""/>` : `<span class="ph">📦</span>`}</div>
 </div>
 <div class="ticket-name">${product.name}</div>
 ${product.brand ? `<div class="ticket-brand">${product.brand}</div>` : ""}
@@ -220,35 +221,47 @@ ${barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;overflow:hidden}
 .sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm;gap:0}
-.cell{display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.6mm}
-.ticket{
-  aspect-ratio:100/143;
-  max-width:100%;
-  max-height:100%;
-  container-type:inline-size;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  border:1px dashed #999;
-  background:#fff;
-  font-size:4.5cqw;
-  line-height:1.1;
+.cell{display:flex;align-items:center;justify-content:center;overflow:hidden}
+.box{
+  width:100px;height:143px;
+  transform-origin:center center;
+  background:#fff;border:1px dashed #999;
+  display:flex;flex-direction:column;overflow:hidden;
+  font-size:4.5px;line-height:1.1;
 }
-.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:.35em .5em;font-size:1.4em;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
-.ticket-body{display:flex;gap:.3em;padding:.3em;background:#f9fafb;flex:1 1 0;min-height:0;align-items:center}
-.qr-box,.img-box{flex:1 1 0;min-width:0;min-height:0;border:1px solid #0a1f44;border-radius:.35em;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;aspect-ratio:1;max-height:100%}
-.qr-box img{width:100%;height:100%;object-fit:contain;padding:.25em}
+.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:1.5px 2px;font-size:6px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-body{display:flex;gap:1px;padding:1.5px;background:#f9fafb;flex:1 1 0;min-height:0}
+.qr-box,.img-box{flex:1 1 0;min-width:0;min-height:0;border:1px solid #0a1f44;border-radius:2px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}
+.qr-box img{width:100%;height:100%;object-fit:contain;padding:1px}
 .img-box img{width:100%;height:100%;object-fit:cover}
-.ph{font-size:1.5em;color:#cbd5e1}
-.ticket-name{font-size:1.15em;font-weight:900;text-align:center;padding:.25em .4em;color:#111827;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
-.ticket-brand{text-align:center;padding:.15em .3em;background:#ff5c00;color:#fff;font-size:.85em;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
-.ticket-barcode{background:#fff;padding:.15em .3em;text-align:center;border-top:1px dashed #cbd5e1;flex:0 0 auto}
-.ticket-barcode img{width:100%;max-height:5cqw;object-fit:contain;display:block}
+.ph{font-size:7px;color:#cbd5e1}
+.ticket-name{font-size:5px;font-weight:900;text-align:center;padding:1px 2px;color:#111827;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-brand{text-align:center;padding:0.5px;background:#ff5c00;color:#fff;font-size:3.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-barcode{background:#fff;padding:1px;text-align:center;border-top:1px dashed #cbd5e1;flex:0 0 auto}
+.ticket-barcode img{width:100%;max-height:5px;object-fit:contain;display:block}
 @media print{body{background:#fff}}
-</style></head><body><div class="sheet">${all}</div><script>window.onload=()=>{setTimeout(()=>{window.print()},300)};</script></body></html>`;
+</style></head><body><div class="sheet">${all}</div>
+<script>
+function fit(){
+  document.querySelectorAll('.cell').forEach(function(cell){
+    var box=cell.querySelector('.box');if(!box)return;
+    var cw=cell.clientWidth,ch=cell.clientHeight;
+    if(cw<=0||ch<=0)return;
+    var ratio=100/143;
+    var s=(cw/ch>ratio)?(ch/143):(cw/100);
+    box.style.transform='scale('+s+')';
+  });
+}
+window.addEventListener('load',function(){
+  fit();
+  setTimeout(function(){fit();window.print();},250);
+});
+window.addEventListener('beforeprint',fit);
+</script></body></html>`;
     win.document.write(html);
     win.document.close();
   }
+
 
 
 
