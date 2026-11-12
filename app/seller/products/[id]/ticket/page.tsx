@@ -201,9 +201,9 @@ export default function ProductTicketPage() {
     if (!win) return;
     const mainImage = product.imageUrls[0] || "";
 
-    // ═══ One ticket — identical structure for all sizes ═══
-    // Scales uniformly via cqmin; no element hidden at any size.
-    const single = `<div class="ticket">
+    // Ticket — fixed aspect ratio 100:143. All content always visible.
+    // Sizes below scale uniformly via cqw (container-query-width).
+    const single = `<div class="cell"><div class="ticket">
 <div class="ticket-header">${seller.storeName}</div>
 <div class="ticket-body">
 <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
@@ -212,7 +212,7 @@ export default function ProductTicketPage() {
 <div class="ticket-name">${product.name}</div>
 ${product.brand ? `<div class="ticket-brand">${product.brand}</div>` : ""}
 ${barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt="barcode"/></div>` : ""}
-</div>`;
+</div></div>`;
 
     const all = Array(layout.tickets).fill(single).join("");
     const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>Print — ${product.name}</title><style>
@@ -220,90 +220,36 @@ ${barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;overflow:hidden}
 .sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm;gap:0}
+.cell{display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.6mm}
 .ticket{
-  container-type:size;
-  container-name:ticket;
+  aspect-ratio:100/143;
+  max-width:100%;
+  max-height:100%;
+  container-type:inline-size;
   display:flex;
   flex-direction:column;
   overflow:hidden;
   border:1px dashed #999;
-  break-inside:avoid;
   background:#fff;
-  font-size:4.5cqmin;
+  font-size:4.5cqw;
   line-height:1.1;
 }
-.ticket-header{
-  background:#0a1f44;
-  color:#fff;
-  text-align:center;
-  padding:.35em .5em;
-  font-size:1.4em;
-  font-weight:900;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  flex:0 0 auto;
-}
-.ticket-body{
-  display:flex;
-  gap:.3em;
-  padding:.3em;
-  background:#f9fafb;
-  flex:1 1 0;
-  min-height:0;
-}
-.qr-box,.img-box{
-  flex:1 1 0;
-  min-width:0;
-  min-height:0;
-  border:1px solid #0a1f44;
-  border-radius:.35em;
-  overflow:hidden;
-  background:#fff;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
+.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:.35em .5em;font-size:1.4em;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-body{display:flex;gap:.3em;padding:.3em;background:#f9fafb;flex:1 1 0;min-height:0;align-items:center}
+.qr-box,.img-box{flex:1 1 0;min-width:0;min-height:0;border:1px solid #0a1f44;border-radius:.35em;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;aspect-ratio:1;max-height:100%}
 .qr-box img{width:100%;height:100%;object-fit:contain;padding:.25em}
 .img-box img{width:100%;height:100%;object-fit:cover}
 .ph{font-size:1.5em;color:#cbd5e1}
-.ticket-name{
-  font-size:1.15em;
-  font-weight:900;
-  text-align:center;
-  padding:.25em .4em;
-  color:#111827;
-  background:#fff;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  flex:0 0 auto;
-}
-.ticket-brand{
-  text-align:center;
-  padding:.15em .3em;
-  background:#ff5c00;
-  color:#fff;
-  font-size:.85em;
-  font-weight:800;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  flex:0 0 auto;
-}
-.ticket-barcode{
-  background:#fff;
-  padding:.15em .3em;
-  text-align:center;
-  border-top:1px dashed #cbd5e1;
-  flex:0 0 auto;
-}
-.ticket-barcode img{width:100%;max-height:6cqmin;object-fit:contain;display:block}
+.ticket-name{font-size:1.15em;font-weight:900;text-align:center;padding:.25em .4em;color:#111827;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-brand{text-align:center;padding:.15em .3em;background:#ff5c00;color:#fff;font-size:.85em;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.ticket-barcode{background:#fff;padding:.15em .3em;text-align:center;border-top:1px dashed #cbd5e1;flex:0 0 auto}
+.ticket-barcode img{width:100%;max-height:5cqw;object-fit:contain;display:block}
 @media print{body{background:#fff}}
 </style></head><body><div class="sheet">${all}</div><script>window.onload=()=>{setTimeout(()=>{window.print()},300)};</script></body></html>`;
     win.document.write(html);
     win.document.close();
   }
+
 
 
 
