@@ -121,34 +121,56 @@ export const AutoBalanceService = {
       sizeLimits[row.size] = row.minOrderQty;
     }
 
-    // Fetch stock per variant
-    const merchantVariantIds = offer.variants
-      .map((v) => v.merchantVariantId)
-      .filter((id): id is number => typeof id === "number");
+    // M12.7: SHARED uses InventoryPoolVariant; SPLIT uses legacy InventoryBalance
+    const pool = await prisma.inventoryPool.findUnique({
+      where: {
+        businessUnitId_masterId: {
+          businessUnitId: offer.businessUnitId,
+          masterId: offer.masterId,
+        },
+      },
+      include: { variants: true },
+    });
 
-    const stockMap = new Map<number, number>();
-    if (merchantVariantIds.length > 0) {
-      const [balances, reservations] = await Promise.all([
-        prisma.inventoryBalance.findMany({
-          where: { merchantVariantId: { in: merchantVariantIds } },
-          select: { merchantVariantId: true, quantity: true },
-        }),
-        prisma.stockReservation.findMany({
-          where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
-          select: { merchantVariantId: true, quantity: true },
-        }),
-      ]);
-      for (const b of balances) {
-        stockMap.set(
-          b.merchantVariantId,
-          (stockMap.get(b.merchantVariantId) || 0) + b.quantity
+    const isShared = pool?.mode === "SHARED";
+    const stockByMasterMv = new Map<number, number>();
+    const stockByMerchantMv = new Map<number, number>();
+
+    if (isShared && pool) {
+      for (const pv of pool.variants) {
+        stockByMasterMv.set(
+          pv.masterVariantId,
+          Math.max(0, pv.quantity - pv.reservedQuantity)
         );
       }
-      for (const r of reservations) {
-        stockMap.set(
-          r.merchantVariantId,
-          Math.max(0, (stockMap.get(r.merchantVariantId) || 0) - r.quantity)
-        );
+    } else {
+      const merchantVariantIds = offer.variants
+        .map((v) => v.merchantVariantId)
+        .filter((id): id is number => typeof id === "number");
+
+      if (merchantVariantIds.length > 0) {
+        const [balances, reservations] = await Promise.all([
+          prisma.inventoryBalance.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds } },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+          prisma.stockReservation.findMany({
+            where: { merchantVariantId: { in: merchantVariantIds }, status: "ACTIVE" },
+            select: { merchantVariantId: true, quantity: true },
+          }),
+        ]);
+        for (const b of balances) {
+          stockByMerchantMv.set(
+            b.merchantVariantId,
+            (stockByMerchantMv.get(b.merchantVariantId) || 0) + b.quantity
+          );
+        }
+        for (const r of reservations) {
+          stockByMerchantMv.set(
+            r.merchantVariantId,
+            Math.max(0, (stockByMerchantMv.get(r.merchantVariantId) || 0) - r.quantity)
+          );
+        }
       }
     }
 
@@ -156,12 +178,15 @@ export const AutoBalanceService = {
     const variantData = offer.variants.map((v) => {
       const attrs =
         (v.masterVariant?.attributes as Array<{ name: string; value: string }>) ?? [];
+      const stock = isShared
+        ? (stockByMasterMv.get(v.masterVariantId) ?? 0)
+        : (v.merchantVariantId ? (stockByMerchantMv.get(v.merchantVariantId) ?? 0) : 0);
       return {
         variantId: v.id,
         merchantVariantId: v.merchantVariantId,
         attributes: attrs,
         sizeValue: getSizeValue(attrs),
-        stock: v.merchantVariantId ? stockMap.get(v.merchantVariantId) || 0 : 0,
+        stock,
       };
     });
 
