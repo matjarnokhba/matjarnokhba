@@ -37,18 +37,17 @@ const PRINT_LAYOUTS: Array<{
   rows: number;
   tickets: number;
   label: string;
-  content: "full" | "medium" | "small" | "qr-only";
 }> = [
-  { id: "4", cols: 2, rows: 2, tickets: 4, label: "كبير", content: "full" },
-  { id: "6", cols: 2, rows: 3, tickets: 6, label: "كبير", content: "full" },
-  { id: "8", cols: 2, rows: 4, tickets: 8, label: "كبير", content: "full" },
-  { id: "9", cols: 3, rows: 3, tickets: 9, label: "متوسط", content: "medium" },
-  { id: "12", cols: 3, rows: 4, tickets: 12, label: "متوسط", content: "medium" },
-  { id: "16", cols: 4, rows: 4, tickets: 16, label: "صغير", content: "small" },
-  { id: "24", cols: 4, rows: 6, tickets: 24, label: "صغير", content: "small" },
-  { id: "30", cols: 5, rows: 6, tickets: 30, label: "صغير جداً", content: "qr-only" },
-  { id: "50", cols: 5, rows: 10, tickets: 50, label: "QR فقط", content: "qr-only" },
-  { id: "100", cols: 10, rows: 10, tickets: 100, label: "ملصقات", content: "qr-only" },
+  { id: "4", cols: 2, rows: 2, tickets: 4, label: "كبير" },
+  { id: "6", cols: 2, rows: 3, tickets: 6, label: "كبير" },
+  { id: "8", cols: 2, rows: 4, tickets: 8, label: "كبير" },
+  { id: "9", cols: 3, rows: 3, tickets: 9, label: "متوسط" },
+  { id: "12", cols: 3, rows: 4, tickets: 12, label: "متوسط" },
+  { id: "16", cols: 4, rows: 4, tickets: 16, label: "صغير" },
+  { id: "24", cols: 4, rows: 6, tickets: 24, label: "صغير" },
+  { id: "30", cols: 5, rows: 6, tickets: 30, label: "صغير جداً" },
+  { id: "50", cols: 5, rows: 10, tickets: 50, label: "صغير جداً" },
+  { id: "100", cols: 10, rows: 10, tickets: 100, label: "ملصقات" },
 ];
 export default function ProductTicketPage() {
   const params = useParams();
@@ -201,44 +200,111 @@ export default function ProductTicketPage() {
     const win = window.open("", "_blank");
     if (!win) return;
     const mainImage = product.imageUrls[0] || "";
-    const single = `<div class="ticket size-${layout.content}">
-${layout.content === "full" ? `<div class="ticket-header">${seller.storeName}</div>` : ""}
+
+    // ═══ One ticket — identical structure for all sizes ═══
+    // Scales uniformly via cqmin; no element hidden at any size.
+    const single = `<div class="ticket">
+<div class="ticket-header">${seller.storeName}</div>
 <div class="ticket-body">
 <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
-${layout.content === "full" || layout.content === "medium" ? `<div class="img-box">${mainImage ? `<img src="${mainImage}" alt="" class="img-cover"/>` : "<span>📦</span>"}</div>` : ""}
+<div class="img-box">${mainImage ? `<img src="${mainImage}" alt="" class="img-cover"/>` : `<span class="ph">📦</span>`}</div>
 </div>
-${layout.content !== "qr-only" ? `<div class="ticket-name">${product.name}</div>` : `<div class="ticket-name-qr">${product.name}</div>`}
-${layout.content === "full" && product.brand ? `<div class="ticket-brand">${product.brand}</div>` : ""}
-${layout.content === "full" && barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt="barcode"/></div>` : ""}
+<div class="ticket-name">${product.name}</div>
+${product.brand ? `<div class="ticket-brand">${product.brand}</div>` : ""}
+${barcodeDataUrl ? `<div class="ticket-barcode"><img src="${barcodeDataUrl}" alt="barcode"/></div>` : ""}
 </div>`;
+
     const all = Array(layout.tickets).fill(single).join("");
     const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>Print — ${product.name}</title><style>
 @page{size:A4 portrait;margin:5mm}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff}
-.sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm}
-.ticket{container-type:inline-size;font-size:5cqw;display:flex;flex-direction:column;overflow:hidden;border:1px dashed #999;break-inside:avoid;background:#fff}
-.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:.4em .5em;font-size:1.3em;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-body{display:flex;gap:.4em;padding:.4em;background:#f9fafb;flex:1;min-height:0}
-.qr-box,.img-box{flex:1;min-width:0;border:1px solid #0a1f44;border-radius:.4em;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}
-.qr-box img{width:100%;height:100%;object-fit:contain;padding:.3em}
+html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;overflow:hidden}
+.sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm;gap:0}
+.ticket{
+  container-type:size;
+  container-name:ticket;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px dashed #999;
+  break-inside:avoid;
+  background:#fff;
+  font-size:4.5cqmin;
+  line-height:1.1;
+}
+.ticket-header{
+  background:#0a1f44;
+  color:#fff;
+  text-align:center;
+  padding:.35em .5em;
+  font-size:1.4em;
+  font-weight:900;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  flex:0 0 auto;
+}
+.ticket-body{
+  display:flex;
+  gap:.3em;
+  padding:.3em;
+  background:#f9fafb;
+  flex:1 1 0;
+  min-height:0;
+}
+.qr-box,.img-box{
+  flex:1 1 0;
+  min-width:0;
+  min-height:0;
+  border:1px solid #0a1f44;
+  border-radius:.35em;
+  overflow:hidden;
+  background:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.qr-box img{width:100%;height:100%;object-fit:contain;padding:.25em}
 .img-box img{width:100%;height:100%;object-fit:cover}
-.ticket-name{font-size:1.1em;font-weight:900;text-align:center;padding:.3em .4em;color:#111827;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-name-qr{font-size:.6em;font-weight:700;text-align:center;padding:.1em .2em;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-brand{display:block;text-align:center;padding:.2em;background:#ff5c00;color:#fff;font-size:.7em;font-weight:800}
-.ticket-barcode{background:#fff;padding:.2em .4em;text-align:center;border-top:1px dashed #cbd5e1}
-.ticket-barcode img{width:100%;max-height:7cqw;object-fit:contain;display:block}
-.size-medium .ticket-brand,.size-medium .ticket-barcode,.size-small .ticket-brand,.size-small .ticket-barcode,.size-qr-only .ticket-brand,.size-qr-only .ticket-barcode{display:none}
-.size-small .img-box,.size-qr-only .img-box{display:none}
-.size-qr-only .ticket-body{flex:0 0 auto;padding:.3em;background:#fff}
-.size-qr-only .qr-box{border:none}
-.size-qr-only .qr-box img{padding:0}
-.size-qr-only{font-size:6cqw}
+.ph{font-size:1.5em;color:#cbd5e1}
+.ticket-name{
+  font-size:1.15em;
+  font-weight:900;
+  text-align:center;
+  padding:.25em .4em;
+  color:#111827;
+  background:#fff;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  flex:0 0 auto;
+}
+.ticket-brand{
+  text-align:center;
+  padding:.15em .3em;
+  background:#ff5c00;
+  color:#fff;
+  font-size:.85em;
+  font-weight:800;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  flex:0 0 auto;
+}
+.ticket-barcode{
+  background:#fff;
+  padding:.15em .3em;
+  text-align:center;
+  border-top:1px dashed #cbd5e1;
+  flex:0 0 auto;
+}
+.ticket-barcode img{width:100%;max-height:6cqmin;object-fit:contain;display:block}
 @media print{body{background:#fff}}
 </style></head><body><div class="sheet">${all}</div><script>window.onload=()=>{setTimeout(()=>{window.print()},300)};</script></body></html>`;
     win.document.write(html);
     win.document.close();
   }
+
 
 
   if (loading) {
