@@ -328,11 +328,11 @@ export default function ProductTicketPage() {
         </p>
       </div>
 
-      <div className="grid min-w-0 gap-4 sm:gap-5 lg:grid-cols-2">
-        <div className="flex justify-center">
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
+        <div className="w-full min-w-0">
           
           {/* ═══ المعاينة على الشاشة ═══ */}
-          <div className="flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border-2 border-[#0a1f44] bg-white shadow-lg sm:max-w-[340px]">
+          <div className="mx-auto flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border-2 border-[#0a1f44] bg-white shadow-lg sm:max-w-[340px]">
             <div className="bg-[#0a1f44] text-white text-center py-2 px-3 text-lg font-black">
               {seller.storeName}
             </div>
