@@ -62,6 +62,7 @@ export default function AutoBalanceEditor({
   const [error, setError] = useState("");
   const [previewQty, setPreviewQty] = useState("100");
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [previewError, setPreviewError] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [requireSizeSelection, setRequireSizeSelection] = useState(initialRequireSizeSelection);
@@ -81,9 +82,15 @@ export default function AutoBalanceEditor({
   }, [variants]);
 
   useEffect(() => {
-    if (!enabled) { setPreview(null); return; }
+    if (!enabled) { setPreview(null); setPreviewError(""); return; }
+    // Skip fetch when requireSizeSelection (seller preview only supports wildcard)
+    if (requireSizeSelection && availableSizes.length > 0) {
+      setPreview(null);
+      setPreviewError("المعاينة غير متاحة عندما 'إلزام المقاس' مفعّل — المشتري يختار المقاسات بنفسه.");
+      return;
+    }
     const t = parseInt(previewQty, 10);
-    if (!t || t < 1) { setPreview(null); return; }
+    if (!t || t < 1) { setPreview(null); setPreviewError(""); return; }
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
       try {
@@ -92,9 +99,17 @@ export default function AutoBalanceEditor({
           `/api/wholesale/offers/${offerId}/auto-balance/compute?qty=${t}`
         );
         const d = await res.json();
-        if (d.success) setPreview(d);
-        else setPreview(null);
-      } catch { setPreview(null); }
+        if (d.success) {
+          setPreview(d);
+          setPreviewError("");
+        } else {
+          setPreview(null);
+          setPreviewError(d.message || "فشل التوزيع");
+        }
+      } catch {
+        setPreview(null);
+        setPreviewError("خطأ في الاتصال");
+      }
       finally { setPreviewLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
@@ -269,13 +284,30 @@ export default function AutoBalanceEditor({
       )}
 {enabled && !showConfirmDelete && (
         <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-3">
+          <div className="rounded-lg bg-blue-50 p-2 text-[11px] text-blue-800">
+            💡 <strong>أداة توقّع للبائع:</strong> تُظهر كيف سيوزع النظام الكمية التي تدخلها على الألوان حسب نسب مخزونها. لا تنفذ بيعاً.
+          </div>
+
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">معاينة التوزيع (كمية)</label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              {requireSizeSelection ? "معاينة (لكل مقاس بشكل منفصل)" : "معاينة التوزيع (كمية)"}
+            </label>
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={previewQty} onChange={(e) => setPreviewQty(e.target.value)} className="h-8 w-24 rounded border border-gray-200 px-2 text-xs font-bold" />
               {previewLoading && <span className="text-xs text-gray-500">يحسب...</span>}
             </div>
           </div>
+
+          {previewError && (
+            <div className="rounded bg-amber-50 p-2 text-[11px] text-amber-800">
+              ⚠ {previewError}
+              {requireSizeSelection && availableSizes.length > 0 && (
+                <div className="mt-1">
+                  (المعاينة معطّلة لأن "إلزام المقاس" مفعّل — المشتري سيختار المقاس أولاً. لرؤية المعاينة، أطفئ "إلزام المقاس".)
+                </div>
+              )}
+            </div>
+          )}
 
           {preview && (
             <>
