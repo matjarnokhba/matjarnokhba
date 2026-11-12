@@ -112,16 +112,44 @@ export async function GET(
     const matchedCount = variants.filter((v) => v.masterVariantId !== null).length;
     const unmatchable = variants.filter((v) => v.masterVariantId === null && v.retailStock > 0);
 
+    const totalRetailStock = variants.reduce((s, v) => s + v.retailStock, 0);
+    const masterIdResolved = masterIds.length === 1 ? masterIds[0] : null;
+
+    let existingOfferId: number | null = null;
+    let existingPoolMode: string | null = null;
+    if (masterIdResolved && sellingBus.length > 0) {
+      const firstBuId = sellingBus[0].id;
+      const [offer, pool] = await Promise.all([
+        prisma.wholesaleOffer.findFirst({
+          where: { businessUnitId: firstBuId, masterId: masterIdResolved, deletedAt: null },
+          select: { id: true, status: true },
+        }),
+        prisma.inventoryPool.findUnique({
+          where: { businessUnitId_masterId: { businessUnitId: firstBuId, masterId: masterIdResolved } },
+          select: { mode: true },
+        }),
+      ]);
+      existingOfferId = offer?.id ?? null;
+      existingPoolMode = pool?.mode ?? null;
+    }
+
     return NextResponse.json({
       success: true,
       needsSetup: sellingBus.length === 0,
-      product: { id: product.id, name: product.name, price: Number(product.salePrice ?? 0) },
+      product: {
+        id: product.id,
+        name: product.name,
+        price: Number(product.salePrice ?? 0),
+        totalStock: totalRetailStock,
+      },
       businessUnits: sellingBus,
       variants,
-      masterId: masterIds.length === 1 ? masterIds[0] : null,
+      masterId: masterIdResolved,
       hasAmbiguousMaster: masterIds.length > 1,
       matchedCount,
       unmatchableVariants: unmatchable.map((v) => v.sku || v.id),
+      existingOfferId,
+      existingPoolMode,
     });
   } catch (error) {
     console.error("Offer-to-wholesale prepare error:", error);
