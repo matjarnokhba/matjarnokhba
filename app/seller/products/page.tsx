@@ -127,84 +127,81 @@ export default function SellerProductsPage() {
       )}
 
       {!loading && !error && products.length > 0 && (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
           {products.map((product) => {
             const statusInfo = STATUS_INFO[product.status] || STATUS_INFO.DRAFT;
             const productHref = sellerSlug ? `/product/${sellerSlug}/${product.slug}` : "#";
+            const ws = wholesaleSummary[product.id];
 
             return (
-              <div key={product.id} className="rounded-xl bg-white p-3 shadow-sm transition hover:shadow-md sm:p-4">
-                <div className="flex items-center gap-2 sm:gap-4">
-                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100 sm:h-16 sm:w-16">
-                    {product.image ? (
-                      <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-300">
-                        <Package className="h-5 w-5 sm:h-6 sm:w-6" />
-                      </div>
-                    )}
-                  </div>
+              <div key={product.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm transition hover:shadow-md">
+                {/* Image + badges overlay */}
+                <div className="relative aspect-square w-full overflow-hidden bg-gray-100">
+                  {product.image ? (
+                    <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-gray-300">
+                      <Package className="h-10 w-10" />
+                    </div>
+                  )}
+                  <span className={`absolute top-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${statusInfo.bg} ${statusInfo.color}`}>
+                    {statusInfo.label}
+                  </span>
+                  {ws && (
+                    <span className={`absolute top-1 right-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                      ws.wholesaleStock > 0
+                        ? "bg-emerald-500 text-white"
+                        : "bg-amber-500 text-white"
+                    }`}>
+                      {ws.wholesaleStock > 0 ? `جم ${ws.wholesaleStock}` : "نفد"}
+                    </span>
+                  )}
+                </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1 sm:gap-2">
-                      <span className="line-clamp-1 text-sm font-black text-gray-900">{product.name}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusInfo.bg} ${statusInfo.color}`}>
-                        {statusInfo.label}
+                {/* Content */}
+                <div className="flex flex-1 flex-col p-2">
+                  <h3 className="line-clamp-2 text-[11px] font-black leading-tight text-gray-900 sm:text-sm">
+                    {product.name}
+                  </h3>
+                  <p className="mt-0.5 line-clamp-1 text-[9px] text-gray-500 sm:text-[10px]">
+                    {product.categoryName}
+                  </p>
+                  <div className="mt-1 flex items-baseline justify-between gap-1">
+                    <div className="flex items-baseline gap-0.5">
+                      <span className="text-sm font-black text-[#ff5c00] sm:text-base">
+                        {product.price}
                       </span>
-                      {wholesaleSummary[product.id] && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          wholesaleSummary[product.id].wholesaleStock > 0
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-amber-100 text-amber-700"
-                        }`}>
-                          {wholesaleSummary[product.id].wholesaleStock > 0
-                            ? `جم: ${wholesaleSummary[product.id].wholesaleStock}`
-                            : "نفد جم"}
-                        </span>
-                      )}
+                      <span className="text-[8px] text-gray-500 sm:text-[9px]">{CURRENCY}</span>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-gray-500 sm:mt-1 sm:gap-3 sm:text-[11px]">
-                      <span>{product.categoryName}</span>
-                      <span>·</span>
-                      <span>المخزون: <strong className={product.stock === 0 ? "text-red-600" : ""}>{product.stock}</strong></span>
-                      <span>·</span>
-                      <span className="hidden sm:inline">{product.sold} مبيع</span>
-                    </div>
+                    <span className={`text-[9px] sm:text-[10px] ${product.stock === 0 ? "font-bold text-red-600" : "text-gray-600"}`}>
+                      مخزون {product.stock}
+                    </span>
                   </div>
 
-                  <div className="shrink-0 text-left">
-                    <div className="text-sm font-black text-[#ff5c00] sm:text-lg">{product.price}</div>
-                    <div className="text-[9px] text-gray-500 sm:text-[10px]">{CURRENCY}</div>
-                  </div>
-
-                  <div className="flex shrink-0 gap-0.5 sm:gap-1">
-                    <Link href={productHref} target="_blank" className="flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9 text-gray-500 transition hover:bg-gray-50" aria-label="عرض">
-                      <Eye className="h-4 w-4" />
+                  {/* Actions */}
+                  <div className="mt-1.5 flex items-center gap-0.5 border-t border-gray-100 pt-1.5 sm:gap-1">
+                    <Link href={productHref} target="_blank" className="flex h-7 flex-1 items-center justify-center rounded text-gray-500 transition hover:bg-gray-50 sm:h-8" aria-label="عرض">
+                      <Eye className="h-3.5 w-3.5" />
                     </Link>
-                    <Link href={`/seller/products/${product.id}/ticket`} className="flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9 text-[#ff5c00] transition hover:bg-[#fff4ed]" aria-label="بطاقة المنتج (QR)">
-                      <QrCode className="h-4 w-4" />
+                    <Link href={`/seller/products/${product.id}/ticket`} className="flex h-7 flex-1 items-center justify-center rounded text-[#ff5c00] transition hover:bg-[#fff4ed] sm:h-8" aria-label="بطاقة المنتج (QR)">
+                      <QrCode className="h-3.5 w-3.5" />
                     </Link>
-                    <Link href={`/seller/products/${product.id}`} className="flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9 text-blue-600 transition hover:bg-blue-50" aria-label="تعديل">
-                      <Edit3 className="h-4 w-4" />
+                    <Link href={`/seller/products/${product.id}`} className="flex h-7 flex-1 items-center justify-center rounded text-blue-600 transition hover:bg-blue-50 sm:h-8" aria-label="تعديل">
+                      <Edit3 className="h-3.5 w-3.5" />
                     </Link>
                     <button
                       onClick={() => {
-                        const ws = wholesaleSummary[product.id];
                         if (ws?.offerId) {
                           window.location.href = `/wholesale/offers/${ws.offerId}`;
                         } else {
                           setOfferModalProductId(product.id);
                         }
                       }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9 text-emerald-600 transition hover:bg-emerald-50"
+                      className="flex h-7 flex-1 items-center justify-center rounded text-emerald-600 transition hover:bg-emerald-50 sm:h-8"
                       aria-label="اعرض بالجملة"
-                      title={
-                        wholesaleSummary[product.id]?.offerId
-                          ? "عرض بالجملة موجود — اضغط للتفاصيل"
-                          : "اعرض بالجملة"
-                      }
+                      title={ws?.offerId ? "عرض بالجملة موجود — اضغط للتفاصيل" : "اعرض بالجملة"}
                     >
-                      <ShoppingBag className="h-4 w-4" />
+                      <ShoppingBag className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
