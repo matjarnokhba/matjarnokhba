@@ -222,23 +222,22 @@ html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, s
 #grid { display: flex; flex-direction: column; width: 200mm; }
 .row { display: flex; justify-content: center; gap: 1mm; margin-bottom: 1mm; }
 .row:last-child { margin-bottom: 0; }
-.cell { overflow: hidden; border: 0.15mm dashed #999; flex-shrink: 0; box-sizing: border-box; }
-.frame { width: 100%; height: 100%; box-sizing: border-box; padding: 0.4mm; border-radius: 0.55em; background: linear-gradient(145deg, #0a1f44 0%, #374151 25%, #9ca3af 55%, #e5e7eb 82%, #ffffff 100%); overflow: hidden; }
-.ticket { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #fff; line-height: 1.2; border-radius: 0.5em; overflow: hidden; }
-.ticket-header { flex: 0 0 auto; min-height: 2.8em; background: #0a1f44; color: #fff; text-align: center; padding: 0.55em 0.7em; font-size: 1em; font-weight: 900; line-height: 1.55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ticket-body { flex: 1 1 0; min-height: 0; display: flex; gap: 0.44em; padding: 0.44em; background: #f9fafb; border-bottom: 0.11em dashed #cbd5e1; }
+.cell { overflow: hidden; border: 0.15mm dashed #999; flex-shrink: 0; }
+.ticket { width: 100%; height: 100%; display: flex; flex-direction: column; background: #fff; line-height: 1.2; }
+.ticket-header { background: #0a1f44; color: #fff; text-align: center; padding: 0.44em 0.67em; font-size: 1em; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticket-body { display: flex; gap: 0.44em; padding: 0.44em; background: #f9fafb; border-bottom: 0.11em dashed #cbd5e1; }
 .qr-box, .img-box { flex: 1 1 0; min-width: 0; aspect-ratio: 1; border: 0.11em solid #0a1f44; border-radius: 0.44em; overflow: hidden; background: #fff; display: flex; align-items: center; justify-content: center; }
 .qr-box img, .img-box img { width: 100%; height: 100%; object-fit: cover; }
 .qr-box img { object-fit: contain; padding: 0.22em; }
 .ph { font-size: 2.22em; color: #cbd5e1; }
-.ticket-name-section { flex: 0 0 auto; text-align: center; padding: 0.55em 0.44em; background: #fff; }
+.ticket-name-section { text-align: center; padding: 0.55em 0.44em; background: #fff; }
 .ticket-name { font-size: 1.11em; font-weight: 900; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ticket-brand { display: inline-block; background: #ff5c00; color: #fff; font-size: 0.67em; font-weight: 800; padding: 0.11em 0.55em; border-radius: 1.11em; margin-top: 0.22em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.ticket-barcode-section { flex: 0 0 auto; background: #fff; padding: 0.33em 0.44em; text-align: center; border-top: 0.06em dashed #cbd5e1; }
+.ticket-barcode-section { background: #fff; padding: 0.33em 0.44em; text-align: center; border-top: 0.06em dashed #cbd5e1; }
 .ticket-barcode-section img { width: 100%; max-height: 2.78em; display: block; margin: 0 auto; object-fit: contain; }
-.ticket-footer { flex: 0 0 auto; background: #0a1f44; color: #fff; text-align: center; padding: 0.33em 0.44em; font-size: 0.61em; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 0.22em; }
+.ticket-footer { background: #0a1f44; color: #fff; text-align: center; padding: 0.33em 0.44em; font-size: 0.61em; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 0.22em; }
 </style></head><body>
-<div id="measure"><div class="frame">${ticketHTML}</div></div>
+<div id="measure">${ticketHTML}</div>
 <div id="grid"></div>
 <script>
 (function() {
@@ -286,7 +285,7 @@ html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, s
         cell.style.width = best.tw + 'mm';
         cell.style.height = best.th + 'mm';
         cell.style.fontSize = (best.tw * 0.0529) + 'mm';
-        cell.innerHTML = '<div class="frame"><div class="ticket">' + meas.innerHTML + '</div></div>';
+        cell.innerHTML = '<div class="ticket">' + meas.innerHTML + '</div>';
         row.appendChild(cell);
         idx++;
       }
@@ -318,6 +317,7 @@ html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, s
     win.document.write(html);
     win.document.close();
   }
+
 
 
 
