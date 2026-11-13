@@ -29,7 +29,7 @@ type SellerInfo = {
   slug: string;
 };
 
-type PrintLayoutId = "4" | "6" | "12" | "20" | "30" | "42" | "63" | "100";
+type PrintLayoutId = "6" | "9" | "12" | "20" | "30" | "42" | "63" | "90" | "110";
 
 const PRINT_LAYOUTS: Array<{
   id: PrintLayoutId;
@@ -38,14 +38,15 @@ const PRINT_LAYOUTS: Array<{
   tickets: number;
   label: string;
 }> = [
-  { id: "4",  cols: 2, rows: 2,  tickets: 4,   label: "كبير" },
-  { id: "6",  cols: 2, rows: 3,  tickets: 6,   label: "كبير" },
-  { id: "12", cols: 3, rows: 4,  tickets: 12,  label: "متوسط" },
-  { id: "20", cols: 4, rows: 5,  tickets: 20,  label: "متوسط" },
-  { id: "30", cols: 5, rows: 6,  tickets: 30,  label: "صغير" },
-  { id: "42", cols: 6, rows: 7,  tickets: 42,  label: "صغير" },
-  { id: "63", cols: 7, rows: 9,  tickets: 63,  label: "صغير جداً" },
-  { id: "100", cols: 10, rows: 10, tickets: 100, label: "ملصقات" },
+  { id: "6",   cols: 2, rows: 3,  tickets: 6,   label: "كبير جداً" },
+  { id: "9",   cols: 3, rows: 3,  tickets: 9,   label: "كبير" },
+  { id: "12",  cols: 3, rows: 4,  tickets: 12,  label: "متوسط ⭐" },
+  { id: "20",  cols: 4, rows: 5,  tickets: 20,  label: "متوسط" },
+  { id: "30",  cols: 5, rows: 6,  tickets: 30,  label: "صغير" },
+  { id: "42",  cols: 6, rows: 7,  tickets: 42,  label: "صغير" },
+  { id: "63",  cols: 7, rows: 9,  tickets: 63,  label: "صغير جداً" },
+  { id: "90",  cols: 9, rows: 10, tickets: 90,  label: "ملصقات ⭐" },
+  { id: "110", cols: 10, rows: 11, tickets: 110, label: "QR فقط" },
 ];
 export default function ProductTicketPage() {
   const params = useParams();
@@ -60,7 +61,7 @@ export default function ProductTicketPage() {
   const [productUrl, setProductUrl] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [qrGenerating, setQrGenerating] = useState(false);
-  const [printLayout, setPrintLayout] = useState<PrintLayoutId>("4");
+  const [printLayout, setPrintLayout] = useState<PrintLayoutId>("12");
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
@@ -199,9 +200,7 @@ export default function ProductTicketPage() {
     if (!win) return;
     const mainImage = product.imageUrls[0] || "";
 
-    // ORIGINAL ticket design — content determines height, aspect-square boxes preserved.
-    // JS measures rendered height then scales uniformly to fit each cell.
-    const single = `<div class="cell"><div class="ticket">
+    const ticketHTML = `<div class="ticket">
 <div class="ticket-header">${seller.storeName}</div>
 <div class="ticket-body">
 <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
@@ -213,59 +212,112 @@ ${product.brand ? `<div class="ticket-brand">🏷️ ${product.brand}</div>` : "
 </div>
 ${barcodeDataUrl ? `<div class="ticket-barcode-section"><img src="${barcodeDataUrl}" alt="barcode"/></div>` : ""}
 <div class="ticket-footer"><span>📱</span><span>امسح رمز QR للمزيد من التفاصيل</span></div>
-</div></div>`;
+</div>`;
 
-    const all = Array(layout.tickets).fill(single).join("");
     const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>Print — ${product.name}</title><style>
-@page{size:A4 portrait;margin:5mm}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;overflow:hidden}
-.sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm;gap:0}
-.cell{display:flex;align-items:center;justify-content:center;overflow:hidden}
-
-/* ORIGINAL ticket — 340px wide reference, height auto (content-driven) */
-.ticket{
-  width:340px;
-  transform-origin:center center;
-  display:flex;
-  flex-direction:column;
-  border:2px solid #0a1f44;
-  border-radius:12px;
-  overflow:hidden;
-  background:#fff;
-}
-.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:8px 12px;font-size:18px;font-weight:900;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-body{display:flex;gap:8px;padding:8px;background:#f9fafb;border-bottom:2px dashed #cbd5e1}
-.qr-box,.img-box{flex:1 1 0;min-width:0;aspect-ratio:1;border:2px solid #0a1f44;border-radius:8px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}
-.qr-box img{width:100%;height:100%;object-fit:contain;padding:4px}
-.img-box img{width:100%;height:100%;object-fit:cover}
-.ph{font-size:40px;color:#cbd5e1}
-.ticket-name-section{text-align:center;padding:10px 8px;background:#fff}
-.ticket-name{font-size:20px;font-weight:900;color:#111827;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-brand{display:inline-block;background:#ff5c00;color:#fff;font-size:12px;font-weight:800;padding:2px 10px;border-radius:20px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.ticket-barcode-section{background:#fff;padding:6px 8px;text-align:center;border-top:1px dashed #cbd5e1}
-.ticket-barcode-section img{width:100%;max-height:50px;display:block;margin:0 auto;object-fit:contain}
-.ticket-footer{background:#0a1f44;color:#fff;text-align:center;padding:6px 8px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:4px}
-@media print{body{background:#fff}}
-</style></head><body><div class="sheet">${all}</div>
+@page { size: A4 portrait; margin: 5mm; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, sans-serif; background: #fff; }
+#measure { position: fixed; top: -10000px; left: 0; width: 340px; }
+#grid { display: flex; flex-direction: column; width: 200mm; }
+.row { display: flex; justify-content: center; gap: 1mm; margin-bottom: 1mm; }
+.row:last-child { margin-bottom: 0; }
+.cell { overflow: hidden; border: 0.15mm dashed #999; flex-shrink: 0; }
+.ticket { width: 100%; height: 100%; display: flex; flex-direction: column; background: #fff; line-height: 1.2; }
+.ticket-header { background: #0a1f44; color: #fff; text-align: center; padding: 0.44em 0.67em; font-size: 1em; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticket-body { display: flex; gap: 0.44em; padding: 0.44em; background: #f9fafb; border-bottom: 0.11em dashed #cbd5e1; }
+.qr-box, .img-box { flex: 1 1 0; min-width: 0; aspect-ratio: 1; border: 0.11em solid #0a1f44; border-radius: 0.44em; overflow: hidden; background: #fff; display: flex; align-items: center; justify-content: center; }
+.qr-box img, .img-box img { width: 100%; height: 100%; object-fit: cover; }
+.qr-box img { object-fit: contain; padding: 0.22em; }
+.ph { font-size: 2.22em; color: #cbd5e1; }
+.ticket-name-section { text-align: center; padding: 0.55em 0.44em; background: #fff; }
+.ticket-name { font-size: 1.11em; font-weight: 900; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticket-brand { display: inline-block; background: #ff5c00; color: #fff; font-size: 0.67em; font-weight: 800; padding: 0.11em 0.55em; border-radius: 1.11em; margin-top: 0.22em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ticket-barcode-section { background: #fff; padding: 0.33em 0.44em; text-align: center; border-top: 0.06em dashed #cbd5e1; }
+.ticket-barcode-section img { width: 100%; max-height: 2.78em; display: block; margin: 0 auto; object-fit: contain; }
+.ticket-footer { background: #0a1f44; color: #fff; text-align: center; padding: 0.33em 0.44em; font-size: 0.61em; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 0.22em; }
+</style></head><body>
+<div id="measure">${ticketHTML}</div>
+<div id="grid"></div>
 <script>
-function fitAll(){
-  document.querySelectorAll('.cell').forEach(function(cell){
-    var t=cell.querySelector('.ticket');if(!t)return;
-    t.style.transform='none';
-    var tW=t.offsetWidth,tH=t.offsetHeight;
-    var cW=cell.clientWidth,cH=cell.clientHeight;
-    if(!tW||!tH||!cW||!cH)return;
-    var s=Math.min(cW/tW,cH/tH);
-    t.style.transform='scale('+s+')';
+(function() {
+  var TARGET = ${layout.tickets};
+  var PAPER_W = 200;
+  var PAPER_H = 287;
+  var GAP_MM = 1;
+
+  function buildGrid(N, paperW, paperH, ratio, gap) {
+    var best = null;
+    var maxCols = Math.min(N, 12);
+    for (var M = 1; M <= maxCols; M++) {
+      var K = Math.ceil(N / M);
+      var cw = (paperW - (M - 1) * gap) / M;
+      var ch = (paperH - (K - 1) * gap) / K;
+      var tw, th;
+      if (cw / ch > ratio) { th = ch; tw = th * ratio; }
+      else { tw = cw; th = tw / ratio; }
+      var area = tw * th;
+      if (!best || area > best.area) best = { M: M, K: K, tw: tw, th: th, area: area };
+    }
+    return best;
+  }
+
+  function render() {
+    var meas = document.querySelector('#measure .ticket');
+    if (!meas) return;
+    var refW = meas.offsetWidth;
+    var refH = meas.offsetHeight;
+    if (!refW || !refH) return;
+    var ratio = refW / refH;
+
+    var best = buildGrid(TARGET, PAPER_W, PAPER_H, ratio, GAP_MM);
+    if (!best) return;
+
+    var grid = document.querySelector('#grid');
+    var idx = 0;
+    for (var r = 0; r < best.K; r++) {
+      var row = document.createElement('div');
+      row.className = 'row';
+      var itemsInRow = Math.min(best.M, TARGET - idx);
+      for (var c = 0; c < itemsInRow; c++) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.style.width = best.tw + 'mm';
+        cell.style.height = best.th + 'mm';
+        cell.style.fontSize = (best.tw * 0.0529) + 'mm';
+        cell.innerHTML = '<div class="ticket">' + meas.innerHTML + '</div>';
+        row.appendChild(cell);
+        idx++;
+      }
+      grid.appendChild(row);
+    }
+  }
+
+  function waitReady() {
+    return Promise.all([
+      (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(),
+      Promise.all(Array.from(document.images).map(function(img) {
+        return img.complete ? Promise.resolve() : new Promise(function(res) { img.onload = res; img.onerror = res; });
+      }))
+    ]);
+  }
+
+  window.addEventListener('load', function() {
+    waitReady().then(function() {
+      requestAnimationFrame(function() {
+        render();
+        requestAnimationFrame(function() {
+          setTimeout(function() { window.print(); }, 300);
+        });
+      });
+    });
   });
-}
-window.addEventListener('load',function(){fitAll();setTimeout(function(){fitAll();window.print()},350)});
-window.addEventListener('beforeprint',fitAll);
+})();
 </script></body></html>`;
     win.document.write(html);
     win.document.close();
   }
+
 
 
 
