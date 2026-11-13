@@ -135,6 +135,7 @@ export async function GET(
       success: true,
       product: {
         id: product.id,
+        productCode: product.productCode,
         name: product.name,
         slug: product.slug,
         description: product.description || "",

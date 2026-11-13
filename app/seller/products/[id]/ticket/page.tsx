@@ -191,7 +191,10 @@ export default function ProductTicketPage() {
     if (!qrDataUrl || !product) return;
     const link = document.createElement("a");
     link.href = qrDataUrl;
-    link.download = `qr-product-${product.productCode.slice(0, 8)}.png`;
+    const codeForFile = product.productCode
+      ? product.productCode.slice(0, 8)
+      : String(product.id);
+    link.download = `qr-product-${codeForFile}.png`;
     link.click();
   }
 
