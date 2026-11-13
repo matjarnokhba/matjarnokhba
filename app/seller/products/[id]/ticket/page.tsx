@@ -120,6 +120,8 @@ export default function ProductTicketPage() {
 
     async function generate() {
       setQrGenerating(true);
+      let timedOut = false;
+      const guard = setTimeout(() => { timedOut = true; setQrGenerating(false); }, 8000);
       try {
         if (qrCanvasRef.current) {
           await QRCode.toCanvas(qrCanvasRef.current, currentProductUrl, {
@@ -178,7 +180,8 @@ export default function ProductTicketPage() {
       } catch (err) {
         console.error("Ticket generation failed:", err);
       } finally {
-        setQrGenerating(false);
+        clearTimeout(guard);
+        if (!timedOut) setQrGenerating(false);
       }
     }
     generate();
@@ -451,7 +454,7 @@ html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, s
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handlePrint}
-                disabled={!qrDataUrl || qrGenerating}
+                disabled={!qrDataUrl}
                 className="flex items-center justify-center gap-2 rounded-lg bg-[#ff5c00] py-3 text-sm font-bold text-white transition hover:bg-[#e64a00] disabled:opacity-50"
               >
                 {qrGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
@@ -459,8 +462,8 @@ html, body { width: 200mm; min-height: 287mm; font-family: 'Segoe UI', Tahoma, s
               </button>
               <button
                 onClick={handleDownloadQR}
-                disabled={!qrDataUrl || qrGenerating}
-                className="flex items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed] disabled:opacity-50"
+                disabled={!qrDataUrl}
+                className="flex items-center justify-center gap-2 rounded-lg border-2 border-[#ff5c00] bg-white py-3 text-sm font-bold text-[#ff5c00] transition hover:bg-[#fff4ed] disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-50 disabled:text-gray-400"
               >
                 <Download className="h-4 w-4" />
                 تحميل QR
