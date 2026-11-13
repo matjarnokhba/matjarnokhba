@@ -29,7 +29,7 @@ type SellerInfo = {
   slug: string;
 };
 
-type PrintLayoutId = "4" | "9" | "16" | "25" | "36" | "49" | "64" | "81" | "100";
+type PrintLayoutId = "4" | "6" | "12" | "20" | "30" | "42" | "63" | "100";
 
 const PRINT_LAYOUTS: Array<{
   id: PrintLayoutId;
@@ -38,15 +38,14 @@ const PRINT_LAYOUTS: Array<{
   tickets: number;
   label: string;
 }> = [
-  { id: "4", cols: 2, rows: 2, tickets: 4, label: "كبير جداً" },
-  { id: "9", cols: 3, rows: 3, tickets: 9, label: "كبير" },
-  { id: "16", cols: 4, rows: 4, tickets: 16, label: "متوسط" },
-  { id: "25", cols: 5, rows: 5, tickets: 25, label: "صغير" },
-  { id: "36", cols: 6, rows: 6, tickets: 36, label: "صغير جداً" },
-  { id: "49", cols: 7, rows: 7, tickets: 49, label: "ملصقات" },
-  { id: "64", cols: 8, rows: 8, tickets: 64, label: "ملصقات" },
-  { id: "81", cols: 9, rows: 9, tickets: 81, label: "ملصقات صغيرة" },
-  { id: "100", cols: 10, rows: 10, tickets: 100, label: "QR فقط" },
+  { id: "4",  cols: 2, rows: 2,  tickets: 4,   label: "كبير" },
+  { id: "6",  cols: 2, rows: 3,  tickets: 6,   label: "كبير" },
+  { id: "12", cols: 3, rows: 4,  tickets: 12,  label: "متوسط" },
+  { id: "20", cols: 4, rows: 5,  tickets: 20,  label: "متوسط" },
+  { id: "30", cols: 5, rows: 6,  tickets: 30,  label: "صغير" },
+  { id: "42", cols: 6, rows: 7,  tickets: 42,  label: "صغير" },
+  { id: "63", cols: 7, rows: 9,  tickets: 63,  label: "صغير جداً" },
+  { id: "100", cols: 10, rows: 10, tickets: 100, label: "ملصقات" },
 ];
 export default function ProductTicketPage() {
   const params = useParams();
@@ -200,9 +199,9 @@ export default function ProductTicketPage() {
     if (!win) return;
     const mainImage = product.imageUrls[0] || "";
 
-    // Ticket — ORIGINAL design. Reference size 340×486px (ratio 0.6996).
-    // JS scales uniformly to fit each cell. N×N grids = no whitespace.
-    const single = `<div class="cell"><div class="box">
+    // ORIGINAL ticket design — content determines height, aspect-square boxes preserved.
+    // JS measures rendered height then scales uniformly to fit each cell.
+    const single = `<div class="cell"><div class="ticket">
 <div class="ticket-header">${seller.storeName}</div>
 <div class="ticket-body">
 <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/></div>
@@ -223,9 +222,10 @@ ${barcodeDataUrl ? `<div class="ticket-barcode-section"><img src="${barcodeDataU
 html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;overflow:hidden}
 .sheet{display:grid;grid-template-columns:repeat(${layout.cols},1fr);grid-template-rows:repeat(${layout.rows},1fr);width:200mm;height:287mm;gap:0}
 .cell{display:flex;align-items:center;justify-content:center;overflow:hidden}
-.box{
+
+/* ORIGINAL ticket — 340px wide reference, height auto (content-driven) */
+.ticket{
   width:340px;
-  height:486px;
   transform-origin:center center;
   display:flex;
   flex-direction:column;
@@ -233,105 +233,40 @@ html,body{width:200mm;height:287mm;font-family:'Segoe UI',Tahoma,sans-serif;back
   border-radius:12px;
   overflow:hidden;
   background:#fff;
-  font-size:14px;
 }
-.ticket-header{
-  flex:0 0 40px;
-  background:#0a1f44;
-  color:#fff;
-  text-align:center;
-  padding:8px;
-  font-size:18px;
-  font-weight:900;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-.ticket-body{
-  flex:1 1 0;
-  min-height:0;
-  display:flex;
-  gap:8px;
-  padding:8px;
-  background:#f9fafb;
-  border-bottom:2px dashed #cbd5e1;
-}
-.qr-box,.img-box{
-  flex:1 1 0;
-  min-width:0;
-  min-height:0;
-  border:2px solid #0a1f44;
-  border-radius:8px;
-  overflow:hidden;
-  background:#fff;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
+.ticket-header{background:#0a1f44;color:#fff;text-align:center;padding:8px 12px;font-size:18px;font-weight:900;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-body{display:flex;gap:8px;padding:8px;background:#f9fafb;border-bottom:2px dashed #cbd5e1}
+.qr-box,.img-box{flex:1 1 0;min-width:0;aspect-ratio:1;border:2px solid #0a1f44;border-radius:8px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}
 .qr-box img{width:100%;height:100%;object-fit:contain;padding:4px}
 .img-box img{width:100%;height:100%;object-fit:cover}
 .ph{font-size:40px;color:#cbd5e1}
-.ticket-name-section{
-  flex:0 0 auto;
-  min-height:80px;
-  text-align:center;
-  padding:10px 8px;
-  background:#fff;
-}
+.ticket-name-section{text-align:center;padding:10px 8px;background:#fff}
 .ticket-name{font-size:20px;font-weight:900;color:#111827;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket-brand{
-  display:inline-block;
-  background:#ff5c00;
-  color:#fff;
-  font-size:12px;
-  font-weight:800;
-  padding:2px 10px;
-  border-radius:20px;
-  margin-top:4px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width:100%;
-}
-.ticket-barcode-section{
-  flex:0 0 auto;
-  background:#fff;
-  padding:6px 8px;
-  text-align:center;
-  border-top:1px dashed #cbd5e1;
-}
-.ticket-barcode-section img{width:100%;max-height:60px;display:block;margin:0 auto;object-fit:contain}
-.ticket-footer{
-  flex:0 0 36px;
-  background:#0a1f44;
-  color:#fff;
-  text-align:center;
-  padding:6px;
-  font-size:11px;
-  font-weight:700;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:4px;
-}
+.ticket-brand{display:inline-block;background:#ff5c00;color:#fff;font-size:12px;font-weight:800;padding:2px 10px;border-radius:20px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ticket-barcode-section{background:#fff;padding:6px 8px;text-align:center;border-top:1px dashed #cbd5e1}
+.ticket-barcode-section img{width:100%;max-height:50px;display:block;margin:0 auto;object-fit:contain}
+.ticket-footer{background:#0a1f44;color:#fff;text-align:center;padding:6px 8px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:4px}
 @media print{body{background:#fff}}
 </style></head><body><div class="sheet">${all}</div>
 <script>
-function fit(){
+function fitAll(){
   document.querySelectorAll('.cell').forEach(function(cell){
-    var box=cell.querySelector('.box');if(!box)return;
-    var cw=cell.clientWidth,ch=cell.clientHeight;
-    if(cw<=0||ch<=0)return;
-    var s=Math.min(cw/340,ch/486);
-    box.style.transform='scale('+s+')';
+    var t=cell.querySelector('.ticket');if(!t)return;
+    t.style.transform='none';
+    var tW=t.offsetWidth,tH=t.offsetHeight;
+    var cW=cell.clientWidth,cH=cell.clientHeight;
+    if(!tW||!tH||!cW||!cH)return;
+    var s=Math.min(cW/tW,cH/tH);
+    t.style.transform='scale('+s+')';
   });
 }
-window.addEventListener('load',function(){fit();setTimeout(function(){fit();window.print()},300)});
-window.addEventListener('beforeprint',fit);
+window.addEventListener('load',function(){fitAll();setTimeout(function(){fitAll();window.print()},350)});
+window.addEventListener('beforeprint',fitAll);
 </script></body></html>`;
     win.document.write(html);
     win.document.close();
   }
+
 
 
 
