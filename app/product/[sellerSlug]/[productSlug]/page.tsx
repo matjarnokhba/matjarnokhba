@@ -13,10 +13,12 @@ export async function generateMetadata({
   params: Promise<{ sellerSlug: string; productSlug: string }>;
 }): Promise<Metadata> {
   const { sellerSlug, productSlug } = await params;
+
   const product = await ProductService.getBySlugAndSeller(
     productSlug,
     sellerSlug
   );
+
 
   if (!product) {
     return { title: "المنتج غير موجود" };
@@ -55,10 +57,12 @@ export default async function ProductPage({
   params: Promise<{ sellerSlug: string; productSlug: string }>;
 }) {
   const { sellerSlug, productSlug } = await params;
+
   const product = await ProductService.getBySlugAndSeller(
     productSlug,
     sellerSlug
   );
+
 
   if (!product) notFound();
 

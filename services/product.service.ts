@@ -24,6 +24,17 @@ type PrismaProduct = {
   _count: { options: number };
 };
 
+/**
+ * Safely decode a URL slug. Next.js 16 sometimes passes encoded params.
+ */
+function safeDecodeSlug(s: string): string {
+  if (!s) return s;
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
 function formatProduct(p: PrismaProduct) {
   const defaultVariant = p.variants[0];
 
@@ -167,11 +178,13 @@ export const ProductService = {
   },
 
   async getBySlugAndSeller(productSlug: string, sellerSlug: string) {
+    const decodedProductSlug = safeDecodeSlug(productSlug);
+    const decodedSellerSlug = safeDecodeSlug(sellerSlug);
     const product = await prisma.product.findFirst({
       where: {
-        slug: productSlug,
+        slug: decodedProductSlug,
         seller: {
-          slug: sellerSlug,
+          slug: decodedSellerSlug,
           status: "ACTIVE",
           deletedAt: null,
         },
@@ -188,11 +201,13 @@ export const ProductService = {
     productSlug: string,
     sellerSlug: string
   ): Promise<FullDetail | null> {
+    const decodedProductSlug = safeDecodeSlug(productSlug);
+    const decodedSellerSlug = safeDecodeSlug(sellerSlug);
     const product = await prisma.product.findFirst({
       where: {
-        slug: productSlug,
+        slug: decodedProductSlug,
         seller: {
-          slug: sellerSlug,
+          slug: decodedSellerSlug,
           status: "ACTIVE",
           deletedAt: null,
         },

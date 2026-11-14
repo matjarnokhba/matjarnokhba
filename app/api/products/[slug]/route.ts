@@ -6,7 +6,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { slug } = await params;
+    const { slug: rawSlug } = await params;
+    const slug = (() => { try { return decodeURIComponent(rawSlug); } catch { return rawSlug; } })();
     const { searchParams } = new URL(request.url);
     const sellerSlug = searchParams.get("seller");
     const full = searchParams.get("full") === "1";
