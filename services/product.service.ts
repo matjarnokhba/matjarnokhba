@@ -22,6 +22,7 @@ type PrismaProduct = {
     inventory: { quantity: number } | null;
   }[];
   _count: { options: number };
+  videoUrl?: string | null;
 };
 
 /**
@@ -64,6 +65,7 @@ function formatProduct(p: PrismaProduct) {
     colors: undefined as string[] | undefined,
     sizes: undefined as string[] | undefined,
     hasOptions: p._count.options > 0,
+    videoUrl: p.videoUrl || null,
   };
 }
 
@@ -156,6 +158,7 @@ type FullDetail = {
     optionValueIds: number[];
     optionValueLabels: string[];
   }>;
+  videoUrl?: string | null;
 };
 
 export const ProductService = {
@@ -293,6 +296,7 @@ export const ProductService = {
     });
 
     return {
+      videoUrl: product.videoUrl || null,
       id: product.id,
       productCode: product.productCode,
       sellerId: product.seller?.id || 0,
