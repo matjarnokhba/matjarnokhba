@@ -127,7 +127,7 @@ export default function FlashDeals() {
               return (
                 <Link
                   key={product.id}
-                  href={`/product/${product.sellerSlug || "unknown"}/${product.slug}`}
+                  href={product.sellerSlug ? `/product/${product.sellerSlug}/${product.slug}` : "#"}
                   className="group w-32 shrink-0 sm:w-auto sm:shrink"
                 >
                   <div className="relative overflow-hidden rounded-xl bg-gray-50">

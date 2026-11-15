@@ -28,7 +28,9 @@ export default function ProductCard({
   const mainImage = product.images[0];
   const fav = isFavorite(product.id);
 
-  const productUrl = `/product/${product.sellerSlug || "unknown"}/${product.slug}`;
+  const productUrl = product.sellerSlug
+    ? `/product/${product.sellerSlug}/${product.slug}`
+    : "#";
 
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();

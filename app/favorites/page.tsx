@@ -30,7 +30,7 @@ export default function FavoritesPage() {
   const [search, setSearch] = useState("");
 
   function productUrl(product: any): string {
-    return `/product/${product.sellerSlug || "unknown"}/${product.slug}`;
+    return product.sellerSlug ? `/product/${product.sellerSlug}/${product.slug}` : "#";
   }
 
   function handleAddToCart(product: any) {

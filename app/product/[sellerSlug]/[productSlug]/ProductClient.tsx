@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,6 +18,7 @@ import {
   Store,
   Share2,
   Check,
+  Play,
 } from "lucide-react";
 
 import TopBar from "@/components/layout/TopBar";
@@ -31,6 +32,51 @@ import { CURRENCY, type Product } from "@/lib/data/products";
 import { useCart } from "@/lib/hooks/useCart";
 import { useFavorites } from "@/lib/hooks/useFavorites";
 
+function parseVideoUrl(url: string): { type: "iframe" | "video"; src: string } | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+      let id = "";
+      if (u.hostname.includes("youtu.be")) id = u.pathname.slice(1);
+      else if (u.pathname === "/watch") id = u.searchParams.get("v") || "";
+      else if (u.pathname.startsWith("/shorts/")) id = u.pathname.split("/shorts/")[1] || "";
+      else if (u.pathname.startsWith("/embed/")) id = u.pathname.split("/embed/")[1] || "";
+      if (id) return { type: "iframe", src: `https://www.youtube.com/embed/${id}?rel=0` };
+    }
+    if (u.hostname.includes("vimeo.com")) {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      if (id) return { type: "iframe", src: `https://player.vimeo.com/video/${id}` };
+    }
+    if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) return { type: "video", src: url };
+    return null;
+  } catch { return null; }
+}
+
+function VideoPlayer({ url, poster }: { url: string; poster?: string }) {
+  const parsed = parseVideoUrl(url);
+  if (!parsed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-gray-100 text-sm text-gray-600">
+        رابط الفيديو غير مدعوم
+      </div>
+    );
+  }
+  if (parsed.type === "iframe") {
+    return (
+      <iframe
+        src={parsed.src}
+        className="h-full w-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+      />
+    );
+  }
+  return (
+    <video src={parsed.src} controls poster={poster} className="h-full w-full object-contain">
+      متصفحك لا يدعم الفيديو
+    </video>
+  );
+}
 // ═══════ الأنواع ═══════
 type FullOption = {
   id: number;
@@ -78,6 +124,7 @@ type FullProduct = {
   images: string[];
   options: FullOption[];
   variants: FullVariant[];
+  videoUrl?: string | null;
 };
 
 export default function ProductClient() {
@@ -92,6 +139,9 @@ export default function ProductClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedImage, setSelectedImage] = useState(0);
+
+  const [showVideo, setShowVideo] = useState(false);
+  const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -408,6 +458,25 @@ export default function ProductClient() {
 
   const hasNextImage = selectedImage < product.images.length - 1;
   const hasPrevImage = selectedImage > 0;
+  function handleTouchStart(e: React.TouchEvent) {
+    if (showVideo) return;
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (!touchStart.current || showVideo) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.current.x;
+    const dy = t.clientY - touchStart.current.y;
+    const dt = Date.now() - touchStart.current.time;
+    touchStart.current = null;
+    if (dt > 600) return;
+    if (Math.abs(dx) < 50) return;
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    if (dx > 0 && hasPrevImage) setSelectedImage(selectedImage - 1);
+    else if (dx < 0 && hasNextImage) setSelectedImage(selectedImage + 1);
+  }
   const canAdd = activeVariant && activeVariant.available >= quantity;
 
   return (
@@ -456,12 +525,21 @@ export default function ProductClient() {
           {/* معرض الصور */}
           <div className="lg:sticky lg:top-24 lg:self-start">
             <div className="relative overflow-hidden rounded-2xl bg-white">
-              <div className="relative aspect-square overflow-hidden bg-gray-50">
-                <img
-                  src={product.images[selectedImage]}
-                  alt={product.name}
-                  className="h-full w-full object-cover"
-                />
+              <div
+                className="relative aspect-square touch-pan-y overflow-hidden bg-gray-50"
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+              >
+                {showVideo && product.videoUrl ? (
+                  <VideoPlayer url={product.videoUrl} poster={product.images[0]} />
+                ) : (
+                  <img
+                    src={product.images[selectedImage]}
+                    alt={product.name}
+                    className="h-full w-full select-none object-cover"
+                    draggable={false}
+                  />
+                )}
 
                 {discountPercent > 0 && (
                   <span className="absolute left-3 top-3 rounded-md bg-[#ff5c00] px-2.5 py-1 text-xs font-black text-white shadow-md">
@@ -504,12 +582,12 @@ export default function ProductClient() {
                   )}
                 </button>
 
-                {product.images.length > 1 && (
+                {!showVideo && product.images.length > 1 && (
                   <>
                     {hasPrevImage && (
                       <button
                         onClick={() => setSelectedImage(selectedImage - 1)}
-                        className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur transition hover:bg-white"
+                        className="absolute right-3 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur transition hover:bg-white lg:flex"
                         aria-label="السابق"
                       >
                         <ChevronRight className="h-5 w-5" />
@@ -518,7 +596,7 @@ export default function ProductClient() {
                     {hasNextImage && (
                       <button
                         onClick={() => setSelectedImage(selectedImage + 1)}
-                        className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur transition hover:bg-white"
+                        className="absolute left-3 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur transition hover:bg-white lg:flex"
                         aria-label="التالي"
                       >
                         <ChevronLeft className="h-5 w-5" />
@@ -526,16 +604,33 @@ export default function ProductClient() {
                     )}
                   </>
                 )}
+
+                {!showVideo && product.images.length > 1 && (
+                  <div className="absolute bottom-3 right-3 z-10 flex gap-1.5 lg:hidden">
+                    {product.images.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedImage(i)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          selectedImage === i
+                            ? "w-6 bg-white shadow-md"
+                            : "w-1.5 bg-white/60"
+                        }`}
+                        aria-label={`صورة ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {product.images.length > 1 && (
+              {(product.images.length > 1 || product.videoUrl) && (
                 <div className="flex gap-2 overflow-x-auto p-2">
                   {product.images.map((img, i) => (
                     <button
                       key={i}
-                      onClick={() => setSelectedImage(i)}
+                      onClick={() => { setShowVideo(false); setSelectedImage(i); }}
                       className={`h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition ${
-                        selectedImage === i
+                        selectedImage === i && !showVideo
                           ? "border-[#ff5c00]"
                           : "border-transparent opacity-60 hover:opacity-100"
                       }`}
@@ -547,6 +642,22 @@ export default function ProductClient() {
                       />
                     </button>
                   ))}
+                  {product.videoUrl && (
+                    <button
+                      onClick={() => setShowVideo(true)}
+                      className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition ${
+                        showVideo
+                          ? "border-[#ff5c00]"
+                          : "border-transparent opacity-60 hover:opacity-100"
+                      }`}
+                      aria-label="فيديو المنتج"
+                    >
+                      <img src={product.images[0]} alt="" className="h-full w-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <Play className="h-5 w-5 fill-white text-white" />
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
