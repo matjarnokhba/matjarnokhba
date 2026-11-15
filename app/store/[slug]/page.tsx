@@ -122,6 +122,8 @@ export default async function StorePage({
       stock: variant?.inventory?.quantity ?? 0,
       colors: undefined as string[] | undefined,
       sizes: undefined as string[] | undefined,
+      sellerSlug: seller.slug,
+      sellerName: seller.storeName,
     };
   });
 
