@@ -405,6 +405,33 @@ export default function ProductClient() {
     }
   }
 
+  // ═══ Carousel state (MUST be before early returns — Rules of Hooks) ═══
+  const totalSlides = (product?.images?.length ?? 0) + (product?.videoUrl ? 1 : 0);
+  const isVideoSlide = !!product?.videoUrl && selectedImage === (product?.images?.length ?? 0);
+  const hasNextImage = selectedImage < totalSlides - 1;
+  const hasPrevImage = selectedImage > 0;
+
+  useEffect(() => {
+    if (!isVideoSlide) setVideoActivated(false);
+  }, [isVideoSlide]);
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const handler = (e: TouchEvent) => {
+      if (!touchStart.current) return;
+      const t = e.touches[0];
+      const dx = t.clientX - touchStart.current.x;
+      const dy = t.clientY - touchStart.current.y;
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      if (Math.abs(dx) > 8) {
+        e.preventDefault();
+      }
+      setDragOffset(dx);
+    };
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, []);
   // ═══ التحميل ═══
   if (loading) {
     return (
@@ -458,31 +485,6 @@ export default function ProductClient() {
     );
   }
 
-  const totalSlides = product.images.length + (product.videoUrl ? 1 : 0);
-  const isVideoSlide = !!product.videoUrl && selectedImage === product.images.length;
-  const hasNextImage = selectedImage < totalSlides - 1;
-  const hasPrevImage = selectedImage > 0;
-  useEffect(() => {
-    if (!isVideoSlide) setVideoActivated(false);
-  }, [isVideoSlide]);
-
-  useEffect(() => {
-    const el = outerRef.current;
-    if (!el) return;
-    const handler = (e: TouchEvent) => {
-      if (!touchStart.current) return;
-      const t = e.touches[0];
-      const dx = t.clientX - touchStart.current.x;
-      const dy = t.clientY - touchStart.current.y;
-      if (Math.abs(dy) > Math.abs(dx)) return;
-      if (Math.abs(dx) > 8) {
-        e.preventDefault();
-      }
-      setDragOffset(dx);
-    };
-    el.addEventListener("touchmove", handler, { passive: false });
-    return () => el.removeEventListener("touchmove", handler);
-  }, []);
   function handleTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
