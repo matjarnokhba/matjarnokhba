@@ -674,7 +674,7 @@ export default function ProductClient() {
 
                 {totalSlides > 1 && (
                   <div className="absolute bottom-3 right-3 z-10 flex gap-1.5 lg:hidden">
-                    {product.images.map((_, i) => (
+                    {Array.from({ length: totalSlides }).map((_, i) => (
                       <button
                         key={i}
                         onClick={() => setSelectedImage(i)}
