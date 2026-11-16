@@ -431,7 +431,7 @@ export default function ProductClient() {
     };
     el.addEventListener("touchmove", handler, { passive: false });
     return () => el.removeEventListener("touchmove", handler);
-  }, []);
+  }, [product, loading]);
   // ═══ التحميل ═══
   if (loading) {
     return (
