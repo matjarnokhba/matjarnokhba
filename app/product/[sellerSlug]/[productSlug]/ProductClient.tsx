@@ -140,6 +140,10 @@ export default function ProductClient() {
 
   const [selectedImage, setSelectedImage] = useState(0);
   const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [videoActivated, setVideoActivated] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -458,9 +462,32 @@ export default function ProductClient() {
   const isVideoSlide = !!product.videoUrl && selectedImage === product.images.length;
   const hasNextImage = selectedImage < totalSlides - 1;
   const hasPrevImage = selectedImage > 0;
+  useEffect(() => {
+    if (!isVideoSlide) setVideoActivated(false);
+  }, [isVideoSlide]);
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const handler = (e: TouchEvent) => {
+      if (!touchStart.current) return;
+      const t = e.touches[0];
+      const dx = t.clientX - touchStart.current.x;
+      const dy = t.clientY - touchStart.current.y;
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      if (Math.abs(dx) > 8) {
+        e.preventDefault();
+      }
+      setDragOffset(dx);
+    };
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, []);
   function handleTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+    setIsDragging(true);
+    setDragOffset(0);
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
@@ -470,6 +497,8 @@ export default function ProductClient() {
     const dy = t.clientY - touchStart.current.y;
     const dt = Date.now() - touchStart.current.time;
     touchStart.current = null;
+    setIsDragging(false);
+    setDragOffset(0);
     if (dt > 600) return;
     if (Math.abs(dx) < 50) return;
     if (Math.abs(dy) > Math.abs(dx)) return;
@@ -525,14 +554,15 @@ export default function ProductClient() {
           <div className="lg:sticky lg:top-24 lg:self-start">
             <div className="relative overflow-hidden rounded-2xl bg-white">
               <div
+                ref={outerRef}
                 className="relative aspect-square touch-pan-y overflow-hidden bg-gray-50"
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               >
                 <div
-                  className="flex h-full transition-transform duration-300 ease-out will-change-transform"
+                  className={`flex h-full will-change-transform ${isDragging ? "" : "transition-transform duration-300 ease-out"}`}
                   dir="ltr"
-                  style={{ transform: `translateX(-${selectedImage * 100}%)` }}
+                  style={{ transform: `translateX(calc(-${selectedImage * 100}% + ${dragOffset}px))` }}
                 >
                   {product.images.map((img, i) => (
                     <div
@@ -548,8 +578,32 @@ export default function ProductClient() {
                     </div>
                   ))}
                   {product.videoUrl && (
-                    <div className="flex h-full w-full flex-shrink-0 items-center justify-center bg-black">
-                      <VideoPlayer url={product.videoUrl} poster={product.images[0]} />
+                    <div className="relative flex h-full w-full flex-shrink-0 items-center justify-center bg-black">
+                      <div className={videoActivated ? "h-full w-full" : "pointer-events-none h-full w-full"}>
+                        <VideoPlayer url={product.videoUrl} poster={product.images[0]} />
+                      </div>
+                      {!videoActivated && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setVideoActivated(true); }}
+                          className="absolute inset-0 flex items-center justify-center bg-black/20"
+                          aria-label="تشغيل الفيديو"
+                        >
+                          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-xl">
+                            <Play className="h-8 w-8 fill-[#ff5c00] text-[#ff5c00]" />
+                          </div>
+                        </button>
+                      )}
+                      {videoActivated && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setVideoActivated(false); }}
+                          className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                          aria-label="إغلاق الفيديو"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
