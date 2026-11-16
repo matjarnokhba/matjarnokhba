@@ -139,8 +139,6 @@ export default function ProductClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedImage, setSelectedImage] = useState(0);
-
-  const [showVideo, setShowVideo] = useState(false);
   const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -456,16 +454,17 @@ export default function ProductClient() {
     );
   }
 
-  const hasNextImage = selectedImage < product.images.length - 1;
+  const totalSlides = product.images.length + (product.videoUrl ? 1 : 0);
+  const isVideoSlide = !!product.videoUrl && selectedImage === product.images.length;
+  const hasNextImage = selectedImage < totalSlides - 1;
   const hasPrevImage = selectedImage > 0;
   function handleTouchStart(e: React.TouchEvent) {
-    if (showVideo) return;
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
-    if (!touchStart.current || showVideo) return;
+    if (!touchStart.current) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStart.current.x;
     const dy = t.clientY - touchStart.current.y;
@@ -530,16 +529,30 @@ export default function ProductClient() {
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               >
-                {showVideo && product.videoUrl ? (
-                  <VideoPlayer url={product.videoUrl} poster={product.images[0]} />
-                ) : (
-                  <img
-                    src={product.images[selectedImage]}
-                    alt={product.name}
-                    className="h-full w-full select-none object-cover"
-                    draggable={false}
-                  />
-                )}
+                <div
+                  className="flex h-full transition-transform duration-300 ease-out will-change-transform"
+                  dir="ltr"
+                  style={{ transform: `translateX(-${selectedImage * 100}%)` }}
+                >
+                  {product.images.map((img, i) => (
+                    <div
+                      key={`slide-img-${i}`}
+                      className="flex h-full w-full flex-shrink-0 items-center justify-center"
+                    >
+                      <img
+                        src={img}
+                        alt={product.name}
+                        className="h-full w-full select-none object-cover"
+                        draggable={false}
+                      />
+                    </div>
+                  ))}
+                  {product.videoUrl && (
+                    <div className="flex h-full w-full flex-shrink-0 items-center justify-center bg-black">
+                      <VideoPlayer url={product.videoUrl} poster={product.images[0]} />
+                    </div>
+                  )}
+                </div>
 
                 {discountPercent > 0 && (
                   <span className="absolute left-3 top-3 rounded-md bg-[#ff5c00] px-2.5 py-1 text-xs font-black text-white shadow-md">
@@ -582,7 +595,7 @@ export default function ProductClient() {
                   )}
                 </button>
 
-                {!showVideo && product.images.length > 1 && (
+                {totalSlides > 1 && (
                   <>
                     {hasPrevImage && (
                       <button
@@ -605,7 +618,7 @@ export default function ProductClient() {
                   </>
                 )}
 
-                {!showVideo && product.images.length > 1 && (
+                {totalSlides > 1 && (
                   <div className="absolute bottom-3 right-3 z-10 flex gap-1.5 lg:hidden">
                     {product.images.map((_, i) => (
                       <button
@@ -628,9 +641,9 @@ export default function ProductClient() {
                   {product.images.map((img, i) => (
                     <button
                       key={i}
-                      onClick={() => { setShowVideo(false); setSelectedImage(i); }}
+                      onClick={() => setSelectedImage(i)}
                       className={`h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition ${
-                        selectedImage === i && !showVideo
+                        selectedImage === i
                           ? "border-[#ff5c00]"
                           : "border-transparent opacity-60 hover:opacity-100"
                       }`}
@@ -644,9 +657,9 @@ export default function ProductClient() {
                   ))}
                   {product.videoUrl && (
                     <button
-                      onClick={() => setShowVideo(true)}
+                      onClick={() => setSelectedImage(product.images.length)}
                       className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition ${
-                        showVideo
+                        isVideoSlide
                           ? "border-[#ff5c00]"
                           : "border-transparent opacity-60 hover:opacity-100"
                       }`}
