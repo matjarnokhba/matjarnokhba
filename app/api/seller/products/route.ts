@@ -74,7 +74,7 @@ export async function GET() {
         images: { orderBy: { order: "asc" }, take: 1 },
         category: { select: { id: true, name: true } },
         variants: {
-          where: { isDefault: true },
+          orderBy: [{ isDefault: "desc" as const }, { id: "asc" as const }],
           include: { inventory: { select: { quantity: true } } },
         },
       },
@@ -88,7 +88,7 @@ export async function GET() {
       image: p.images[0]?.url || null,
       categoryName: p.category.name,
       price: p.variants[0] ? Number(p.variants[0].price) : 0,
-      stock: p.variants[0]?.inventory?.quantity || 0,
+      stock: p.variants.reduce((s, v) => s + (v.inventory?.quantity || 0), 0),
       status: p.status,
       sold: p.sold,
       createdAt: p.createdAt,

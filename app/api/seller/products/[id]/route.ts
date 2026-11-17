@@ -147,7 +147,7 @@ export async function GET(
         oldPrice: defaultVariant?.discountPrice
           ? Number(defaultVariant.discountPrice)
           : null,
-        stock: defaultVariant?.inventory?.quantity || 0,
+        stock: product.variants.reduce((s, v) => s + (v.inventory?.quantity || 0), 0),
         barcode: defaultVariant?.barcode || "",
         freeShipping: product.freeShipping,
         imageUrls: product.images.map((img) => img.url),
