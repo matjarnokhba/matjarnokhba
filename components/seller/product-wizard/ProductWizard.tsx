@@ -121,7 +121,7 @@ export default function ProductWizard({
     if (s === 2) {
       if (!form.name.trim() || form.name.trim().length < 2) return "اسم المنتج مطلوب";
       if (!isEdit && !form.slug.trim()) return "الرابط (slug) مطلوب";
-      if (form.imageUrls.length === 0) return "أضف صورة واحدة على الأقل";
+      if (form.imageUrls.length < 2) return "أضف صورتين على الأقل";
       return null;
     }
     if (s === 3) {

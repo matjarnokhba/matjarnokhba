@@ -39,7 +39,7 @@ const createSchema = z.object({
   oldPrice: z.number().positive().optional().nullable(),
   stock: z.number().int().min(0).default(0),
   freeShipping: z.boolean().default(false),
-  imageUrls: z.array(z.string().url()).min(1, "صورة واحدة على الأقل مطلوبة").max(5),
+  imageUrls: z.array(z.string().url()).min(2, "صورتان على الأقل مطلوبتان").max(5),
   barcode: z.string().trim().optional().nullable(),
   originCountry: z.string().trim().max(80).nullable().optional(),
   videoUrl: z.string().trim().nullable().optional(),

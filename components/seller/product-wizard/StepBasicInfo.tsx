@@ -119,7 +119,7 @@ export default function StepBasicInfo({ form, update, categoryName, isEdit = fal
             />
             <p className="mt-2 flex items-start gap-1 text-[10px] text-gray-500">
               <Info className="mt-0.5 h-3 w-3 shrink-0" />
-              الصورة الأولى ستكون الرئيسية. اسحب لإعادة الترتيب.
+              صورتان على الأقل مطلوبتان. الصورة الأولى ستكون الرئيسية. اسحب لإعادة الترتيب.
             </p>
           </div>
         </div>

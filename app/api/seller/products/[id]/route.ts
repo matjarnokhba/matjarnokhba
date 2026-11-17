@@ -189,7 +189,7 @@ const patchSchema = z.object({
   oldPrice: z.number().positive().nullable().optional(),
   stock: z.number().int().min(0).optional(),
   freeShipping: z.boolean().optional(),
-  imageUrls: z.array(z.string().url()).min(1).max(5).optional(),
+  imageUrls: z.array(z.string().url()).min(2, "صورتان على الأقل مطلوبتان").max(5).optional(),
   originCountry: z.string().trim().max(80).nullable().optional(),
   videoUrl: z.string().trim().nullable().optional(),
   minOrderQty: z.number().int().min(1).optional(),
