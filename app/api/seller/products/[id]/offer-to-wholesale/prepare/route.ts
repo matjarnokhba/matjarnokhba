@@ -73,12 +73,35 @@ export async function GET(
           select: { url: true },
         });
 
+        // Resolve MasterCategory (different table from Category)
+        const retailCat = await prisma.category.findUnique({
+          where: { id: product.categoryId },
+          select: { name: true, slug: true },
+        });
+        if (!retailCat) throw new Error("Retail category not found");
+
+        let masterCat = await prisma.masterCategory.findFirst({
+          where: { slug: retailCat.slug },
+          select: { id: true },
+        });
+        if (!masterCat) {
+          masterCat = await prisma.masterCategory.create({
+            data: {
+              name: retailCat.name,
+              slug: retailCat.slug,
+              isLeaf: true,
+              isActive: true,
+            },
+            select: { id: true },
+          });
+        }
+
         const newMaster = await prisma.masterProduct.create({
           data: {
             name: product.name,
             brand: product.brand,
             description: product.description,
-            categoryId: product.categoryId,
+            categoryId: masterCat.id,
             images: productImages.map((i) => i.url),
             status: "ACTIVE",
             createdByUserId: current.user.id,
@@ -114,8 +137,9 @@ export async function GET(
             },
           });
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Auto-create master failed:", e);
+        return NextResponse.json({ success: false, message: "فشل إنشاء هوية المنتج: " + (e?.message || "خطأ") }, { status: 500 });
       }
     }
 
