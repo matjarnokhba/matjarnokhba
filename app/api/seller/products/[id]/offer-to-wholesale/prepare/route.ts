@@ -48,6 +48,77 @@ export async function GET(
       return NextResponse.json({ success: false, message: "المنتج غير موجود" }, { status: 404 });
     }
 
+    // M10.12: auto-create MasterProduct for unmatched variants with stock
+    const unMatchedWithStock: any[] = [];
+    for (const v of product.variants) {
+      const stock = v.inventory?.quantity ?? 0;
+      if (stock <= 0) continue;
+      let hasMatch = false;
+      if (v.barcode) {
+        const mv = await prisma.masterVariant.findFirst({ where: { barcode: v.barcode }, select: { id: true } });
+        if (mv) hasMatch = true;
+      }
+      if (!hasMatch && v.sku) {
+        const mv = await prisma.masterVariant.findFirst({ where: { sku: v.sku }, select: { id: true } });
+        if (mv) hasMatch = true;
+      }
+      if (!hasMatch) unMatchedWithStock.push(v);
+    }
+
+    if (unMatchedWithStock.length > 0) {
+      try {
+        const productImages = await prisma.productImage.findMany({
+          where: { productId },
+          orderBy: { order: "asc" },
+          select: { url: true },
+        });
+
+        const newMaster = await prisma.masterProduct.create({
+          data: {
+            name: product.name,
+            brand: product.brand,
+            description: product.description,
+            categoryId: product.categoryId,
+            images: productImages.map((i) => i.url),
+            status: "ACTIVE",
+            createdByUserId: current.user.id,
+            approvedAt: new Date(),
+            approvedByUserId: null,
+          },
+        });
+
+        for (const v of unMatchedWithStock) {
+          if (v.barcode) {
+            const existing = await prisma.masterVariant.findFirst({ where: { barcode: v.barcode }, select: { id: true } });
+            if (existing) continue;
+          }
+          const ovs = v.optionValues || [];
+          const attrs = ovs
+            .map((ov: any) => ({
+              name: ov.optionValue?.option?.name ?? "",
+              value: ov.optionValue?.value ?? "",
+              order: ov.optionValue?.option?.order ?? 0,
+            }))
+            .filter((a: any) => a.name && a.value)
+            .sort((a: any, b: any) => a.order - b.order);
+
+          const attrHash = JSON.stringify(attrs) + "-" + v.id;
+          await prisma.masterVariant.create({
+            data: {
+              masterId: newMaster.id,
+              sku: v.sku || null,
+              barcode: v.barcode || null,
+              attributes: attrs,
+              attributesHash: attrHash,
+              isDefault: v.isDefault,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("Auto-create master failed:", e);
+      }
+    }
+
     const owner = await prisma.businessOwner.findUnique({
       where: { userId: current.user.id },
       select: { id: true },
