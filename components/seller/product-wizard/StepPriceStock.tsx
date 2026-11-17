@@ -92,6 +92,19 @@ export default function StepPriceStock({
   const baseInvalid =
     !hasExistingVariants && form.reservedQuantity > 0 && Number(form.stock) < form.reservedQuantity;
 
+
+  // ═══ M10.11: computed stock from variants (source of truth) ═══
+  const hasAnyVariants = hasExistingVariants
+    ? editVariants.length > 0
+    : combos.length > 0;
+  const computedStock = hasExistingVariants
+    ? editVariants.reduce((s, v) => s + (Number(v.stock) || 0), 0)
+    : combos.length > 0
+    ? combos.reduce((s, combo) => {
+        const d = form.variantData[combo.key];
+        return s + (Number(d?.stock) || 0);
+      }, 0)
+    : Number(form.stock) || 0;
   function toggleValue(attrId: number, valueId: number) {
     const current = form.selectedValues[attrId] || [];
     const next = current.includes(valueId)
@@ -321,20 +334,34 @@ export default function StepPriceStock({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold text-gray-700">المخزون</label>
-              <input
-                type="number"
-                value={form.stock}
-                onChange={(e) => update("stock", e.target.value)}
-                min="0"
-                placeholder="50"
-                className={`w-full rounded-lg border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:bg-white ${
-                  baseInvalid
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-200 focus:border-[#ff5c00]"
-                }`}
-              />
-              {baseInvalid && (
+              <label className="mb-1 block text-xs font-bold text-gray-700">
+                المخزون {hasAnyVariants && <span className="text-[10px] font-normal text-gray-500">(مجموع من الخيارات)</span>}
+              </label>
+              {hasAnyVariants ? (
+                <div className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm font-bold text-gray-700">
+                  {computedStock}
+                  <span className="mr-1 text-[10px] font-normal text-gray-500">قطعة إجمالاً</span>
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  value={form.stock}
+                  onChange={(e) => update("stock", e.target.value)}
+                  min="0"
+                  placeholder="50"
+                  className={`w-full rounded-lg border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:bg-white ${
+                    baseInvalid
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-gray-200 focus:border-[#ff5c00]"
+                  }`}
+                />
+              )}
+              {hasAnyVariants && computedStock === 0 && (
+                <div className="mt-1 text-[10px] font-bold text-amber-700">
+                  ⚠ لم تُدخل كميات في الخيارات بعد
+                </div>
+              )}
+              {!hasAnyVariants && baseInvalid && (
                 <div className="mt-1 text-[10px] font-bold text-red-600">
                   أقل من المحجوز ({form.reservedQuantity})!
                 </div>
