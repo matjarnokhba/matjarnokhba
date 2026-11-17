@@ -600,12 +600,18 @@ export default function ProductClient() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setVideoActivated(false); }}
-                          className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                          className="absolute right-2 top-2 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90"
                           aria-label="إغلاق الفيديو"
                         >
                           ✕
                         </button>
                       )}
+    {videoActivated && hasPrevImage && (
+      <button type="button" onClick={(e)=>{e.stopPropagation();setVideoActivated(false);setSelectedImage(selectedImage-1);}} className="absolute right-2 top-1/2 z-30 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90" aria-label="السابق"><ChevronRight className="h-5 w-5" /></button>
+    )}
+    {videoActivated && hasNextImage && (
+      <button type="button" onClick={(e)=>{e.stopPropagation();setVideoActivated(false);setSelectedImage(selectedImage+1);}} className="absolute left-2 top-1/2 z-30 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90" aria-label="التالي"><ChevronLeft className="h-5 w-5" /></button>
+    )}
                     </div>
                   )}
                 </div>
