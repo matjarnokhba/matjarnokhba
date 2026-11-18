@@ -14,8 +14,11 @@ import {
   ExternalLink,
   Info,
   Lock,
+  Navigation,
 } from "lucide-react";
 import ImageUploader from "@/components/admin/ImageUploader";
+import { MapPicker } from "@/components/maps";
+import type { MapCoords } from "@/components/maps";
 
 type Seller = {
   id: number;
@@ -25,6 +28,8 @@ type Seller = {
   logo: string | null;
   city: string | null;
   region: string | null;
+  latitude: number | null;
+  longitude: number | null;
   status: string;
   isVerified: boolean;
   createdAt: string;
@@ -45,6 +50,7 @@ export default function SellerProfilePage() {
   const [city, setCity] = useState("");
   const [region, setRegion] = useState("");
   const [logoUrls, setLogoUrls] = useState<string[]>([]);
+  const [location, setLocation] = useState<MapCoords | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,6 +74,11 @@ export default function SellerProfilePage() {
         setCity(s.city || "");
         setRegion(s.region || "");
         setLogoUrls(s.logo ? [s.logo] : []);
+        setLocation(
+          s.latitude != null && s.longitude != null
+            ? { lat: s.latitude, lng: s.longitude }
+            : null
+        );
       } catch {
         setError("فشل الاتصال بالخادم");
       } finally {
@@ -98,6 +109,8 @@ export default function SellerProfilePage() {
           city: city.trim() || null,
           region: region.trim() || null,
           logo: logoUrls[0] || null,
+          latitude: location?.lat ?? null,
+          longitude: location?.lng ?? null,
         }),
       });
 
@@ -117,6 +130,8 @@ export default function SellerProfilePage() {
               city: data.seller.city,
               region: data.seller.region,
               logo: data.seller.logo,
+              latitude: data.seller.latitude ?? null,
+              longitude: data.seller.longitude ?? null,
             }
           : prev
       );
@@ -152,6 +167,7 @@ export default function SellerProfilePage() {
   if (!seller) return null;
 
   const storeUrl = `/store/${seller.slug}`;
+  const hasLocation = seller.latitude != null && seller.longitude != null;
 
   return (
     <div className="p-4 pt-16 lg:p-8 lg:pt-8">
@@ -166,7 +182,6 @@ export default function SellerProfilePage() {
       {/* ═══ بطاقة معلومات المتجر ═══ */}
       <div className="mb-4 rounded-2xl bg-gradient-to-br from-[#0a1a35] via-[#122a4d] to-[#0a1a35] p-5 text-white shadow-lg">
         <div className="flex flex-wrap items-center gap-4">
-          {/* الشعار */}
           <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white shadow-xl">
             {seller.logo ? (
               <img
@@ -225,6 +240,12 @@ export default function SellerProfilePage() {
                     ? "⏳ بانتظار الموافقة"
                     : "⚠️ معطّل"}
               </span>
+              {hasLocation && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-300 backdrop-blur">
+                  <Navigation className="h-3 w-3" />
+                  موقع محدد
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -234,9 +255,7 @@ export default function SellerProfilePage() {
       <div className="mb-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
         <Lock className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
         <div className="flex-1 text-sm">
-          <div className="font-black text-blue-900">
-            رابط المتجر محمي
-          </div>
+          <div className="font-black text-blue-900">رابط المتجر محمي</div>
           <div className="mt-1 text-xs text-blue-700">
             الرابط الحالي:{" "}
             <span className="font-mono font-bold">/store/{seller.slug}</span>
@@ -323,6 +342,44 @@ export default function SellerProfilePage() {
                 placeholder="الدار البيضاء-سطات"
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
               />
+            </div>
+          </div>
+
+          {/* ═══ موقع المتجر على الخريطة (M11.3b) ═══ */}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h3 className="flex items-center gap-2 text-sm font-black text-gray-900">
+                  <Navigation className="h-4 w-4 text-emerald-600" />
+                  موقع المتجر على الخريطة
+                </h3>
+                <p className="mt-1 text-[11px] text-gray-600">
+                  حدد موقع متجرك بدقة على الخريطة — يستخدمه جامعو الطرود وموظفو
+                  التوصيل للوصول إليك دون البحث اليدوي.
+                </p>
+              </div>
+              {hasLocation && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" />
+                  محدد
+                </span>
+              )}
+            </div>
+
+            <MapPicker
+              initial={location}
+              height={340}
+              showMyLocation={true}
+              onChange={(c) => setLocation(c)}
+            />
+
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-white/70 p-2 text-[10px] text-gray-600">
+              <Info className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
+              <span>
+                {location
+                  ? "سيُحفظ الموقع عند الضغط على «حفظ التغييرات» أدناه."
+                  : "اضغط على الخريطة، أو استخدم زر «موقعي» (إن كنت في المتجر الآن)، ثم اضغط «حفظ التغييرات»."}
+              </span>
             </div>
           </div>
 
