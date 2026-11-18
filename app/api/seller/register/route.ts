@@ -29,6 +29,8 @@ const schema = z.object({
       "الرابط يجب أن يحتوي حروفاً إنجليزية صغيرة وأرقاماً وشرطات فقط"
     ),
   city: z.string().trim().max(80).optional().nullable(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
   region: z.string().trim().max(80).optional().nullable(),
 });
 
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, email, password, storeName, slug, city, region } =
+    const { name, email, password, storeName, slug, city, region, latitude, longitude } =
       parsed.data;
 
     const cleanEmail = email.toLowerCase().trim();
@@ -113,6 +115,8 @@ export async function POST(request: Request) {
           storeName: storeName.trim(),
           slug: cleanSlug,
           city: city?.trim() || null,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
           region: region?.trim() || null,
           status: "PENDING",
           subscriptionStatus: "TRIAL",

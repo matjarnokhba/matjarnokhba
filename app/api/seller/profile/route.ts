@@ -13,6 +13,8 @@ const updateSchema = z.object({
   description: z.string().trim().max(500).optional().nullable(),
   logo: z.string().url().optional().nullable(),
   city: z.string().trim().max(80).optional().nullable(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
   region: z.string().trim().max(80).optional().nullable(),
 });
 
@@ -31,6 +33,8 @@ export async function GET() {
         description: true,
         logo: true,
         city: true,
+      latitude: true,
+      longitude: true,
         region: true,
         isVerified: true,
         status: true,
@@ -83,6 +87,8 @@ export async function PATCH(request: Request) {
         }),
         ...(data.logo !== undefined && { logo: data.logo || null }),
         ...(data.city !== undefined && { city: data.city || null }),
+        ...(data.latitude !== undefined && { latitude: data.latitude }),
+        ...(data.longitude !== undefined && { longitude: data.longitude }),
         ...(data.region !== undefined && { region: data.region || null }),
       },
       select: {
@@ -92,6 +98,8 @@ export async function PATCH(request: Request) {
         description: true,
         logo: true,
         city: true,
+        latitude: true,
+        longitude: true,
         region: true,
       },
     });
