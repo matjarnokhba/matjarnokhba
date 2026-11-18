@@ -1622,24 +1622,28 @@ model Referral {
 // SECTION 83 — DELIVERY PERSON SYSTEM
 
 model DeliveryPerson {
-  id                   Int                  @id @default(autoincrement())
-  userId               Int                  @unique
-  city                 String
-  cities               String[]             @default([])
-  districts            String[]             @default([])
-  phone                String
-  vehicleType          String?
-  status               DeliveryPersonStatus @default(ACTIVE)
-  notes                String?
-  totalDeliveries      Int                  @default(0)
-  successfulDeliveries Int                  @default(0)
-  failedDeliveries     Int                  @default(0)
-  returnCount          Int                  @default(0)
-  weeklyDayOff         Int? // 0=الأحد، 1=الاثنين، ... 6=السبت
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  deletedAt            DateTime?
-
+  id                     Int                    @id @default(autoincrement())
+  userId                 Int                    @unique
+  city                   String
+  cities                 String[]               @default([])
+  districts              String[]               @default([])
+  phone                  String
+  vehicleType            String?
+  status                 DeliveryPersonStatus   @default(ACTIVE)
+  notes                  String?
+  totalDeliveries        Int                    @default(0)
+  successfulDeliveries   Int                    @default(0)
+  failedDeliveries       Int                    @default(0)
+  returnCount            Int                    @default(0)
+  weeklyDayOff           Int? // 0=الأحد، 1=الاثنين، ... 6=السبت
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  deletedAt              DateTime?
+  isOnline               Boolean                @default(false)
+  currentLatitude        Float?
+  currentLongitude       Float?
+  locationAccuracy       Float?
+  lastLocationAt         DateTime?
   user                   User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   assignedOrders         Order[]                @relation("OrderDeliveryPerson")
   deliveryAttempts       DeliveryAttempt[]
@@ -1652,10 +1656,27 @@ model DeliveryPerson {
   daysOff                DriverDayOff[]
   legalNotices           DriverLegalNotice[]
   refusedHandoverBatches RefusedHandoverBatch[]
+  locationPings          DeliveryLocationPing[]
 
   @@index([status])
   @@index([city])
   @@index([deletedAt])
+  @@index([isOnline, lastLocationAt])
+}
+
+model DeliveryLocationPing {
+  id               Int      @id @default(autoincrement())
+  deliveryPersonId Int
+  latitude         Float
+  longitude        Float
+  accuracy         Float?
+  assignmentId     Int?
+  recordedAt       DateTime @default(now())
+
+  deliveryPerson DeliveryPerson @relation(fields: [deliveryPersonId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryPersonId, recordedAt])
+  @@index([recordedAt])
 }
 
 // SECTION 84 — DELIVERY ATTEMPTS LOG
