@@ -18,8 +18,7 @@ import {
   Banknote,
   PackageX,
   Store,
-  Calendar,
-} from "lucide-react";
+  Calendar, Map as MapIcon } from "lucide-react";
 
 type Props = {
   userName: string;
@@ -91,6 +90,7 @@ const NAV_ITEMS = [
   },
   { href: "/warehouse/drivers-schedule", label: "جدول السائقين", icon: Calendar, exact: false },
   { href: "/warehouse/history", label: "السجل", icon: History, exact: false },
+  { href: "/warehouse/tracking", label: "الخريطة الحية", icon: MapIcon, exact: false },
 ];
 
 export default function WarehouseSidebar({ userName, role }: Props) {
