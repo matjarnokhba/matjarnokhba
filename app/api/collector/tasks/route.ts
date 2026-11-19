@@ -39,6 +39,8 @@ export async function GET() {
             id: true,
             storeName: true,
             city: true,
+            latitude: true,
+            longitude: true,
           },
         },
         orderItem: {
@@ -63,7 +65,7 @@ export async function GET() {
       {
         orderId: number;
         orderNumber: string;
-        seller: { id: number; storeName: string; city: string | null };
+        seller: { id: number; storeName: string; city: string | null; latitude: number | null; longitude: number | null };
         itemsCount: number;
         status: "READY_FOR_COLLECTION" | "COLLECTED" | "IN_TRANSIT_TO_WAREHOUSE";
         readyAt: Date | null;
@@ -92,6 +94,8 @@ export async function GET() {
             id: item.seller.id,
             storeName: item.seller.storeName,
             city: item.seller.city,
+            latitude: item.seller.latitude,
+            longitude: item.seller.longitude,
           },
           itemsCount: item.quantity,
           status: item.status as any,
