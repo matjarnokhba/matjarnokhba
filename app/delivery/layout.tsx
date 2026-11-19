@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { SessionService } from "@/services/session.service";
 import { prisma } from "@/lib/prisma";
 import DeliverySidebar from "@/components/delivery/DeliverySidebar";
+import GPSGuard from "@/components/delivery/GPSGuard";
 
 export default async function DeliveryLayout({
   children,
@@ -39,7 +40,9 @@ export default async function DeliveryLayout({
         userName={current.user.name}
         city={deliveryPerson.city}
       />
-      <main className="lg:mr-64">{children}</main>
+      <main className="lg:mr-64">
+        <GPSGuard>{children}</GPSGuard>
+      </main>
     </div>
   );
 }
