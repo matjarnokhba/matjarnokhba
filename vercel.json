@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/check-driver-notices",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-location-pings",
+      "schedule": "0 6 * * *"
     }
   ]
 }
