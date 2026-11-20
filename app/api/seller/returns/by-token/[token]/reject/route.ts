@@ -11,6 +11,10 @@ async function requireSeller() {
   if (!current.user.seller) {
     return { error: "ليس لديك متجر", status: 403 };
   }
+    // M12 — فرض صلاحية CONFIRM_RETURNS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("CONFIRM_RETURNS")) {
+    return { error: "لا تملك صلاحية رفض المرتجعات", status: 403 };
+  }
   return { user: current.user, seller: current.user.seller };
 }
 

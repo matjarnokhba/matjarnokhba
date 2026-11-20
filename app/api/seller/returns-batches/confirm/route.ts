@@ -17,6 +17,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // M12 — فرض صلاحية CONFIRM_BATCHES على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("CONFIRM_BATCHES")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية تأكيد دفعات المستودع" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const parsed = schema.safeParse(body);
     if (!parsed.success) {

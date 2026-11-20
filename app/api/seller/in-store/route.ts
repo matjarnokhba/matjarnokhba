@@ -15,6 +15,10 @@ async function requireSeller() {
       status: 403,
     };
   }
+    // M12 — فرض صلاحية SELL_ON_POS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("SELL_ON_POS")) {
+    return { error: "لا تملك صلاحية البيع عبر نقطة البيع", status: 403 };
+  }
   return { user: current.user, seller: current.user.seller };
 }
 

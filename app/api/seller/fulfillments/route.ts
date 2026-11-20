@@ -13,6 +13,10 @@ async function requireSeller() {
   ) {
     return { error: "متجرك معطّل", status: 403 };
   }
+    // M12 — فرض صلاحية VIEW_FULFILLMENTS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_FULFILLMENTS")) {
+    return { error: "لا تملك صلاحية عرض التجهيزات", status: 403 };
+  }
   return { user: current.user, seller: current.user.seller };
 }
 

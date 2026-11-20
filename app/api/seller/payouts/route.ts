@@ -18,6 +18,14 @@ export async function GET() {
       );
     }
 
+    // M12 — فرض صلاحية VIEW_WALLET على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_WALLET")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية عرض المحفظة" },
+        { status: 403 }
+      );
+    }
+
     const sellerId = current.user.seller.id;
 
     // ═══ الإيرادات الكلية ═══

@@ -24,6 +24,10 @@ async function requireSeller() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
+    // M12 — فرض صلاحية UPDATE_ORDER_STATUS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("UPDATE_ORDER_STATUS")) {
+    return { error: "لا تملك صلاحية تحديث حالة الطلبات", status: 403 };
+  }
   return { user: current.user, seller: current.user.seller };
 }
 
