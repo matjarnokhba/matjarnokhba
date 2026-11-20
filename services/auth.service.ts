@@ -101,6 +101,15 @@ const emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       throw new Error("البريد الإلكتروني أو كلمة المرور غير صحيحة");
     }
 
+    // M12 — إلزام التحقق من البريد قبل الدخول
+    // استثناء: من سجّل عبر Google (googleId != null) فهو موثق تلقائيًا
+    if (!user.emailVerified && user.googleId === null) {
+      const err = new Error("EMAIL_NOT_VERIFIED") as Error & { code?: string };
+      err.code = "EMAIL_NOT_VERIFIED";
+      throw err;
+    }
+
+
     // 4. تحقق من كلمة المرور
     if (!user.passwordHash) {
       throw new Error("هذا الحساب مسجل بواسطة Google. يرجى استخدام زر Google لتسجيل الدخول.");
