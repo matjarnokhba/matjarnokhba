@@ -3,6 +3,13 @@ import { prisma } from "../lib/prisma";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
+// M12 — Guard rails: test scripts must never run in production
+if (process.env.NODE_ENV === "production") {
+  console.error("🚫 مرفوض: هذا السكربت للاختبار فقط ولا يعمل في production.");
+  process.exit(1);
+}
+
+
 type Test = { name: string; passed: boolean; detail: string };
 const tests: Test[] = [];
 function add(name: string, passed: boolean, detail = "") {

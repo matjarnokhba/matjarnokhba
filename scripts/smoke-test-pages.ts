@@ -2,6 +2,13 @@ import "dotenv/config";
 import { prisma } from "../lib/prisma";
 import bcrypt from "bcryptjs";
 
+// M12 — Guard rails: test scripts must never run in production
+if (process.env.NODE_ENV === "production") {
+  console.error("🚫 مرفوض: هذا السكربت للاختبار فقط ولا يعمل في production.");
+  process.exit(1);
+}
+
+
 const BASE_URL = "http://localhost:3000";
 const prefix = `SMOKE-${Date.now()}`;
 
