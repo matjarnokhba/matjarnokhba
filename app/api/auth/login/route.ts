@@ -51,6 +51,19 @@ export async function POST(request: Request) {
     try {
       user = await AuthService.login({ email, password });
     } catch (authError) {
+      // M12 — بريد غير محقق → مسار خاص (لا يُحسب ضمن محاولات فاشلة)
+      const code = (authError as Error & { code?: string })?.code;
+      if (code === "EMAIL_NOT_VERIFIED") {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "EMAIL_NOT_VERIFIED",
+            message: "يرجى تأكيد بريدك الإلكتروني قبل تسجيل الدخول. تحقق من صندوق بريدك.",
+          },
+          { status: 403 }
+        );
+      }
+
       // ═══ فشل تسجيل الدخول — نعيد رسالة المنطق ═══
       const message =
         authError instanceof Error
