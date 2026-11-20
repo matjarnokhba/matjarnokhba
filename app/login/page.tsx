@@ -34,6 +34,8 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [resendMessage, setResendMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,6 +72,29 @@ function LoginForm() {
     }
   }
 
+  async function handleResend() {
+    setResendState("sending");
+    setResendMessage("");
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResendState("sent");
+        setResendMessage(data.message || "أرسلنا رابطًا جديدًا");
+      } else {
+        setResendState("error");
+        setResendMessage(data.message || "تعذّر الإرسال");
+      }
+    } catch {
+      setResendState("error");
+      setResendMessage("تعذّر الاتصال. حاول لاحقًا.");
+    }
+  }
+
   return (
     <div
       className="min-h-screen flex items-center justify-center bg-gray-50 p-4"
@@ -96,6 +121,16 @@ function LoginForm() {
         {authError === "google_auth_failed" && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
             ❌ فشل تسجيل الدخول باستخدام Google. حاول مرة أخرى.
+          </div>
+        )}
+        {authError === "google_link_requires_password" && (
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm mb-4">
+            ⚠️ هذا البريد مرتبط بحساب محمي بكلمة مرور. سجّل الدخول بكلمة المرور أولًا.
+          </div>
+        )}
+        {authError === "verified_failed" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
+            ❌ تعذّر التحقق من بريدك. الرابط منتهٍ أو مستخدم. أعد الإرسال من النموذج أدناه.
           </div>
         )}
 
@@ -130,7 +165,23 @@ function LoginForm() {
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
-              {error}
+              <div>{error}</div>
+              {error.includes("تأكيد بريدك") && resendState !== "sent" && (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendState === "sending" || !email}
+                  className="mt-2 text-xs font-bold text-[#ff5c00] hover:underline disabled:opacity-50"
+                >
+                  {resendState === "sending" ? "جارٍ الإرسال..." : "أعد إرسال رابط التحقق"}
+                </button>
+              )}
+              {resendState === "sent" && (
+                <div className="mt-2 text-xs text-green-700">✅ {resendMessage}</div>
+              )}
+              {resendState === "error" && (
+                <div className="mt-2 text-xs text-red-600">❌ {resendMessage}</div>
+              )}
             </div>
           )}
 
