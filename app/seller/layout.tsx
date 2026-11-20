@@ -52,6 +52,30 @@ export default async function SellerLayout({
 
 
 
+    // Admin without seller context → friendly screen
+    if (!hasRetailStore) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6" dir="rtl">
+          <div className="max-w-md text-center">
+            <div className="text-6xl">🏪</div>
+            <h1 className="mt-4 text-2xl font-black text-gray-900">
+              لا يوجد متجر تجزئة مرتبط بحسابك
+            </h1>
+            <p className="mt-2 text-sm text-gray-500">
+              أنت مسجّل الدخول كمدير. لعرض صفحات التاجر (المنتجات، الطلبات، الملف الشخصي)، سجّل دخول بحساب تاجر.
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <Link
+                href="/admin"
+                className="rounded-lg bg-[#ff5c00] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#e64a00]"
+              >
+                العودة إلى لوحة الإدارة
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
   // Full seller (retail)
   const topbarItems = [
     {
