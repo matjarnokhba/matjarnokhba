@@ -33,6 +33,11 @@ async function requireSellerProduct(productId: number) {
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
 
+  // M12 — فرض صلاحية VIEW_PRODUCTS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_PRODUCTS")) {
+    return { error: "لا تملك صلاحية عرض المنتجات", status: 403 };
+  }
+
   const product = await prisma.product.findUnique({
     where: { id: productId },
     include: {

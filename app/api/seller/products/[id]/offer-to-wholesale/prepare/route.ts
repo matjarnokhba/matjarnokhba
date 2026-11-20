@@ -8,6 +8,17 @@ export async function GET(
 ) {
   try {
     const current = await SessionService.getCurrent();
+
+    // M12 — فرض صلاحية VIEW_PRODUCTS على الموظفين
+    if (!current) {
+      return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 401 });
+    }
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_PRODUCTS")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية عرض المنتجات" },
+        { status: 403 }
+      );
+    }
     if (!current?.user?.seller) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }

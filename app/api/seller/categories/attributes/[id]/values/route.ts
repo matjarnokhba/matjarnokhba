@@ -31,6 +31,14 @@ export async function POST(
       );
     }
 
+    // M12 — فرض صلاحية MANAGE_PRODUCTS على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("MANAGE_PRODUCTS")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية إدارة المنتجات" },
+        { status: 403 }
+      );
+    }
+
     const sellerId = current.user.seller.id;
     const { id } = await params;
     const attributeId = parseInt(id);
