@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SessionService } from "@/services/session.service";
 import { DocumentService } from "@/services/document.service";
+import { isSafeDocumentUrl } from "@/lib/url-safety";
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();
@@ -21,7 +22,7 @@ const createSchema = z.object({
     "ADDRESS_PROOF",
     "OTHER",
   ]),
-  storageKey: z.string().url(),
+  storageKey: z.string().url().refine(isSafeDocumentUrl, { message: "رابط الملف يجب أن يكون من خدمة التخزين المعتمدة (UploadThing) عبر HTTPS" }),
   mimeType: z.string().min(3),
   sizeBytes: z.number().int().positive().max(8 * 1024 * 1024),
   notes: z.string().trim().max(500).optional(),

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
 import { DocumentService } from "@/services/document.service";
+import { isSafeDocumentUrl, whyUnsafeDocumentUrl } from "@/lib/url-safety";
 
 export async function GET(
   request: Request,
@@ -46,7 +47,16 @@ export async function GET(
     }
 
     // ═══ Proxy الملف عبر الخادم — الرابط لا يصل للمتصفح ═══
-    const upstream = await fetch(doc.storageKey);
+    // M12 — SSRF: تحقق من الـURL قبل الجلب
+    if (!isSafeDocumentUrl(doc.storageKey)) {
+      console.error("Blocked unsafe doc URL:", whyUnsafeDocumentUrl(doc.storageKey));
+      return NextResponse.json(
+        { success: false, message: "مصدر الملف غير مسموح" },
+        { status: 400 }
+      );
+    }
+
+    const upstream = await fetch(doc.storageKey, { redirect: "error" });
     if (!upstream.ok) {
       return NextResponse.json(
         { success: false, message: "فشل جلب الملف" },
