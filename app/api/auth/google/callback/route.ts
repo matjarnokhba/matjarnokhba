@@ -46,11 +46,26 @@ export async function GET(request: Request) {
     });
 
     if (user) {
-      // إذا وجدنا الحساب بالبريد لكنه لم يسجل بـ Google من قبل، نربطه
+      // M12 — سياسة ربط Google بحساب موجود (ق-1ب)
       if (!user.googleId) {
+        if (user.emailVerified && user.passwordHash) {
+          // حساب مُثبت بكلمة مرور — لا ربط تلقائي (منع اختطاف)
+          return NextResponse.redirect(
+            new URL("/login?error=google_link_requires_password", origin)
+          );
+        }
+        // غير محقق → نربط ونمسح passwordHash
+        // حساب Google أصلي (بلا passwordHash) → نربط فقط
+        const updateData: { googleId: string; emailVerified: boolean; passwordHash?: null } = {
+          googleId: googleUser.sub,
+          emailVerified: true,
+        };
+        if (user.passwordHash) {
+          updateData.passwordHash = null;
+        }
         user = await prisma.user.update({
           where: { id: user.id },
-          data: { googleId: googleUser.sub, emailVerified: true },
+          data: updateData,
         });
       }
     } else {
