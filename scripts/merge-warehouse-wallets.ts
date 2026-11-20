@@ -1,6 +1,16 @@
 import "dotenv/config";
 import { prisma } from "../lib/prisma";
 
+// M12 — Guard: maintenance script requires explicit confirmation
+if (!process.argv.includes("--confirm-merge")) {
+  console.error("🚫 مرفوض: استخدم --confirm-merge لتأكيد دمج المحافظ.");
+  console.error("   مثال: npx tsx --env-file=.env scripts/merge-warehouse-wallets.ts --confirm-merge");
+  console.error("   ملاحظة: هذا سكربت صيانة شرعي — يعمل في أي بيئة، لكن يتطلب تأكيداً.");
+  process.exit(1);
+}
+const __dbHost = (process.env.DATABASE_URL || "").split("@")[1]?.split("/")[0] ?? "unknown";
+console.log(`⚠️  merge-warehouse-wallets سيعمل على: ${__dbHost}`);
+
 async function main() {
   console.log("🔍 البحث عن محافظ المستودع المكررة...");
 
