@@ -12,6 +12,14 @@ export async function GET(request: Request) {
       );
     }
 
+    // M12 — فرض صلاحية VIEW_PRODUCTS على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_PRODUCTS")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية عرض المنتجات" },
+        { status: 403 }
+      );
+    }
+
     const url = new URL(request.url);
     const q = (url.searchParams.get("q") || "").trim();
     const limit = Math.min(30, parseInt(url.searchParams.get("limit") || "20"));

@@ -8,6 +8,14 @@ export async function GET() {
     if (!current?.user?.seller) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
+
+    // M12 — هذه العملية لصاحب المتجر فقط
+    if (!current.user.isSellerOwner) {
+      return NextResponse.json(
+        { success: false, message: "هذه العملية متاحة لصاحب المتجر فقط" },
+        { status: 403 }
+      );
+    }
     const sellerId = current.user.seller.id;
 
     const products = await prisma.product.findMany({

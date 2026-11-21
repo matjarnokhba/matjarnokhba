@@ -12,6 +12,14 @@ export async function GET() {
       );
     }
 
+    // M12 — فرض صلاحية VIEW_NOTIFICATIONS على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_NOTIFICATIONS")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية الإشعارات" },
+        { status: 403 }
+      );
+    }
+
     const userId = current.user.id;
     const sellerId = current.user.seller.id;
 

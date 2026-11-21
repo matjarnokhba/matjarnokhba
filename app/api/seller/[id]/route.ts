@@ -21,6 +21,14 @@ export async function DELETE(
       );
     }
 
+    // M12 — هذه العملية لصاحب المتجر فقط
+    if (!current.user.isSellerOwner) {
+      return NextResponse.json(
+        { success: false, message: "هذه العملية متاحة لصاحب المتجر فقط" },
+        { status: 403 }
+      );
+    }
+
     const { id } = await params;
     const docId = parseInt(id);
     if (isNaN(docId)) {

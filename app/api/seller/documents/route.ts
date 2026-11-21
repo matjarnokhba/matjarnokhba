@@ -4,10 +4,12 @@ import { SessionService } from "@/services/session.service";
 import { DocumentService } from "@/services/document.service";
 import { isSafeDocumentUrl } from "@/lib/url-safety";
 
-async function requireSeller() {
+async function requireSellerOwner() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
+  // M12 — هذه العملية لصاحب المتجر فقط
+  if (!current.user.isSellerOwner) return { error: "هذه العملية متاحة لصاحب المتجر فقط", status: 403 };
   return { user: current.user, seller: current.user.seller };
 }
 
@@ -30,7 +32,7 @@ const createSchema = z.object({
 
 export async function GET() {
   try {
-    const auth = await requireSeller();
+    const auth = await requireSellerOwner();
     if ("error" in auth) {
       return NextResponse.json(
         { success: false, message: auth.error },
@@ -51,7 +53,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireSeller();
+    const auth = await requireSellerOwner();
     if ("error" in auth) {
       return NextResponse.json(
         { success: false, message: auth.error },
