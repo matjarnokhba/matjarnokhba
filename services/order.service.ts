@@ -52,6 +52,54 @@ type CreateOrderInput = {
   };
 };
 
+// M12 — دالة مساعدة لحساب الشحن حسب ShippingRate مع fallback على SystemPolicy
+async function resolveShippingForSeller(
+  sellerId: number,
+  cityId: number | null,
+  districtId: number | null,
+  sellerSubtotal: number,
+  isAllFree: boolean,
+  freeShippingThreshold: number
+): Promise<number> {
+  if (isAllFree) return 0;
+
+  let rate: { flatRate: number; freeAbove: number | null } | null = null;
+
+  const candidateQueries: Array<{ sellerId: number | null; cityId: number | null; districtId: number | null }> = [];
+  if (cityId && districtId) {
+    candidateQueries.push({ sellerId, cityId, districtId });
+    candidateQueries.push({ sellerId: null, cityId, districtId });
+  }
+  if (cityId) {
+    candidateQueries.push({ sellerId, cityId, districtId: null });
+    candidateQueries.push({ sellerId: null, cityId, districtId: null });
+  }
+
+  for (const q of candidateQueries) {
+    const found = await prisma.shippingRate.findFirst({
+      where: { sellerId: q.sellerId, cityId: q.cityId, districtId: q.districtId, isActive: true },
+      orderBy: { id: "asc" },
+      select: { flatRate: true, freeAbove: true },
+    });
+    if (found) {
+      rate = {
+        flatRate: Number(found.flatRate),
+        freeAbove: found.freeAbove !== null ? Number(found.freeAbove) : null,
+      };
+      break;
+    }
+  }
+
+  if (!rate) {
+    if (sellerSubtotal >= freeShippingThreshold) return 0;
+    return 20;
+  }
+
+  if (rate.freeAbove !== null && sellerSubtotal >= rate.freeAbove) return 0;
+  return rate.flatRate;
+}
+
+
 export const OrderService = {
   async generateOrderNumber(tx: any): Promise<string> {
     const year = new Date().getFullYear();
@@ -202,6 +250,30 @@ export const OrderService = {
     const isFreeShippingEnabled = policies.find(p => p.key === "FREE_SHIPPING_ENABLED")?.value === true;
     const FREE_SHIPPING_THRESHOLD = Number(policies.find(p => p.key === "FREE_SHIPPING_THRESHOLD")?.value) || 300;
 
+    // M12 — حساب الشحن حسب ShippingRate (مع fallback على 20)
+    let addressCityId: number | null = null;
+    let addressDistrictId: number | null = null;
+    if (data.shippingAddressId) {
+      const addr = await prisma.address.findUnique({
+        where: { id: data.shippingAddressId },
+        select: { cityId: true, districtId: true },
+      });
+      if (addr) {
+        addressCityId = addr.cityId;
+        addressDistrictId = addr.districtId;
+      }
+    } else if (data.address.cityPlaceId) {
+      const addr = await prisma.address.findFirst({
+        where: { userId, cityPlaceId: data.address.cityPlaceId },
+        select: { cityId: true, districtId: true },
+        orderBy: { id: "desc" },
+      });
+      if (addr) {
+        addressCityId = addr.cityId;
+        addressDistrictId = addr.districtId;
+      }
+    }
+
     const shippingBySeller = new Map<number, number>();
     let serverShipping = 0;
 
@@ -209,11 +281,15 @@ export const OrderService = {
       const sellerSubtotal = sellerItems.reduce((s, i) => s + i.lineTotal, 0);
       const isAllFree = sellerItems.every((i) => i.productFreeShipping);
 
-      let currentSellerShipping = 0;
-      if (!isAllFree && (!isFreeShippingEnabled || sellerSubtotal < FREE_SHIPPING_THRESHOLD)) {
-        currentSellerShipping = 20; // نثبتها 20 كقاعدة أساسية
-      }
-      
+      const currentSellerShipping = await resolveShippingForSeller(
+        sellerId,
+        addressCityId,
+        addressDistrictId,
+        sellerSubtotal,
+        isAllFree,
+        isFreeShippingEnabled ? FREE_SHIPPING_THRESHOLD : 0
+      );
+
       shippingBySeller.set(sellerId, currentSellerShipping);
       serverShipping += currentSellerShipping;
     }
