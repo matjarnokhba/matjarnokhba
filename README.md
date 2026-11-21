@@ -1,58 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# متجر نخبة — Matjar Nokhba
 
-## Getting Started
+منصة تجارة إلكترونية مغربية متعددة البائعين: تجزئة، جملة، مستودع، توصيل، محافظ.
 
-First, run the development server:
+## الحالة الحالية
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- 142 model + 74 enum في schema.prisma
+- 44 migration مطبقة على Neon
+- 333 API route + 180 صفحة
+- tsc=0، build=0، lint=0 errors (1007 warnings documented)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Next.js 16.3.5 (Turbopack) + React 19.2.8 + TypeScript 5.9.3 + Prisma 7.10.0 + Neon + Tailwind 4.3.3 + UploadThing 7.7.4 + Upstash Redis (اختياري).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## بدء التشغيل السريع
 
-## Learn More
+1. git clone https://github.com/matjarnokhba/matjarnokhba.git
+2. cd matjarnokhba
+3. npm install
+4. cp .env.example .env  (ثم املأ القيم)
+5. npx prisma migrate deploy --config prisma7.config.ts
+6. npm run dev
 
-To learn more about Next.js, take a look at the following resources:
+## متغيرات البيئة
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| المتغير | إلزامي | الوصف |
+|---|---|---|
+| DATABASE_URL | نعم | Neon connection string |
+| NEXT_PUBLIC_SITE_URL | نعم | http://localhost:3000 في dev |
+| GOOGLE_CLIENT_ID / SECRET | اختياري | Google login |
+| SMTP_EMAIL / PASSWORD | اختياري | Gmail App Password |
+| KV_REST_API_URL / TOKEN | اختياري | Upstash rate limit |
+| SELLER_DATA_KEY | اختياري | 32-byte base64 (IBAN encryption) |
+| CRON_SECRET | اختياري | Bearer token للـcron |
+| UPLOADTHING_TOKEN | اختياري | UploadThing API key |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## هيكل المشروع
 
-## Deploy on Vercel
+- app/ — 180 صفحة + 333 API route (admin, seller, warehouse, wholesale, delivery, collector, cron)
+- services/ — 47 خدمة (order, auth, session, inventory, document)
+- lib/ — 34 ملف (prisma, seller-guards, page-guards, url-safety)
+- prisma/ — schema + 44 migration
+- scripts/ — 22 سكربت (كلها محمية)
+- components/ — 132 مكوّن
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## الترحيلات
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+npx prisma migrate status --config prisma7.config.ts
+npx prisma migrate deploy --config prisma7.config.ts
+
+Neon pooler: استخدم migrate diff + migrate deploy (لا migrate dev).
+
+## الفحوص
+
+npx tsc --noEmit
+npm run build
+npm run lint
+npx prisma validate --config prisma7.config.ts
+
+## السكربتات التشغيلية
+
+كل السكربتات في scripts/ محمية (prod guard +/or confirm flag): reset-everything, reset-warehouse, reset-assemblies, smoke-test-pages, test-phase2, test-workflows, fix-stuck-orders, merge-warehouse-wallets, m12-mark-existing-users-verified.
 
 ## الاختبارات
 
-لا إطار آلي حاليًا. خطة M13: `vitest` + اختبارات وحدة للخدمات الحرجة.
+لا إطار آلي حاليًا. خطة M13: vitest + اختبارات وحدة للخدمات الحرجة.
 
 ## روابط
 
-- [DECISIONS.md](./DECISIONS.md) — قرارات معمارية
-- [docs/SCHEMA_FULL.md](./docs/SCHEMA_FULL.md) — مرجع schema (114/63 → 142/74، يُحدّث في M12.5)
-- [.env.example](./.env.example) — قالب env
-
-## المساهمة
-
-1. اقرأ `DECISIONS.md` قبل تغيير معماري
-2. `tsc=0` → `build=0` → `commit` → `push`
-3. Prefix واضح: `feat:`, `fix:`, `chore:`, `docs:`
-4. لا سكربتات خطرة بلا guard
-5. لا تلمس migrations قديمة
+- DECISIONS.md — قرارات معمارية
+- docs/SCHEMA_FULL.md — مرجع schema (114/63 إلى 142/74، يُحدّث في M12.5)
+- .env.example — قالب env
 
 ## الترخيص
 
-خاص © متجر نخبة
+خاص — متجر نخبة
