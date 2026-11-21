@@ -765,6 +765,7 @@ model ProductVariant {
   @@index([productId])
   @@index([sellerId])
   @@index([sku])
+  @@index([masterVariantId])
 }
 
 model ProductVariantOptionValue {
