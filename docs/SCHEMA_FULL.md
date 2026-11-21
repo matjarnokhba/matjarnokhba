@@ -1,3 +1,13 @@
+# تنبيه: هذا الملف متأخر عن schema.prisma
+
+الحالة الحالية (M12): 142 model + 74 enum + 44 migration.
+آخر تحديث كامل: M11 (114 model + 63 enum).
+
+ما أضافه M12: ShippingRate model + migration 20261121002908_m12_1_shipping_rates.
+إعادة توليد كاملة مؤجلة إلى M12.5.
+
+---
+
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
