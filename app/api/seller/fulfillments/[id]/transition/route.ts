@@ -9,6 +9,11 @@ async function requireSellerOwnership(fulfillmentItemId: number) {
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
 
+  // M12 — فرض صلاحية MANAGE_FULFILLMENTS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("MANAGE_FULFILLMENTS")) {
+    return { error: "لا تملك صلاحية إدارة التجهيزات", status: 403 };
+  }
+
   const item = await prisma.fulfillmentItem.findUnique({
     where: { id: fulfillmentItemId },
     select: {
