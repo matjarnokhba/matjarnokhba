@@ -6,7 +6,11 @@ async function requireSeller() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
-  return { user: current.user, seller: current.user.seller };
+  // M12 — فرض صلاحية VIEW_NOTIFICATIONS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_NOTIFICATIONS")) {
+    return { error: "لا تملك صلاحية الإشعارات", status: 403 };
+  }
+    return { user: current.user, seller: current.user.seller };
 }
 
 export async function PATCH(

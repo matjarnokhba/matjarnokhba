@@ -12,6 +12,14 @@ export async function GET() {
       );
     }
 
+    // M12 — فرض صلاحية VIEW_BATCHES على الموظفين
+    if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_BATCHES")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية عرض الدفعات" },
+        { status: 403 }
+      );
+    }
+
     const batches = await SellerReturnService.getBySeller(current.user.id);
 
     return NextResponse.json({ success: true, batches });

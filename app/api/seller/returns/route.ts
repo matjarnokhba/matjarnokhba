@@ -9,7 +9,11 @@ async function requireSeller() {
   if (!current.user.seller) {
     return { error: "ليس لديك متجر", status: 403 };
   }
-  return { user: current.user, seller: current.user.seller };
+  // M12 — فرض صلاحية VIEW_RETURNS على الموظفين
+  if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("VIEW_RETURNS")) {
+    return { error: "لا تملك صلاحية عرض المرتجعات", status: 403 };
+  }
+    return { user: current.user, seller: current.user.seller };
 }
 
 export async function GET(request: Request) {
