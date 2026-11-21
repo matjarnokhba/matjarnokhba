@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings 1100",
     "seed": "tsx prisma/seed.ts",
     "recalc": "tsx scripts/recalc-products.ts",
     "recalc-sellers": "tsx scripts/recalc-seller-performance.ts",
