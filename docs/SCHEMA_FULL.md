@@ -1,385 +1,40 @@
-# تنبيه: هذا الملف متأخر عن schema.prisma
+# SCHEMA_FULL — Prisma Schema Reference
 
-الحالة الحالية (M12): 142 model + 74 enum + 44 migration.
-آخر تحديث كامل: M11 (114 model + 63 enum).
+**Auto-generated from `prisma/schema.prisma` — DO NOT EDIT MANUALLY**
 
-ما أضافه M12: ShippingRate model + migration 20261121002908_m12_1_shipping_rates.
-إعادة توليد كاملة مؤجلة إلى M12.5.
+**Generated:** 2026-11-21 21:10
+
+**Stats:** 142 models + 74 enums
+
+**لإعادة التوليد:**
+
+```powershell
+powershell -File scripts/regen-schema-full.ps1
+```
 
 ---
 
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+## Models (142)
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+### `User`
 
-generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
-}
-
-datasource db {
-  provider = "postgresql"
-}
-
-// ============================================
-// ENUMS — 13 Enums
-// المرجع: DECISIONS.md
-// ============================================
-
-enum ReturnShipmentStatus {
-  PENDING_PICKUP
-  PICKED_UP
-  IN_TRANSIT_TO_WAREHOUSE
-  RECEIVED_AT_WAREHOUSE
-  INSPECTED
-  IN_TRANSIT_TO_SELLER
-  DELIVERED_TO_SELLER
-  COMPLETED
-  CANCELLED
-}
-
-enum ReturnInspectionStatus {
-  INTACT
-  DAMAGED
-  INCOMPLETE
-}
-
-enum ZoneType {
-  COLLECTION
-  DELIVERY
-}
-
-enum AssemblyStatus {
-  PENDING
-  READY
-  PARTIALLY_SHIPPED
-  COMPLETED
-  CANCELLED
-}
-
-/// دور المستخدم
-enum UserRole {
-  CUSTOMER
-  SELLER
-  ADMIN
-  SUPER_ADMIN
-  DELIVERY
-  COLLECTOR
-  WAREHOUSE_MANAGER
-}
-
-/// مصدر الطلب
-enum OrderSource {
-  ONLINE // من الموقع الإلكتروني
-  IN_STORE // من المحل الحقيقي (بمسح QR)
-}
-
-/// حالة حساب السائق
-enum DeliveryPersonStatus {
-  ACTIVE
-  SUSPENDED
-  INACTIVE
-}
-
-/// نوع محاولة التوصيل
-enum DeliveryAttemptType {
-  DELIVERED
-  DEFERRED
-  REJECTED
-  RETURNED
-}
-
-/// حالة تجهيز OrderItem
-enum FulfillmentStatus {
-  PENDING
-  PREPARING
-  READY_FOR_COLLECTION
-  COLLECTED
-  IN_TRANSIT_TO_WAREHOUSE
-  RECEIVED
-  VERIFIED
-  AVAILABLE_FOR_SHIPMENT
-  ALLOCATED
-  SHIPPED
-  DELIVERED
-  CANCELLED
-  RETURNED
-}
-
-/// حالة تكليف الجمع
-enum CollectionStatus {
-  PENDING
-  ASSIGNED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-/// حالة استلام المستودع
-enum WarehouseReceiptStatus {
-  RECEIVED
-  VERIFIED
-  DAMAGED
-  REJECTED
-}
-
-/// قرار تجميع طلبات العميل
-enum GroupingDecision {
-  WAIT_FOR_MORE
-  SHIP_AVAILABLE_NOW
-}
-
-/// حالة تكليف التوصيل
-enum DeliveryAssignmentStatus {
-  ASSIGNED
-  PICKED_UP
-  OUT_FOR_DELIVERY
-  COMPLETED
-  CANCELLED
-  REASSIGNED
-}
-
-/// حالة الشحنة
-enum ShipmentStatus {
-  DRAFT
-  WAITING_FOR_ITEMS
-  READY
-  ASSIGNED
-  PICKED_UP
-  OUT_FOR_DELIVERY
-  IN_TRANSIT
-  DELIVERED
-  PARTIALLY_DELIVERED
-  POSTPONED
-  REFUSED
-  RETURNED
-  CANCELLED
-}
-
-/// فئة الصلاحية
-enum PermissionCategory {
-  ORDERS
-  SHIPMENT
-  DELIVERY
-  SELLER
-  ADMIN
-  SYSTEM
-}
-
-/// حالة البائع
-enum SellerStatus {
-  PENDING
-  ACTIVE
-  SUSPENDED
-  CLOSED
-}
-
-/// حالة المنتج
-enum ProductStatus {
-  DRAFT
-  ACTIVE
-  INACTIVE
-}
-
-/// نوع حركة المخزون
-enum MovementType {
-  STOCK_IN
-  STOCK_OUT
-  ADJUSTMENT
-  SALE
-  RETURN
-  RESERVE
-  UNRESERVE
-}
-
-/// مصدر حركة المخزون
-enum ReferenceType {
-  ORDER
-  MANUAL
-  SYSTEM
-  RETURN
-}
-
-/// حالة الطلب
-enum OrderStatus {
-  NEW
-  PROCESSING
-  SHIPPED
-  PARTIALLY_DELIVERED
-  DELIVERED
-  CANCELLED
-  RETURNED
-}
-
-/// طريقة الدفع
-enum PaymentMethod {
-  COD
-}
-
-/// حالة الدفع
-enum PaymentStatus {
-  PENDING
-  PAID
-  PARTIALLY_REFUNDED
-  REFUNDED
-}
-
-/// حالة الحجز
-enum ReservationStatus {
-  ACTIVE
-  CONFIRMED
-  RELEASED
-  EXPIRED
-}
-
-/// نوع الكوبون
-enum CouponType {
-  PERCENTAGE
-  FIXED
-}
-
-/// حالة طلب الإرجاع
-enum ReturnStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  COMPLETED
-}
-
-/// نوع الإشعار
-enum NotificationType {
-  RETURN_COMPLETED
-  ORDER_CREATED
-  ORDER_STATUS_CHANGED
-  PAYMENT_RECEIVED
-  SHIPPING_UPDATED
-  RETURN_REQUESTED
-  RETURN_APPROVED
-  RETURN_REJECTED
-  SELLER_ORDER_RECEIVED
-  SELLER_PAYOUT_READY
-  SELLER_PAYOUT_SENT
-  SELLER_PRODUCT_LOW_STOCK
-  SELLER_DOCUMENT_APPROVED
-  SELLER_DOCUMENT_REJECTED
-  SELLER_PERFORMANCE_WARNING
-  SELLER_SUSPENDED
-  SELLER_VERIFIED
-  SELLER_PRODUCT_EDITED
-  SELLER_PRODUCT_NEEDS_REVIEW
-  SELLER_NEW_REGISTRATION
-  REVIEW_SUBMITTED
-}
-
-/// نوع العملية الم​دقَ​قة
-enum AuditAction {
-  CREATE
-  UPDATE
-  DELETE
-  LOGIN_SUCCESS
-  LOGIN_FAILED
-  LOGOUT
-  STATUS_CHANGE
-  PERMISSION_CHANGE
-  PAYMENT_CHANGE
-  STOCK_ADJUSTMENT
-  QR_SCAN
-  QR_ROUTE_VIEW
-  SHIPMENT_CREATE
-  SHIPMENT_UPDATE
-  DELIVERY_ASSIGN
-  DELIVERY_ACTION
-  FULFILLMENT_PREPARE
-  FULFILLMENT_READY
-  COLLECTION_ASSIGN
-  COLLECTION_PICKUP
-  COLLECTION_DEPART
-  WAREHOUSE_RECEIVE
-  WAREHOUSE_VERIFY
-  GROUPING_DECISION
-  SHIPMENT_ITEM_ADD
-  SHIPMENT_ITEM_REMOVE
-  SHIPMENT_PICKUP
-  DELIVERY_ATTEMPT
-  RETURN_CREATE
-  RETURN_TO_SELLER_ASSIGN
-  RETURN_TO_SELLER_PICKUP
-  RETURN_TO_SELLER_DELIVER
-  RETURN_TO_SELLER_CONFIRM
-  RETURN_TO_SELLER_REJECT
-}
-
-/// نوع حركة نقاط الولاء
-enum LoyaltyTransactionType {
-  EARN // نقاط من طلب
-  REVOKE // سحب بسبب إرجاع
-  BONUS // نقاط إضافية
-  ADMIN_ADJUST // تعديل يدوي
-}
-
-/// حالة مكافأة الولاء
-enum LoyaltyRewardStatus {
-  PENDING // فتحها، بانتظار اختيار الأدمن
-  PROCESSING // الأدمن بدأ التجهيز
-  SHIPPED // تم الشحن
-  DELIVERED // تم التسليم
-  CANCELLED // ملغى
-}
-
-enum DistrictType {
-  NEIGHBORHOOD
-  RURAL
-  DOUAR
-  VILLAGE
-}
-
-// ============================================
-// CATALOG v2 — Product Type & Units
-// ============================================
-
-enum ProductType {
-  PHYSICAL
-  DIGITAL
-  SERVICE
-}
-
-enum ProductUnit {
-  PIECE
-  PAIR
-  SET
-  PACK
-  BOX
-  KG
-  GRAM
-  LITER
-  ML
-  METER
-  M2
-  M3
-}
-
-// ============================================
-// GROUP 1 — IDENTITY
-// User, Address, Session, Seller
-// ============================================
-
+```prisma
 model User {
-  id                     Int       @id @default(autoincrement())
-  email                  String    @unique
-  referralCode           String    @unique @default(cuid())
-  referredById           Int?
-  passwordHash           String?
-  googleId               String?   @unique
-  emailVerified          Boolean   @default(false)
-  emailVerificationToken String?   @unique
+  id                         Int       @id @default(autoincrement())
+  email                      String    @unique
+  referralCode               String    @unique @default(cuid())
+  referredById               Int?
+  passwordHash               String?
+  googleId                   String?   @unique
+  emailVerified              Boolean   @default(false)
+  emailVerificationToken     String?   @unique
   emailVerificationExpiresAt DateTime?
-  name                   String
-  phone                  String?
-  role                   UserRole  @default(CUSTOMER)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  deletedAt              DateTime?
+  name                       String
+  phone                      String?
+  role                       UserRole  @default(CUSTOMER)
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  deletedAt                  DateTime?
 
   addresses           Address[]
   seller              Seller?
@@ -407,22 +62,32 @@ model User {
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
   // Catalog v3
-  staffOf         SellerStaff?    @relation("StaffUser")
-  staffCreatedBy  SellerStaff[]   @relation("StaffCreatedBy")
-
-  @@index([email])
-  @@index([deletedAt])
+  staffOf            SellerStaff?      @relation("StaffUser")
+  staffCreatedBy     SellerStaff[]     @relation("StaffCreatedBy")
 
   // ─── Wholesale relations (M1.1) ───
   businessOwner           BusinessOwner?
   businessUnitMemberships BusinessUnitMember[]
-  masterProductsCreated   MasterProduct[] @relation("MasterProductCreatedBy")
-  masterProductsApproved  MasterProduct[] @relation("MasterProductApprovedBy")
+  masterProductsCreated   MasterProduct[]      @relation("MasterProductCreatedBy")
+  masterProductsApproved  MasterProduct[]      @relation("MasterProductApprovedBy")
 
   // ─── M1.2 back-relations ───
   wholesaleOffersApproved WholesaleOffer[] @relation("WholesaleOfferApprovedBy")
-}
 
+  // ─── M1.3 back-relations ───
+  ledgerEntriesCreated LedgerEntry[] @relation("LedgerEntryCreatedBy")
+  creditNotesIssued    CreditNote[]  @relation("CreditNoteIssuer")
+  returnOrdersApproved ReturnOrder[] @relation("ReturnOrderApprovedBy")
+  returnOrdersRejected ReturnOrder[] @relation("ReturnOrderRejectedBy")
+
+  @@index([email])
+  @@index([deletedAt])
+}
+```
+
+### `Address`
+
+```prisma
 model Address {
   id                        Int     @id @default(autoincrement())
   userId                    Int
@@ -477,7 +142,11 @@ model Address {
   @@index([cityId])
   @@index([districtId])
 }
+```
 
+### `Session`
+
+```prisma
 model Session {
   id            String    @id @default(cuid())
   userId        Int
@@ -496,7 +165,11 @@ model Session {
   @@index([expiresAt])
   @@index([revokedAt])
 }
+```
 
+### `PasswordResetToken`
+
+```prisma
 model PasswordResetToken {
   id        Int       @id @default(autoincrement())
   userId    Int
@@ -510,7 +183,11 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
 }
+```
 
+### `Seller`
+
+```prisma
 model Seller {
   id          Int          @id @default(autoincrement())
   userId      Int          @unique
@@ -574,24 +251,20 @@ model Seller {
   sellerReturnBatches  SellerReturnBatch[]
   staff                SellerStaff[]
 
+  orderItems    OrderItem[]    @relation("OrderItemSeller")
+  shippingRates ShippingRate[]
+
   @@index([status])
   @@index([deletedAt])
   @@index([isFeatured])
   @@index([isVerified])
   @@index([collectionZoneId])
-
-
-  orderItems OrderItem[] @relation("OrderItemSeller")
 }
+```
 
-// ============================================
-// GROUP 2 — CATALOG & INVENTORY
-// Category, Product, ProductImage, 
-// ProductOption, ProductOptionValue, 
-// ProductVariant, ProductVariantOptionValue,
-// Inventory, InventoryMovement
-// ============================================
+### `Category`
 
+```prisma
 model Category {
   id             Int       @id @default(autoincrement())
   name           String
@@ -606,8 +279,8 @@ model Category {
   deletedAt      DateTime?
 
   // ═══ Catalog v2 ═══
-  level   Int     @default(1)
-  isLeaf  Boolean @default(false)
+  level  Int     @default(1)
+  isLeaf Boolean @default(false)
 
   parent     Category?           @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children   Category[]          @relation("CategoryHierarchy")
@@ -617,57 +290,64 @@ model Category {
   @@index([parentId])
   @@index([isActive])
   @@index([deletedAt])
-
 }
+```
 
+### `Product`
+
+```prisma
 model Product {
-  id           Int           @id @default(autoincrement())
-  productCode  String        @unique @default(uuid())
-  sellerId     Int
-  categoryId   Int
-  name         String
-  slug         String
-  description  String?
-  brand        String?
-  badge        String?
-  rating       Float         @default(0)
-  reviewsCount Int           @default(0)
-  sold         Int           @default(0)
-  freeShipping Boolean       @default(false)
-  status       ProductStatus @default(DRAFT)
-  pendingOwnerApproval Boolean @default(false)
+  poolId               Int?
+  pool                 InventoryPool? @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  id                   Int            @id @default(autoincrement())
+  productCode          String         @unique @default(uuid())
+  sellerId             Int
+  categoryId           Int
+  name                 String
+  slug                 String
+  description          String?
+  brand                String?
+  badge                String?
+  rating               Float          @default(0)
+  reviewsCount         Int            @default(0)
+  sold                 Int            @default(0)
+  freeShipping         Boolean        @default(false)
+  status               ProductStatus  @default(DRAFT)
+  pendingOwnerApproval Boolean        @default(false)
   createdByStaffId     Int?
-  isFeatured   Boolean       @default(false)
-  isNew        Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?
+  isFeatured           Boolean        @default(false)
+  isNew                Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  deletedAt            DateTime?
 
   // ═══ Catalog v2 ═══
-  productType        ProductType  @default(PHYSICAL)
-  originCountry      String?
-  videoUrl           String?
-  salePrice          Decimal?     @db.Decimal(10, 2)
-  minOrderQty        Int          @default(1)
-  maxOrderQty        Int?
-  weightGrams        Int?
-  lengthCm           Decimal?     @db.Decimal(6, 2)
-  widthCm            Decimal?     @db.Decimal(6, 2)
-  heightCm           Decimal?     @db.Decimal(6, 2)
-  unit               ProductUnit  @default(PIECE)
-  requiresColdChain  Boolean      @default(false)
-  requiresLicense    Boolean      @default(false)
-  licenseNote        String?
-  specifications     ProductSpecification[]
+  productType       ProductType            @default(PHYSICAL)
+  originCountry     String?
+  videoUrl          String?
+  salePrice         Decimal?               @db.Decimal(10, 2)
+  minOrderQty       Int                    @default(1)
+  maxOrderQty       Int?
+  weightGrams       Int?
+  lengthCm          Decimal?               @db.Decimal(6, 2)
+  widthCm           Decimal?               @db.Decimal(6, 2)
+  heightCm          Decimal?               @db.Decimal(6, 2)
+  unit              ProductUnit            @default(PIECE)
+  requiresColdChain Boolean                @default(false)
+  requiresLicense   Boolean                @default(false)
+  licenseNote       String?
+  specifications    ProductSpecification[]
 
-  seller     Seller           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
-  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  images     ProductImage[]
-  options    ProductOption[]
-  variants   ProductVariant[]
-  reviews    Review[]
-  editLogs   ProductEditLog[]
-  favorites  Favorite[]
+  seller    Seller           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  category  Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images    ProductImage[]
+  options   ProductOption[]
+  variants  ProductVariant[]
+  reviews   Review[]
+  editLogs  ProductEditLog[]
+  favorites Favorite[]
+
+  orderItems OrderItem[]
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -675,10 +355,12 @@ model Product {
   @@index([categoryId])
   @@index([status])
   @@index([deletedAt])
-
-  orderItems OrderItem[]
 }
+```
 
+### `ProductImage`
+
+```prisma
 model ProductImage {
   id        Int      @id @default(autoincrement())
   productId Int
@@ -692,7 +374,11 @@ model ProductImage {
 
   @@index([productId])
 }
+```
 
+### `ProductOption`
+
+```prisma
 model ProductOption {
   id                  Int    @id @default(autoincrement())
   productId           Int
@@ -707,7 +393,11 @@ model ProductOption {
   @@index([productId])
   @@index([categoryAttributeId])
 }
+```
 
+### `ProductOptionValue`
+
+```prisma
 model ProductOptionValue {
   id       Int    @id @default(autoincrement())
   optionId Int
@@ -720,7 +410,11 @@ model ProductOptionValue {
   @@unique([optionId, value])
   @@index([optionId])
 }
+```
 
+### `ProductVariant`
+
+```prisma
 model ProductVariant {
   id            Int      @id @default(autoincrement())
   productId     Int
@@ -742,16 +436,23 @@ model ProductVariant {
   inventory      Inventory?
   storeSaleItems StoreSaleItem[]
 
+  orderItems      OrderItem[]
+  masterVariant   MasterVariant? @relation(fields: [masterVariantId], references: [id])
+  masterVariantId Int?
+
   @@unique([productId, optionsHash])
   @@unique([sellerId, sku])
   @@unique([sellerId, barcode])
   @@index([productId])
   @@index([sellerId])
   @@index([sku])
-
-  orderItems OrderItem[]
+  @@index([masterVariantId])
 }
+```
 
+### `ProductVariantOptionValue`
+
+```prisma
 model ProductVariantOptionValue {
   id            Int @id @default(autoincrement())
   variantId     Int
@@ -764,7 +465,11 @@ model ProductVariantOptionValue {
   @@index([variantId])
   @@index([optionValueId])
 }
+```
 
+### `Inventory`
+
+```prisma
 model Inventory {
   id                Int      @id @default(autoincrement())
   variantId         Int      @unique
@@ -778,7 +483,11 @@ model Inventory {
 
   @@index([variantId])
 }
+```
 
+### `InventoryMovement`
+
+```prisma
 model InventoryMovement {
   id             BigInt         @id @default(autoincrement())
   inventoryId    Int
@@ -803,14 +512,11 @@ model InventoryMovement {
   @@index([performedById])
   @@index([createdAt])
 }
+```
 
-// ============================================
-// GROUP 3 — CART & ORDERS
-// Cart, CartItem, Order, OrderItem, 
-// OrderStatusHistory, Reservation, ReservationItem,
-// IdempotencyKey, OrderSequence
-// ============================================
+### `Order`
 
+```prisma
 model Order {
   id                      Int               @id @default(autoincrement())
   orderNumber             String            @unique
@@ -877,7 +583,11 @@ model Order {
   @@index([deliveryPersonId, status])
   @@index([shippingAddressId])
 }
+```
 
+### `OrderItem`
+
+```prisma
 model OrderItem {
   id          Int     @id @default(autoincrement())
   orderId     Int
@@ -902,14 +612,18 @@ model OrderItem {
   shipmentItems    ShipmentItem[]    @relation("OrderItemShipmentItems")
   fulfillmentItems FulfillmentItem[]
 
+  returnItems ReturnItem[]
+
   @@index([orderId])
   @@index([productId])
   @@index([variantId])
   @@index([sellerId])
-
-  returnItems ReturnItem[]
 }
+```
 
+### `OrderStatusHistory`
+
+```prisma
 model OrderStatusHistory {
   id          Int          @id @default(autoincrement())
   orderId     Int
@@ -924,7 +638,11 @@ model OrderStatusHistory {
   @@index([orderId])
   @@index([createdAt])
 }
+```
 
+### `IdempotencyKey`
+
+```prisma
 model IdempotencyKey {
   id          Int      @id @default(autoincrement())
   key         String
@@ -940,18 +658,20 @@ model IdempotencyKey {
   @@index([expiresAt])
   @@index([userId, endpoint])
 }
+```
 
+### `OrderSequence`
+
+```prisma
 model OrderSequence {
   year       Int @id
   lastNumber Int @default(0)
 }
+```
 
-// ============================================
-// GROUP 4 — SHIPPING & COUPONS
-// ShippingZone, ShippingZoneCity, 
-// Coupon, CouponUsage
-// ============================================
+### `Coupon`
 
+```prisma
 model Coupon {
   id             Int        @id @default(autoincrement())
   code           String     @unique
@@ -974,7 +694,11 @@ model Coupon {
   @@index([isActive])
   @@index([deletedAt])
 }
+```
 
+### `CouponUsage`
+
+```prisma
 model CouponUsage {
   id       Int      @id @default(autoincrement())
   couponId Int
@@ -991,12 +715,11 @@ model CouponUsage {
   @@index([userId])
   @@index([couponId])
 }
+```
 
-// ============================================
-// GROUP 5 — RETURNS & REVIEWS
-// ReturnRequest, ReturnItem, Review
-// ============================================
+### `ReturnRequest`
 
+```prisma
 model ReturnRequest {
   id            Int          @id @default(autoincrement())
   orderId       Int
@@ -1018,7 +741,11 @@ model ReturnRequest {
   @@index([userId])
   @@index([status])
 }
+```
 
+### `ReturnItem`
+
+```prisma
 model ReturnItem {
   id               Int     @id @default(autoincrement())
   returnId         Int
@@ -1031,7 +758,11 @@ model ReturnItem {
   returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
   orderItem     OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 }
+```
 
+### `Review`
+
+```prisma
 model Review {
   id          Int       @id @default(autoincrement())
   productId   Int
@@ -1055,12 +786,11 @@ model Review {
   @@index([userId])
   @@index([deletedAt])
 }
+```
 
-// ============================================
-// GROUP 6 — SYSTEM
-// Notification, AuditLog
-// ============================================
+### `Notification`
 
+```prisma
 model Notification {
   id        Int              @id @default(autoincrement())
   userId    Int
@@ -1084,7 +814,11 @@ model Notification {
   @@index([severity])
   @@index([userId, category, isRead])
 }
+```
 
+### `AuditLog`
+
+```prisma
 model AuditLog {
   id        BigInt      @id @default(autoincrement())
   userId    Int?
@@ -1104,53 +838,11 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+```
 
-// ============================================
-// SECTION 77 — Multi-Vendor Foundation
-// ============================================
+### `SellerBankAccount`
 
-enum DocumentType {
-  CIN
-  PASSPORT
-  ICE
-  RC
-  IF
-  BANK_STATEMENT
-  ADDRESS_PROOF
-  OTHER
-}
-
-enum DocumentStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  EXPIRED
-}
-
-enum CostType {
-  SHIPPING
-  COD_REFUSAL
-  RETURN_SHIPPING
-  COMMISSION
-  REFUND
-  ADJUSTMENT
-}
-
-enum CostBearer {
-  SELLER
-  PLATFORM
-  CUSTOMER
-  SHARED
-}
-
-enum PayoutStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  CANCELLED
-}
-
+```prisma
 model SellerBankAccount {
   id       Int    @id @default(autoincrement())
   sellerId Int
@@ -1196,18 +888,11 @@ model SellerBankAccount {
   @@index([sellerId, isActive])
   @@index([verificationStatus])
 }
+```
 
-enum BankAccountType {
-  PERSONAL
-  BUSINESS
-}
+### `SellerDocument`
 
-enum BankAccountVerification {
-  PENDING
-  VERIFIED
-  REJECTED
-}
-
+```prisma
 model SellerDocument {
   id              Int            @id @default(autoincrement())
   sellerId        Int
@@ -1233,7 +918,11 @@ model SellerDocument {
   @@index([type])
   @@index([deletedAt])
 }
+```
 
+### `SystemPolicy`
+
+```prisma
 model SystemPolicy {
   id          Int      @id @default(autoincrement())
   key         String   @unique
@@ -1242,7 +931,11 @@ model SystemPolicy {
   updatedAt   DateTime @updatedAt
   updatedById Int?
 }
+```
 
+### `CostRecord`
+
+```prisma
 model CostRecord {
   id                  Int        @id @default(autoincrement())
   orderId             Int?
@@ -1262,7 +955,11 @@ model CostRecord {
   @@index([bearer])
   @@index([createdAt])
 }
+```
 
+### `SellerPerformanceSnapshot`
+
+```prisma
 model SellerPerformanceSnapshot {
   id                 Int      @id @default(autoincrement())
   sellerId           Int
@@ -1285,7 +982,11 @@ model SellerPerformanceSnapshot {
   @@unique([sellerId, periodStart, periodEnd])
   @@index([sellerId, periodEnd])
 }
+```
 
+### `SellerPayout`
+
+```prisma
 model SellerPayout {
   id             Int          @id @default(autoincrement())
   sellerId       Int
@@ -1309,7 +1010,11 @@ model SellerPayout {
   @@index([status])
   @@index([periodStart, periodEnd])
 }
+```
 
+### `MultiVendorTriggerMetrics`
+
+```prisma
 model MultiVendorTriggerMetrics {
   id                   Int      @id @default(autoincrement())
   periodStart          DateTime
@@ -1327,37 +1032,22 @@ model MultiVendorTriggerMetrics {
 
   @@index([periodEnd])
 }
+```
 
-// Product Edit Log — سجل تعديلات المنتجات
+### `ProductEditLog`
+
+```prisma
 model ProductEditLog {
   id                 Int       @id @default(autoincrement())
   productId          Int
   sellerId           Int
   changedFields      Json // ["الاسم", "الصور", "السعر"]
   oldValues          Json // { name: "x", price: 100 }
-  newValues          Json // { name: "y", price: 50 }
-  requiresReapproval Boolean   @default(false)
-  reason             String? // "تعديل حساس" / "تعديل سعر تجاوز الحد"
-  reviewedAt         DateTime?
-  reviewedById       Int?
-  reviewAction       String? // "approved" / "rejected"
-  createdAt          DateTime  @default(now())
+```
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  seller  Seller  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+### `LoyaltySettings`
 
-  @@index([productId])
-  @@index([sellerId])
-  @@index([createdAt])
-  @@index([requiresReapproval])
-  @@index([reviewedAt])
-}
-
-// ============================================
-// SECTION 80 — LOYALTY SYSTEM
-// ============================================
-
-// ═══ الإعدادات العامة ═══
+```prisma
 model LoyaltySettings {
   id             Int      @id @default(1)
   isEnabled      Boolean  @default(true)
@@ -1365,8 +1055,11 @@ model LoyaltySettings {
   description    String?
   updatedAt      DateTime @updatedAt
 }
+```
 
-// ═══ حساب الولاء لكل مستخدم ═══
+### `LoyaltyAccount`
+
+```prisma
 model LoyaltyAccount {
   id           Int      @id @default(autoincrement())
   userId       Int      @unique
@@ -1383,8 +1076,11 @@ model LoyaltyAccount {
 
   @@index([balance])
 }
+```
 
-// ═══ سجل حركات النقاط (Ledger) ═══
+### `LoyaltyTransaction`
+
+```prisma
 model LoyaltyTransaction {
   id            Int                    @id @default(autoincrement())
   accountId     Int
@@ -1405,8 +1101,11 @@ model LoyaltyTransaction {
   @@index([type])
   @@index([createdAt])
 }
+```
 
-// ═══ مستويات المكافآت ═══
+### `LoyaltyTier`
+
+```prisma
 model LoyaltyTier {
   id             Int      @id @default(autoincrement())
   slug           String   @unique
@@ -1428,8 +1127,11 @@ model LoyaltyTier {
   @@index([requiredPoints])
   @@index([isActive])
 }
+```
 
-// ═══ متى فُتح كل مستوى ═══
+### `LoyaltyTierUnlock`
+
+```prisma
 model LoyaltyTierUnlock {
   id         Int      @id @default(autoincrement())
   accountId  Int
@@ -1443,8 +1145,11 @@ model LoyaltyTierUnlock {
   @@index([accountId])
   @@index([tierId])
 }
+```
 
-// ═══ فئات الهدايا (ملابس، أحذية...) ═══
+### `LoyaltyRewardCategory`
+
+```prisma
 model LoyaltyRewardCategory {
   id       Int     @id @default(autoincrement())
   slug     String  @unique
@@ -1458,8 +1163,11 @@ model LoyaltyRewardCategory {
 
   @@index([isActive])
 }
+```
 
-// ═══ مخزون الهدايا (مستقل تماماً) ═══
+### `LoyaltyGiftProduct`
+
+```prisma
 model LoyaltyGiftProduct {
   id            Int      @id @default(autoincrement())
   name          String
@@ -1483,8 +1191,11 @@ model LoyaltyGiftProduct {
   @@index([categoryId])
   @@index([isActive])
 }
+```
 
-// ═══ المكافآت المفتوحة ═══
+### `LoyaltyReward`
+
+```prisma
 model LoyaltyReward {
   id            Int                 @id @default(autoincrement())
   accountId     Int
@@ -1507,15 +1218,11 @@ model LoyaltyReward {
   @@index([status])
   @@index([createdAt])
 }
+```
 
-// DYNAMIC ATTRIBUTES SYSTEM
+### `CategoryAttribute`
 
-enum AttributeValueStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
+```prisma
 model CategoryAttribute {
   id            Int      @id @default(autoincrement())
   categoryId    Int
@@ -1530,17 +1237,21 @@ model CategoryAttribute {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  category Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  values   CategoryAttributeValue[]
-  productSpecs ProductSpecification[]
-  isSpecification Boolean @default(false)
-  helpText String?
+  category        Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values          CategoryAttributeValue[]
+  productSpecs    ProductSpecification[]
+  isSpecification Boolean                  @default(false)
+  helpText        String?
 
   @@unique([categoryId, slug])
   @@index([categoryId])
   @@index([isActive])
 }
+```
 
+### `CategoryAttributeValue`
+
+```prisma
 model CategoryAttributeValue {
   id          Int     @id @default(autoincrement())
   attributeId Int
@@ -1567,8 +1278,11 @@ model CategoryAttributeValue {
   @@index([sellerId])
   @@index([attributeId, status])
 }
+```
 
-// FAVORITES
+### `Favorite`
+
+```prisma
 model Favorite {
   id        Int      @id @default(autoincrement())
   userId    Int
@@ -1583,9 +1297,11 @@ model Favorite {
   @@index([productId])
   @@index([userId, createdAt])
 }
+```
 
-// SECTION 82 — REFERRAL SYSTEM
+### `Referral`
 
+```prisma
 model Referral {
   id         Int      @id @default(autoincrement())
   referrerId Int      @unique
@@ -1604,28 +1320,34 @@ model Referral {
   @@index([referredId])
   @@index([rewardedAt])
 }
+```
 
-// SECTION 83 — DELIVERY PERSON SYSTEM
+### `DeliveryPerson`
 
+```prisma
 model DeliveryPerson {
-  id                   Int                  @id @default(autoincrement())
-  userId               Int                  @unique
-  city                 String
-  cities               String[]             @default([])
-  districts            String[]             @default([])
-  phone                String
-  vehicleType          String?
-  status               DeliveryPersonStatus @default(ACTIVE)
-  notes                String?
-  totalDeliveries      Int                  @default(0)
-  successfulDeliveries Int                  @default(0)
-  failedDeliveries     Int                  @default(0)
-  returnCount          Int                  @default(0)
-  weeklyDayOff         Int? // 0=الأحد، 1=الاثنين، ... 6=السبت
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  deletedAt            DateTime?
-
+  id                     Int                    @id @default(autoincrement())
+  userId                 Int                    @unique
+  city                   String
+  cities                 String[]               @default([])
+  districts              String[]               @default([])
+  phone                  String
+  vehicleType            String?
+  status                 DeliveryPersonStatus   @default(ACTIVE)
+  notes                  String?
+  totalDeliveries        Int                    @default(0)
+  successfulDeliveries   Int                    @default(0)
+  failedDeliveries       Int                    @default(0)
+  returnCount            Int                    @default(0)
+  weeklyDayOff           Int? // 0=الأحد، 1=الاثنين، ... 6=السبت
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  deletedAt              DateTime?
+  isOnline               Boolean                @default(false)
+  currentLatitude        Float?
+  currentLongitude       Float?
+  locationAccuracy       Float?
+  lastLocationAt         DateTime?
   user                   User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   assignedOrders         Order[]                @relation("OrderDeliveryPerson")
   deliveryAttempts       DeliveryAttempt[]
@@ -1638,14 +1360,37 @@ model DeliveryPerson {
   daysOff                DriverDayOff[]
   legalNotices           DriverLegalNotice[]
   refusedHandoverBatches RefusedHandoverBatch[]
+  locationPings          DeliveryLocationPing[]
 
   @@index([status])
   @@index([city])
   @@index([deletedAt])
+  @@index([isOnline, lastLocationAt])
 }
+```
 
-// SECTION 84 — DELIVERY ATTEMPTS LOG
+### `DeliveryLocationPing`
 
+```prisma
+model DeliveryLocationPing {
+  id               Int      @id @default(autoincrement())
+  deliveryPersonId Int
+  latitude         Float
+  longitude        Float
+  accuracy         Float?
+  assignmentId     Int?
+  recordedAt       DateTime @default(now())
+
+  deliveryPerson DeliveryPerson @relation(fields: [deliveryPersonId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryPersonId, recordedAt])
+  @@index([recordedAt])
+}
+```
+
+### `DeliveryAttempt`
+
+```prisma
 model DeliveryAttempt {
   id               Int                 @id @default(autoincrement())
   orderId          Int?
@@ -1670,10 +1415,11 @@ model DeliveryAttempt {
   @@index([type])
   @@index([createdAt])
 }
+```
 
-// SECTION 85 — PERMISSIONS SYSTEM
+### `Permission`
 
-/// الصلاحية الواحدة — مثل: CREATE_SHIPMENT
+```prisma
 model Permission {
   id          Int                @id @default(autoincrement())
   key         String             @unique
@@ -1686,8 +1432,11 @@ model Permission {
 
   @@index([category])
 }
+```
 
-/// منح صلاحية لمستخدم معين
+### `UserPermission`
+
+```prisma
 model UserPermission {
   id           Int       @id @default(autoincrement())
   userId       Int
@@ -1705,9 +1454,11 @@ model UserPermission {
   @@index([permissionId])
   @@index([userId, revokedAt])
 }
+```
 
-// SECTION 86 — SHIPMENT SYSTEM
+### `Shipment`
 
+```prisma
 model Shipment {
   id             Int    @id @default(autoincrement())
   shipmentNumber String @unique
@@ -1758,7 +1509,11 @@ model Shipment {
   @@index([status, deliveryPersonId])
   @@index([deliveryZoneId])
 }
+```
 
+### `ShipmentItem`
+
+```prisma
 model ShipmentItem {
   id                    Int                  @id @default(autoincrement())
   shipmentId            Int
@@ -1790,9 +1545,11 @@ model ShipmentItem {
   @@index([sellerId])
   @@index([fulfillmentItemId])
 }
+```
 
-// SECTION 87 — FULFILLMENT SYSTEM
+### `FulfillmentItem`
 
+```prisma
 model FulfillmentItem {
   id                    Int               @id @default(autoincrement())
   orderItemId           Int
@@ -1830,6 +1587,7 @@ model FulfillmentItem {
   warehouseReceipts    WarehouseReceipt[]
   shipmentItems        ShipmentItem[]
   collectionBatchItems CollectionBatchItem[]
+
   @@index([sellerId])
   @@index([status])
   @@index([sellerId, status])
@@ -1838,7 +1596,11 @@ model FulfillmentItem {
   @@index([assignedCollectorId])
   @@index([assignedCollectorId, status])
 }
+```
 
+### `FulfillmentStatusHistory`
+
+```prisma
 model FulfillmentStatusHistory {
   id                Int                @id @default(autoincrement())
   fulfillmentItemId Int
@@ -1853,9 +1615,11 @@ model FulfillmentStatusHistory {
   @@index([fulfillmentItemId])
   @@index([createdAt])
 }
+```
 
-// SECTION 88 — COLLECTION SYSTEM
+### `CollectionAssignment`
 
+```prisma
 model CollectionAssignment {
   id               Int              @id @default(autoincrement())
   assignmentNumber String           @unique
@@ -1879,7 +1643,11 @@ model CollectionAssignment {
   @@index([deliveryPersonId, status])
   @@index([createdAt])
 }
+```
 
+### `CollectionAssignmentItem`
+
+```prisma
 model CollectionAssignmentItem {
   id                Int       @id @default(autoincrement())
   assignmentId      Int
@@ -1899,9 +1667,11 @@ model CollectionAssignmentItem {
   @@index([fulfillmentItemId])
   @@index([sellerId])
 }
+```
 
-// SECTION 89 — WAREHOUSE SYSTEM
+### `WarehouseReceipt`
 
+```prisma
 model WarehouseReceipt {
   id                Int                    @id @default(autoincrement())
   receiptNumber     String                 @unique
@@ -1925,9 +1695,11 @@ model WarehouseReceipt {
   @@index([receivedById])
   @@index([createdAt])
 }
+```
 
-// SECTION 90 — GROUPING DECISIONS
+### `ShipmentGroupingDecision`
 
+```prisma
 model ShipmentGroupingDecision {
   id               Int              @id @default(autoincrement())
   customerId       Int
@@ -1944,9 +1716,11 @@ model ShipmentGroupingDecision {
   @@index([decidedById])
   @@index([decidedAt])
 }
+```
 
-// SECTION 91 — DELIVERY ASSIGNMENTS
+### `DeliveryAssignment`
 
+```prisma
 model DeliveryAssignment {
   id               Int                      @id @default(autoincrement())
   shipmentId       Int
@@ -1973,15 +1747,11 @@ model DeliveryAssignment {
   @@index([deliveryPersonId, status])
   @@index([assignedAt])
 }
+```
 
-// Collection Batch — دفعة جمع
+### `CollectionBatch`
 
-enum CollectionBatchStatus {
-  IN_TRANSIT
-  DELIVERED
-  CANCELLED
-}
-
+```prisma
 model CollectionBatch {
   id          Int                   @id @default(autoincrement())
   batchNumber String                @unique
@@ -2013,7 +1783,11 @@ model CollectionBatch {
   @@index([collectorId, status])
   @@index([createdAt])
 }
+```
 
+### `CollectionBatchItem`
+
+```prisma
 model CollectionBatchItem {
   id                Int      @id @default(autoincrement())
   batchId           Int
@@ -2026,9 +1800,11 @@ model CollectionBatchItem {
   @@unique([fulfillmentItemId])
   @@index([batchId])
 }
+```
 
-// Assembly System — D.1
+### `AssemblyFile`
 
+```prisma
 model AssemblyFile {
   id           Int            @id @default(autoincrement())
   assemblyCode String         @unique
@@ -2059,7 +1835,11 @@ model AssemblyFile {
   @@index([status, deliveryCity])
   @@index([createdAt])
 }
+```
 
+### `AssemblyItem`
+
+```prisma
 model AssemblyItem {
   id                 Int       @id @default(autoincrement())
   assemblyId         Int
@@ -2080,9 +1860,11 @@ model AssemblyItem {
   @@index([includedInShipment])
   @@index([shipmentId])
 }
+```
 
-// Zones — D.2
+### `Zone`
 
+```prisma
 model Zone {
   id          Int      @id @default(autoincrement())
   code        String   @unique
@@ -2106,9 +1888,11 @@ model Zone {
   @@index([type, city])
   @@index([isActive])
 }
+```
 
-// Return Shipment — E.1
+### `ReturnShipment`
 
+```prisma
 model ReturnShipment {
   id           Int                  @id @default(autoincrement())
   returnNumber String               @unique
@@ -2163,9 +1947,37 @@ model ReturnShipment {
   @@index([returnDriverId])
   @@index([status, createdAt])
 }
+```
 
-// Geography — Cities & Districts
+### `ShippingRate`
 
+```prisma
+model ShippingRate {
+  id         Int      @id @default(autoincrement())
+  cityId     Int?
+  districtId Int?
+  sellerId   Int?
+  flatRate   Decimal  @db.Decimal(10, 2)
+  freeAbove  Decimal? @db.Decimal(10, 2)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  city     City?     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  seller   Seller?   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([cityId, districtId, sellerId])
+  @@index([cityId])
+  @@index([districtId])
+  @@index([sellerId])
+  @@index([isActive])
+}
+```
+
+### `City`
+
+```prisma
 model City {
   id         Int      @id @default(autoincrement())
   name       String // العربية
@@ -2180,14 +1992,19 @@ model City {
   colorHue   Int      @default(0)
   colorHex   String?
 
-  districts District[]
-  addresses Address[]
+  districts     District[]
+  addresses     Address[]
+  shippingRates ShippingRate[]
 
   @@index([name])
   @@index([isActive])
   @@index([slug])
 }
+```
 
+### `District`
+
+```prisma
 model District {
   id        Int          @id @default(autoincrement())
   cityId    Int
@@ -2201,17 +2018,20 @@ model District {
   colorHue  Int          @default(0)
   colorHex  String?
 
-  city      City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
-  addresses Address[]
+  city          City           @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  addresses     Address[]
+  shippingRates ShippingRate[]
 
   @@unique([cityId, name])
   @@index([cityId])
   @@index([isActive])
   @@index([cityId, isActive])
 }
+```
 
-// Store POS (نقطة البيع في المحل)
+### `StoreSale`
 
+```prisma
 model StoreSale {
   id            Int      @id @default(autoincrement())
   sellerId      Int
@@ -2228,7 +2048,11 @@ model StoreSale {
   @@index([sellerId])
   @@index([createdAt])
 }
+```
 
+### `StoreSaleItem`
+
+```prisma
 model StoreSaleItem {
   id          Int     @id @default(autoincrement())
   storeSaleId Int
@@ -2242,20 +2066,11 @@ model StoreSaleItem {
 
   @@index([storeSaleId])
 }
+```
 
-// Wallet (محفظة التاجر)
+### `WalletTransaction`
 
-enum WalletTransactionType {
-  ONLINE_SALE_EARNING
-  HELD_EARNING
-  RELEASE_HOLD
-  COMMISSION_DEDUCTION
-  SUBSCRIPTION_PAYMENT
-  WITHDRAWAL
-  REFUND_DEDUCTION
-  MANUAL_ADJUSTMENT
-}
-
+```prisma
 model WalletTransaction {
   id            Int                   @id @default(autoincrement())
   sellerId      Int
@@ -2271,9 +2086,11 @@ model WalletTransaction {
   @@index([sellerId])
   @@index([createdAt])
 }
+```
 
-// Withdrawal Request (طلبات سحب الأرباح)
+### `WithdrawalRequest`
 
+```prisma
 model WithdrawalRequest {
   id          Int       @id @default(autoincrement())
   sellerId    Int
@@ -2289,9 +2106,11 @@ model WithdrawalRequest {
   @@index([sellerId])
   @@index([status])
 }
+```
 
-// Subscription Logs (سجل الاشتراكات)
+### `SubscriptionLog`
 
+```prisma
 model SubscriptionLog {
   id        Int      @id @default(autoincrement())
   sellerId  Int
@@ -2305,7 +2124,11 @@ model SubscriptionLog {
 
   @@index([sellerId])
 }
+```
 
+### `CustomerWalletTransaction`
+
+```prisma
 model CustomerWalletTransaction {
   id          Int      @id @default(autoincrement())
   userId      Int
@@ -2318,16 +2141,11 @@ model CustomerWalletTransaction {
 
   @@index([userId])
 }
+```
 
-// Unified Wallet & Cash Management
+### `Wallet`
 
-enum WalletOwnerType {
-  SELLER
-  DRIVER
-  WAREHOUSE
-  PLATFORM
-}
-
+```prisma
 model Wallet {
   id                 Int             @id @default(autoincrement())
   ownerType          WalletOwnerType
@@ -2349,7 +2167,11 @@ model Wallet {
   @@index([ownerType])
   @@index([isBlocked])
 }
+```
 
+### `WalletTransactionUnified`
+
+```prisma
 model WalletTransactionUnified {
   id          Int      @id @default(autoincrement())
   walletId    Int
@@ -2361,8 +2183,11 @@ model WalletTransactionUnified {
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 }
+```
 
-// ═══ تسليم الكاش من السائق للمستودع ═══
+### `CashHandover`
+
+```prisma
 model CashHandover {
   id            Int       @id @default(autoincrement())
   driverId      Int
@@ -2377,8 +2202,11 @@ model CashHandover {
   @@index([driverId])
   @@index([status])
 }
+```
 
-// ═══ ربط شركات التوصيل (للمستقبل) ═══
+### `ShippingProvider`
+
+```prisma
 model ShippingProvider {
   id        Int      @id @default(autoincrement())
   name      String
@@ -2388,8 +2216,11 @@ model ShippingProvider {
   config    Json?
   createdAt DateTime @default(now())
 }
+```
 
-// ═══ تسليم أجور السائقين (من المستودع للسائق) ═══
+### `DriverPayout`
+
+```prisma
 model DriverPayout {
   id          Int       @id @default(autoincrement())
   driverId    Int
@@ -2404,7 +2235,11 @@ model DriverPayout {
   @@index([driverId])
   @@index([status])
 }
+```
 
+### `AdminCashHandover`
+
+```prisma
 model AdminCashHandover {
   id            Int       @id @default(autoincrement())
   warehouseId   Int
@@ -2415,8 +2250,11 @@ model AdminCashHandover {
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
 }
+```
 
-// ═══ غيابات السائقين (المرض أو الطوارئ) ═══
+### `DriverDayOff`
+
+```prisma
 model DriverDayOff {
   id        Int      @id @default(autoincrement())
   driverId  Int
@@ -2429,8 +2267,11 @@ model DriverDayOff {
   @@unique([driverId, date])
   @@index([date])
 }
+```
 
-// ═══════ الإنذارات القانونية للسائقين ═══════
+### `DriverLegalNotice`
+
+```prisma
 model DriverLegalNotice {
   id          Int       @id @default(autoincrement())
   driverId    Int
@@ -2448,8 +2289,11 @@ model DriverLegalNotice {
   @@index([status])
   @@index([deadlineAt])
 }
+```
 
-// Refused Handover (السائق → المستودع)
+### `RefusedHandoverBatch`
+
+```prisma
 model RefusedHandoverBatch {
   id            Int       @id @default(autoincrement())
   batchCode     String    @unique
@@ -2469,7 +2313,11 @@ model RefusedHandoverBatch {
   @@index([driverId])
   @@index([status])
 }
+```
 
+### `RefusedHandoverItem`
+
+```prisma
 model RefusedHandoverItem {
   id             Int @id @default(autoincrement())
   batchId        Int
@@ -2481,8 +2329,11 @@ model RefusedHandoverItem {
 
   @@index([batchId])
 }
+```
 
-// Seller Return (المستودع → التاجر)
+### `SellerReturnBatch`
+
+```prisma
 model SellerReturnBatch {
   id            Int       @id @default(autoincrement())
   batchNumber   String    @unique
@@ -2504,7 +2355,11 @@ model SellerReturnBatch {
   @@index([sellerId])
   @@index([status])
 }
+```
 
+### `SellerReturnItem`
+
+```prisma
 model SellerReturnItem {
   id             Int @id @default(autoincrement())
   batchId        Int
@@ -2516,11 +2371,11 @@ model SellerReturnItem {
 
   @@index([batchId])
 }
+```
 
-// ============================================
-// SELLER STAFF
-// ============================================
+### `SellerStaff`
 
+```prisma
 model SellerStaff {
   id          Int       @id @default(autoincrement())
   userId      Int       @unique
@@ -2531,16 +2386,20 @@ model SellerStaff {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  user        User                   @relation("StaffUser", fields: [userId], references: [id], onDelete: Cascade)
-  seller      Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  createdBy   User                   @relation("StaffCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  user        User                    @relation("StaffUser", fields: [userId], references: [id], onDelete: Cascade)
+  seller      Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdBy   User                    @relation("StaffCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   permissions SellerStaffPermission[]
 
   @@index([sellerId])
   @@index([isActive])
   @@index([deletedAt])
 }
+```
 
+### `SellerStaffPermission`
+
+```prisma
 model SellerStaffPermission {
   id            Int      @id @default(autoincrement())
   staffId       Int
@@ -2552,11 +2411,11 @@ model SellerStaffPermission {
   @@unique([staffId, permissionKey])
   @@index([staffId])
 }
+```
 
-// ============================================
-// CATALOG v2 — Product Specifications
-// ============================================
+### `ProductSpecification`
 
+```prisma
 model ProductSpecification {
   id           Int      @id @default(autoincrement())
   productId    Int
@@ -2573,86 +2432,11 @@ model ProductSpecification {
   @@index([attributeId])
   @@index([numericValue])
 }
+```
 
-// ============================================
+### `BusinessOwner`
 
-// ============================================
-// CATALOG v3 — Unified Product Identity
-// ============================================
-
-
-
-// ═══════════════════════════════════════════════════════════
-// WHOLESALE SYSTEM — M1.1: Identity, Product, Activity
-// ═══════════════════════════════════════════════════════════
-
-enum OwnerType {
-  INDIVIDUAL
-  COMPANY
-  COOPERATIVE
-}
-
-enum VerificationStatus {
-  PENDING
-  VERIFIED
-  REJECTED
-}
-
-enum RegistrationStatus {
-  REGISTERED
-  UNREGISTERED
-  NOT_REQUIRED
-  PENDING_VERIFICATION
-}
-
-enum BusinessType {
-  FACTORY
-  SHOP
-  BRANCH
-  IMPORTER
-  WHOLESALER
-  DISTRIBUTOR
-}
-
-enum BusinessUnitStatus {
-  ACTIVE
-  SUSPENDED
-  CLOSED
-}
-
-enum MemberRole {
-  OWNER
-  MANAGER
-  STAFF
-}
-
-enum MerchantProductStatus {
-  DRAFT
-  ACTIVE
-  PAUSED
-  ARCHIVED
-}
-
-enum LocationType {
-  WAREHOUSE
-  SHOP_FLOOR
-  TRANSIT
-}
-
-enum InventoryAccountType {
-  RETAIL
-  WHOLESALE
-  QUARANTINE
-  DAMAGED
-}
-
-enum MasterProductStatus {
-  PENDING_REVIEW
-  ACTIVE
-  SUSPENDED
-  ARCHIVED
-}
-
+```prisma
 model BusinessOwner {
   id                  Int                @id @default(autoincrement())
   userId              Int                @unique
@@ -2665,14 +2449,18 @@ model BusinessOwner {
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
 
-  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   legalEntities    LegalEntity[]
   businessUnits    BusinessUnit[]
   accountingGroups AccountingGroup[]
 
   @@index([verificationStatus])
 }
+```
 
+### `LegalEntity`
+
+```prisma
 model LegalEntity {
   id                 Int                @id @default(autoincrement())
   ownerId            Int
@@ -2692,42 +2480,66 @@ model LegalEntity {
   @@index([ownerId])
   @@index([status])
 }
+```
 
+### `BusinessUnit`
+
+```prisma
 model BusinessUnit {
-  id                  Int                  @id @default(autoincrement())
-  ownerId             Int
-  legalEntityId       Int?
-  accountingGroupId   Int?
-  name                String
-  slug                String               @unique
-  type                BusinessType
-  activityType        String?
-  description         String?
-  logo                String?
-  status              BusinessUnitStatus   @default(ACTIVE)
-  capabilities        Json                 @default("[]")
-  registrationStatus  RegistrationStatus   @default(UNREGISTERED)
-  verificationStatus  VerificationStatus   @default(PENDING)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  deletedAt           DateTime?
+  id                 Int                @id @default(autoincrement())
+  ownerId            Int
+  legalEntityId      Int?
+  accountingGroupId  Int?
+  name               String
+  slug               String             @unique
+  type               BusinessType
+  activityType       String?
+  description        String?
+  logo               String?
+  status             BusinessUnitStatus @default(ACTIVE)
+  capabilities       Json               @default("[]")
+  registrationStatus RegistrationStatus @default(UNREGISTERED)
+  verificationStatus VerificationStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
 
-  owner              BusinessOwner       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  legalEntity        LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  accountingGroup    AccountingGroup?    @relation(fields: [accountingGroupId], references: [id], onDelete: SetNull)
+  owner              BusinessOwner        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  legalEntity        LegalEntity?         @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  accountingGroup    AccountingGroup?     @relation(fields: [accountingGroupId], references: [id], onDelete: SetNull)
   members            BusinessUnitMember[]
   merchantProducts   MerchantProduct[]
   inventoryLocations InventoryLocation[]
+
+  // ─── M1.2 back-relations ───
+  offers WholesaleOffer[]
+
+  // ─── M1.3 back-relations ───
+  ledgerBooks         LedgerBook[]
+  invoicesSent        Invoice[]     @relation("InvoiceSender")
+  invoicesReceived    Invoice[]     @relation("InvoiceReceiver")
+  paymentsMade        Payment[]     @relation("PaymentPayer")
+  settlementsReceived Settlement[]  @relation("SettlementReceiver")
+  returnOrdersBuyer   ReturnOrder[] @relation("ReturnOrderBuyer")
+  returnOrdersSeller  ReturnOrder[] @relation("ReturnOrderSeller")
+
+  // ─── M5.3 Ledger ───
+  ledgerContacts LedgerContact[] @relation("BULedgerContacts")
+
+  // ─── M5.4 Transfers ───
+  inventoryTransfers InventoryTransfer[]
+  inventoryPools     InventoryPool[]
 
   @@index([ownerId, status])
   @@index([type, status])
   @@index([accountingGroupId])
   @@index([verificationStatus])
-
-  // ─── M1.2 back-relations ───
-  offers WholesaleOffer[]
 }
+```
 
+### `BusinessUnitMember`
+
+```prisma
 model BusinessUnitMember {
   id             Int        @id @default(autoincrement())
   businessUnitId Int
@@ -2746,7 +2558,11 @@ model BusinessUnitMember {
   @@index([userId, isActive])
   @@index([businessUnitId, role])
 }
+```
 
+### `AccountingGroup`
+
+```prisma
 model AccountingGroup {
   id        Int      @id @default(autoincrement())
   ownerId   Int
@@ -2761,8 +2577,14 @@ model AccountingGroup {
   @@unique([ownerId, name])
   @@index([ownerId, isPrimary])
 }
+```
 
+### `MerchantProduct`
+
+```prisma
 model MerchantProduct {
+  poolId                 Int?
+  pool                   InventoryPool?        @relation(fields: [poolId], references: [id], onDelete: SetNull)
   id                     Int                   @id @default(autoincrement())
   businessUnitId         Int
   masterId               Int
@@ -2777,17 +2599,64 @@ model MerchantProduct {
   updatedAt              DateTime              @updatedAt
   deletedAt              DateTime?
 
-  businessUnit BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  master       MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  variants     MerchantVariant[]
-  sellingUnits SellingUnit[]
+  businessUnit    BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master          MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  variants        MerchantVariant[]
+  sellingUnits    SellingUnit[]
+  wholesaleOffers WholesaleOffer[]
 
   @@unique([businessUnitId, masterId])
   @@index([businessUnitId, status])
   @@index([masterId])
   @@index([isFromWholesale])
 }
+```
 
+### `InventoryPool`
+
+```prisma
+model InventoryPool {
+  id             Int      @id @default(autoincrement())
+  businessUnitId Int
+  masterId       Int
+  mode           PoolMode @default(SPLIT)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businessUnit     BusinessUnit           @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master           MasterProduct          @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  variants         InventoryPoolVariant[]
+  products         Product[]
+  merchantProducts MerchantProduct[]
+
+  @@unique([businessUnitId, masterId])
+  @@index([businessUnitId])
+}
+```
+
+### `InventoryPoolVariant`
+
+```prisma
+model InventoryPoolVariant {
+  id               Int      @id @default(autoincrement())
+  poolId           Int
+  masterVariantId  Int
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pool          InventoryPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  masterVariant MasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, masterVariantId])
+  @@index([poolId])
+}
+```
+
+### `MerchantVariant`
+
+```prisma
 model MerchantVariant {
   id                Int      @id @default(autoincrement())
   merchantProductId Int
@@ -2801,14 +2670,19 @@ model MerchantVariant {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  merchantProduct MerchantProduct @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
-  masterVariant   MasterVariant?  @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+  merchantProduct        MerchantProduct         @relation(fields: [merchantProductId], references: [id], onDelete: Cascade)
+  masterVariant          MasterVariant?          @relation(fields: [masterVariantId], references: [id], onDelete: SetNull)
+  wholesaleOfferVariants WholesaleOfferVariant[]
 
   @@unique([merchantProductId, sku])
   @@index([merchantProductId, isDefault])
   @@index([barcode])
 }
+```
 
+### `SellingUnit`
+
+```prisma
 model SellingUnit {
   id                Int       @id @default(autoincrement())
   merchantProductId Int
@@ -2826,7 +2700,11 @@ model SellingUnit {
   @@unique([merchantProductId, name, validFrom])
   @@index([merchantProductId, isActive])
 }
+```
 
+### `InventoryLocation`
+
+```prisma
 model InventoryLocation {
   id             Int          @id @default(autoincrement())
   businessUnitId Int
@@ -2844,28 +2722,36 @@ model InventoryLocation {
   @@index([businessUnitId, isActive])
   @@index([type])
 }
+```
 
+### `InventoryAccount`
+
+```prisma
 model InventoryAccount {
-  id             Int                   @id @default(autoincrement())
+  id             Int                  @id @default(autoincrement())
   locationId     Int
   businessUnitId Int
   type           InventoryAccountType
-  isActive       Boolean               @default(true)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   location InventoryLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@unique([locationId, type])
-  @@index([businessUnitId, type])
 
   // ─── M1.2 back-relations ───
   balances     InventoryBalance[]
   ledgers      InventoryLedger[]
   batches      InventoryBatch[]
   reservations StockReservation[]
-}
 
+  @@unique([locationId, type])
+  @@index([businessUnitId, type])
+}
+```
+
+### `MasterProduct`
+
+```prisma
 model MasterProduct {
   id               Int                 @id @default(autoincrement())
   masterCode       String              @unique @default(uuid())
@@ -2892,15 +2778,20 @@ model MasterProduct {
   versions         MasterProductVersion[]
   merchantProducts MerchantProduct[]
 
+  // ─── M1.2 back-relations ───
+  offers         WholesaleOffer[]
+  inventoryPools InventoryPool[]
+
   @@index([categoryId, status])
   @@index([barcode])
   @@index([qrCode])
   @@index([status])
-
-  // ─── M1.2 back-relations ───
-  offers WholesaleOffer[]
 }
+```
 
+### `MasterVariant`
+
+```prisma
 model MasterVariant {
   id             Int      @id @default(autoincrement())
   masterId       Int
@@ -2916,15 +2807,24 @@ model MasterVariant {
   master           MasterProduct     @relation(fields: [masterId], references: [id], onDelete: Cascade)
   merchantVariants MerchantVariant[]
 
+  // ─── M1.2 back-relations ───
+  offerVariants WholesaleOfferVariant[]
+
+  // ─── M1.3 back-relations ───
+  priceComparisons PriceComparisonCache[]
+  poolVariants     InventoryPoolVariant[]
+  retailVariants   ProductVariant[]
+
   @@unique([masterId, attributesHash])
   @@index([barcode])
   @@index([qrCode])
   @@index([masterId, isDefault])
-
-  // ─── M1.2 back-relations ───
-  offerVariants WholesaleOfferVariant[]
 }
+```
 
+### `MasterProductVersion`
+
+```prisma
 model MasterProductVersion {
   id              Int      @id @default(autoincrement())
   masterId        Int
@@ -2939,7 +2839,11 @@ model MasterProductVersion {
   @@unique([masterId, version])
   @@index([masterId, createdAt])
 }
+```
 
+### `MasterCategory`
+
+```prisma
 model MasterCategory {
   id        Int       @id @default(autoincrement())
   name      String
@@ -2960,7 +2864,11 @@ model MasterCategory {
   @@index([parentId, order])
   @@index([isLeaf, isActive])
 }
+```
 
+### `OperationAuditLog`
+
+```prisma
 model OperationAuditLog {
   id             Int      @id @default(autoincrement())
   userId         Int?
@@ -2978,98 +2886,16 @@ model OperationAuditLog {
   @@index([entityType, entityId])
   @@index([action, createdAt])
 }
+```
 
-// ═══════════════════════════════════════════════════════════
-// WHOLESALE SYSTEM — M1.2: Offer, Order, Inventory
-// ═══════════════════════════════════════════════════════════
+### `WholesaleOffer`
 
-enum WholesaleOfferStatus {
-  DRAFT
-  PENDING_REVIEW
-  ACTIVE
-  PAUSED
-  REJECTED
-  OUT_OF_STOCK
-  SUSPENDED
-  ARCHIVED
-}
-
-enum OfferReviewLevel {
-  AUTO
-  MANUAL
-  TRUSTED
-}
-
-enum OfferClaimType {
-  MANUFACTURER
-  DISTRIBUTOR
-  IMPORTER
-  RESELLER
-}
-
-enum WholesaleOrderStatus {
-  PENDING
-  CONFIRMED
-  PROCESSING
-  READY
-  SHIPPED
-  DELIVERED
-  CANCELLED
-  RETURNED
-  DISPUTED
-}
-
-enum WholesalePaymentStatus {
-  UNPAID
-  PARTIAL
-  PAID
-  REFUNDED
-}
-
-enum WholesaleFulfillmentStatus {
-  PENDING
-  PREPARING
-  READY
-  SHIPPED
-  DELIVERED
-}
-
-enum InventoryMovementType {
-  PURCHASE_IN
-  SALE_OUT
-  RETURN_IN
-  RETURN_OUT
-  TRANSFER_IN
-  TRANSFER_OUT
-  ADJUSTMENT
-  DAMAGE
-  RESERVATION_HOLD
-  RESERVATION_RELEASE
-}
-
-enum StockReservationStage {
-  TEMP
-  CONFIRMED
-}
-
-enum StockReservationStatus {
-  ACTIVE
-  CONSUMED
-  RELEASED
-  EXPIRED
-}
-
-enum InventoryBatchSourceType {
-  PURCHASE
-  RETURN
-  TRANSFER
-  OPENING_BALANCE
-}
-
+```prisma
 model WholesaleOffer {
   id                Int                  @id @default(autoincrement())
   businessUnitId    Int
   masterId          Int
+  merchantProductId Int?
   wholesalePrice    Decimal              @db.Decimal(10, 2)
   minOrderQty       Int                  @default(1)
   maxOrderQty       Int?
@@ -3086,33 +2912,58 @@ model WholesaleOffer {
   updatedAt         DateTime             @updatedAt
   deletedAt         DateTime?
 
-  businessUnit   BusinessUnit             @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  master         MasterProduct            @relation(fields: [masterId], references: [id], onDelete: Restrict)
-  approvedByUser User?                    @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  variants       WholesaleOfferVariant[]
-  orderItems     WholesaleOrderItem[]
+  businessUnit         BusinessUnit               @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  master               MasterProduct              @relation(fields: [masterId], references: [id], onDelete: Restrict)
+  merchantProduct      MerchantProduct?           @relation(fields: [merchantProductId], references: [id], onDelete: SetNull)
+  approvedByUser       User?                      @relation("WholesaleOfferApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  variants             WholesaleOfferVariant[]
+  orderItems           WholesaleOrderItem[]
+  bundleRules          WholesaleOfferBundleRule[]
+  packages             WholesaleOfferPackage[]
+  sizeLimits           WholesaleOfferSizeLimit[]
+  autoBalanceEnabled   Boolean                    @default(false)
+  autoBalanceConfig    Json?
+  autoBalanceUpdatedAt DateTime?
+  requireSizeSelection Boolean                    @default(false)
+  maxManualAdjustment  Int                        @default(1)
 
   @@unique([businessUnitId, masterId])
   @@index([masterId, status])
   @@index([status, deletedAt])
   @@index([businessUnitId, status])
+  @@index([merchantProductId])
 }
+```
 
+### `WholesaleOfferVariant`
+
+```prisma
 model WholesaleOfferVariant {
-  id              Int      @id @default(autoincrement())
-  offerId         Int
-  masterVariantId Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  offerId           Int
+  masterVariantId   Int
+  merchantVariantId Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  offer         WholesaleOffer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  masterVariant MasterVariant          @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
-  tiers         WholesaleOfferTier[]
+  offer             WholesaleOffer             @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  masterVariant     MasterVariant              @relation(fields: [masterVariantId], references: [id], onDelete: Restrict)
+  merchantVariant   MerchantVariant?           @relation(fields: [merchantVariantId], references: [id], onDelete: SetNull)
+  tiers             WholesaleOfferTier[]
+  triggeredBundles  WholesaleOfferBundleRule[] @relation("BundleTrigger")
+  requiredByBundles WholesaleOfferBundleRule[] @relation("BundleRequired")
+
+  packageItems WholesaleOfferPackageItem[]
 
   @@unique([offerId, masterVariantId])
   @@index([offerId])
+  @@index([merchantVariantId])
 }
+```
 
+### `WholesaleOfferTier`
+
+```prisma
 model WholesaleOfferTier {
   id        Int      @id @default(autoincrement())
   variantId Int
@@ -3127,7 +2978,92 @@ model WholesaleOfferTier {
   @@unique([variantId, minQty])
   @@index([variantId])
 }
+```
 
+### `WholesaleOfferBundleRule`
+
+```prisma
+model WholesaleOfferBundleRule {
+  id                Int      @id @default(autoincrement())
+  offerId           Int
+  triggerVariantId  Int
+  requiredVariantId Int
+  minQuantity       Int      @default(1)
+  isMultiplied      Boolean  @default(false)
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  offer           WholesaleOffer        @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  triggerVariant  WholesaleOfferVariant @relation("BundleTrigger", fields: [triggerVariantId], references: [id], onDelete: Cascade)
+  requiredVariant WholesaleOfferVariant @relation("BundleRequired", fields: [requiredVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([triggerVariantId, requiredVariantId])
+  @@index([offerId])
+  @@index([triggerVariantId])
+  @@index([requiredVariantId])
+}
+```
+
+### `WholesaleOfferPackage`
+
+```prisma
+model WholesaleOfferPackage {
+  id        Int      @id @default(autoincrement())
+  offerId   Int
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offer WholesaleOffer              @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  items WholesaleOfferPackageItem[]
+
+  @@index([offerId])
+  @@index([offerId, sortOrder])
+}
+```
+
+### `WholesaleOfferPackageItem`
+
+```prisma
+model WholesaleOfferPackageItem {
+  id        Int      @id @default(autoincrement())
+  packageId Int
+  variantId Int
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  package WholesaleOfferPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  variant WholesaleOfferVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, variantId])
+  @@index([packageId])
+  @@index([variantId])
+}
+```
+
+### `WholesaleOfferSizeLimit`
+
+```prisma
+model WholesaleOfferSizeLimit {
+  id          Int      @id @default(autoincrement())
+  offerId     Int
+  size        String
+  minOrderQty Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  offer WholesaleOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, size])
+  @@index([offerId])
+}
+```
+
+### `WholesaleOrderGroup`
+
+```prisma
 model WholesaleOrderGroup {
   id                  Int      @id @default(autoincrement())
   buyerBusinessUnitId Int
@@ -3142,7 +3078,11 @@ model WholesaleOrderGroup {
   @@index([buyerBusinessUnitId, createdAt])
   @@index([status])
 }
+```
 
+### `WholesaleOrder`
+
+```prisma
 model WholesaleOrder {
   id                   Int                        @id @default(autoincrement())
   groupId              Int?
@@ -3150,8 +3090,8 @@ model WholesaleOrder {
   sellerBusinessUnitId Int
   buyerBusinessUnitId  Int
   subtotal             Decimal                    @db.Decimal(12, 2)
-  discount             Decimal                    @db.Decimal(10, 2) @default(0)
-  shippingCost         Decimal                    @db.Decimal(10, 2) @default(0)
+  discount             Decimal                    @default(0) @db.Decimal(10, 2)
+  shippingCost         Decimal                    @default(0) @db.Decimal(10, 2)
   total                Decimal                    @db.Decimal(12, 2)
   status               WholesaleOrderStatus       @default(PENDING)
   paymentStatus        WholesalePaymentStatus     @default(UNPAID)
@@ -3169,13 +3109,20 @@ model WholesaleOrder {
   group WholesaleOrderGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   items WholesaleOrderItem[]
 
+  // ─── M1.3 back-relations ───
+  returnOrders ReturnOrder[]
+
   @@index([sellerBusinessUnitId, status])
   @@index([buyerBusinessUnitId, status])
   @@index([groupId])
   @@index([status, createdAt])
   @@index([orderNumber])
 }
+```
 
+### `WholesaleOrderItem`
+
+```prisma
 model WholesaleOrderItem {
   id                Int      @id @default(autoincrement())
   orderId           Int
@@ -3194,11 +3141,18 @@ model WholesaleOrderItem {
   order WholesaleOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   offer WholesaleOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
 
+  // ─── M1.3 back-relations ───
+  returnItems ReturnOrderItem[]
+
   @@index([orderId])
   @@index([offerId])
   @@index([masterVariantId])
 }
+```
 
+### `InventoryLedger`
+
+```prisma
 model InventoryLedger {
   id                 Int                   @id @default(autoincrement())
   merchantVariantId  Int
@@ -3216,12 +3170,19 @@ model InventoryLedger {
   inventoryAccount InventoryAccount @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
   inventoryBatch   InventoryBatch?  @relation(fields: [inventoryBatchId], references: [id], onDelete: SetNull)
 
+  // ─── M1.3 back-relations ───
+  returnRecord InventoryReturn?
+
   @@index([merchantVariantId, inventoryAccountId, createdAt])
   @@index([inventoryBatchId])
   @@index([businessUnitId, createdAt])
   @@index([referenceType, referenceId])
 }
+```
 
+### `InventoryBalance`
+
+```prisma
 model InventoryBalance {
   id                 Int      @id @default(autoincrement())
   merchantVariantId  Int
@@ -3236,27 +3197,39 @@ model InventoryBalance {
   @@unique([merchantVariantId, inventoryAccountId])
   @@index([inventoryAccountId])
 }
+```
 
+### `InventoryBatch`
+
+```prisma
 model InventoryBatch {
-  id                 Int                       @id @default(autoincrement())
+  id                 Int                      @id @default(autoincrement())
   merchantVariantId  Int
   inventoryAccountId Int
   sourceType         InventoryBatchSourceType
   sourceReferenceId  Int?
   quantityReceived   Int
   quantityRemaining  Int
-  unitCost           Decimal                   @db.Decimal(10, 4)
-  receivedAt         DateTime                  @default(now())
-  createdAt          DateTime                  @default(now())
+  unitCost           Decimal                  @db.Decimal(10, 4)
+  receivedAt         DateTime                 @default(now())
+  createdAt          DateTime                 @default(now())
 
   inventoryAccount InventoryAccount           @relation(fields: [inventoryAccountId], references: [id], onDelete: Restrict)
   ledgerEntries    InventoryLedger[]
   allocations      InventoryBatchAllocation[]
 
+  // ─── M1.3 back-relations ───
+  returnItemsSource      ReturnOrderItem[] @relation("ReturnItemSourceBatch")
+  inventoryReturnsSource InventoryReturn[] @relation("InventoryReturnSourceBatch")
+
   @@index([merchantVariantId, inventoryAccountId, receivedAt])
   @@index([sourceType, sourceReferenceId])
 }
+```
 
+### `InventoryBatchAllocation`
+
+```prisma
 model InventoryBatchAllocation {
   id                Int      @id @default(autoincrement())
   batchId           Int
@@ -3271,7 +3244,11 @@ model InventoryBatchAllocation {
   @@index([batchId])
   @@index([inventoryLedgerId])
 }
+```
 
+### `StockReservation`
+
+```prisma
 model StockReservation {
   id                 Int                    @id @default(autoincrement())
   merchantVariantId  Int
@@ -3291,3 +3268,1443 @@ model StockReservation {
   @@index([expiresAt, status])
   @@index([referenceType, referenceId])
 }
+```
+
+### `LedgerBook`
+
+```prisma
+model LedgerBook {
+  id             Int      @id @default(autoincrement())
+  businessUnitId Int
+  name           String
+  currency       String   @default("MAD")
+  isPrimary      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businessUnit BusinessUnit    @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  accounts     LedgerAccount[]
+  entries      LedgerEntry[]
+  invoices     Invoice[]
+
+  @@unique([businessUnitId, name])
+  @@index([businessUnitId])
+}
+```
+
+### `LedgerAccount`
+
+```prisma
+model LedgerAccount {
+  id        Int                  @id @default(autoincrement())
+  bookId    Int
+  code      String
+  name      String
+  type      LedgerAccountType
+  subtype   LedgerAccountSubtype
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  book     LedgerBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  lines    LedgerLine[]
+  balances AccountBalance[]
+
+  @@unique([bookId, code])
+  @@index([bookId])
+  @@index([type])
+}
+```
+
+### `LedgerEntry`
+
+```prisma
+model LedgerEntry {
+  id              Int      @id @default(autoincrement())
+  bookId          Int
+  referenceType   String
+  referenceId     Int
+  description     String
+  createdByUserId Int?
+  createdAt       DateTime @default(now())
+
+  book          LedgerBook   @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  createdByUser User?        @relation("LedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  lines         LedgerLine[]
+
+  @@index([bookId])
+  @@index([referenceType])
+  @@index([referenceId])
+}
+```
+
+### `LedgerLine`
+
+```prisma
+model LedgerLine {
+  id        Int      @id @default(autoincrement())
+  entryId   Int
+  accountId Int
+  debit     Decimal  @default(0) @db.Decimal(14, 2)
+  credit    Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  entry   LedgerEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId])
+}
+```
+
+### `AccountBalance`
+
+```prisma
+model AccountBalance {
+  id          Int      @id @default(autoincrement())
+  accountId   Int
+  currency    String   @default("MAD")
+  debitTotal  Decimal  @default(0) @db.Decimal(14, 2)
+  creditTotal Decimal  @default(0) @db.Decimal(14, 2)
+  balance     Decimal  @default(0) @db.Decimal(14, 2)
+  lastLineId  Int?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, currency])
+  @@index([accountId])
+}
+```
+
+### `Invoice`
+
+```prisma
+model Invoice {
+  id                         Int                    @id @default(autoincrement())
+  bookId                     Int
+  invoiceNumber              String                 @unique
+  invoiceType                WholesaleInvoiceType
+  originalInvoiceId          Int?
+  businessUnitId             Int
+  counterpartyBusinessUnitId Int
+  orderId                    Int?
+  returnOrderId              Int?
+  subtotal                   Decimal                @db.Decimal(14, 2)
+  taxAmount                  Decimal                @default(0) @db.Decimal(14, 2)
+  total                      Decimal                @db.Decimal(14, 2)
+  paidAmount                 Decimal                @default(0) @db.Decimal(14, 2)
+  status                     WholesaleInvoiceStatus @default(DRAFT)
+  issuedAt                   DateTime?
+  dueAt                      DateTime?
+  notes                      String?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  book                 LedgerBook          @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  businessUnit         BusinessUnit        @relation("InvoiceSender", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  counterpartyBusiness BusinessUnit        @relation("InvoiceReceiver", fields: [counterpartyBusinessUnitId], references: [id], onDelete: Restrict)
+  originalInvoice      Invoice?            @relation("InvoiceCorrection", fields: [originalInvoiceId], references: [id], onDelete: SetNull)
+  corrections          Invoice[]           @relation("InvoiceCorrection")
+  creditNote           CreditNote?
+  creditNoteOriginal   CreditNote[]        @relation("CreditNoteOriginal")
+  allocations          PaymentAllocation[]
+
+  @@index([businessUnitId])
+  @@index([counterpartyBusinessUnitId])
+  @@index([originalInvoiceId])
+  @@index([invoiceType])
+  @@index([status])
+}
+```
+
+### `CreditNote`
+
+```prisma
+model CreditNote {
+  id                Int                  @id @default(autoincrement())
+  invoiceId         Int                  @unique
+  originalInvoiceId Int
+  returnOrderId     Int?
+  amount            Decimal              @db.Decimal(14, 2)
+  reasonCode        CreditNoteReasonCode
+  reasonText        String?
+  issuedByUserId    Int?
+  issuedAt          DateTime             @default(now())
+  createdAt         DateTime             @default(now())
+
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  originalInvoice Invoice      @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  returnOrder     ReturnOrder? @relation(fields: [returnOrderId], references: [id], onDelete: SetNull)
+  issuedByUser    User?        @relation("CreditNoteIssuer", fields: [issuedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([originalInvoiceId])
+  @@index([returnOrderId])
+}
+```
+
+### `Payment`
+
+```prisma
+model Payment {
+  id                         Int      @id @default(autoincrement())
+  groupId                    Int?
+  paymentNumber              String   @unique
+  businessUnitId             Int
+  counterpartyBusinessUnitId Int?
+  amount                     Decimal  @db.Decimal(14, 2)
+  currency                   String   @default("MAD")
+  method                     String
+  status                     String   @default("CONFIRMED")
+  paidAt                     DateTime @default(now())
+  notes                      String?
+  createdByUserId            Int?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  group        PaymentGroup?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  businessUnit BusinessUnit        @relation("PaymentPayer", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  allocations  PaymentAllocation[]
+  refunds      Refund[]
+  settlement   Settlement?
+
+  @@index([businessUnitId])
+  @@index([counterpartyBusinessUnitId])
+  @@index([groupId])
+  @@index([status])
+}
+```
+
+### `PaymentAllocation`
+
+```prisma
+model PaymentAllocation {
+  id              Int      @id @default(autoincrement())
+  paymentId       Int
+  invoiceId       Int
+  allocatedAmount Decimal  @db.Decimal(14, 2)
+  refundedAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt       DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+```
+
+### `PaymentGroup`
+
+```prisma
+model PaymentGroup {
+  id                    Int      @id @default(autoincrement())
+  groupNumber           String   @unique
+  businessUnitId        Int
+  totalAmount           Decimal  @db.Decimal(14, 2)
+  status                String   @default("PENDING")
+  referenceOrderGroupId Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  payments Payment[]
+
+  @@index([businessUnitId])
+  @@index([referenceOrderGroupId])
+}
+```
+
+### `Settlement`
+
+```prisma
+model Settlement {
+  id             Int                     @id @default(autoincrement())
+  paymentId      Int                     @unique
+  businessUnitId Int
+  amount         Decimal                 @db.Decimal(14, 2)
+  status         PaymentSettlementStatus @default(PENDING)
+  settledAt      DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  businessUnit BusinessUnit @relation("SettlementReceiver", fields: [businessUnitId], references: [id], onDelete: Restrict)
+
+  @@index([businessUnitId])
+  @@index([status])
+}
+```
+
+### `Refund`
+
+```prisma
+model Refund {
+  id                  Int                 @id @default(autoincrement())
+  refundNumber        String              @unique
+  paymentId           Int
+  paymentAllocationId Int?
+  amount              Decimal             @db.Decimal(14, 2)
+  method              String
+  status              PaymentRefundStatus @default(PENDING)
+  reason              String?
+  processedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([status])
+}
+```
+
+### `ReturnOrder`
+
+```prisma
+model ReturnOrder {
+  id                   Int               @id @default(autoincrement())
+  returnNumber         String            @unique
+  originalOrderId      Int
+  buyerBusinessUnitId  Int
+  sellerBusinessUnitId Int
+  status               ReturnOrderStatus @default(REQUESTED)
+  reason               String
+  expectedRefundAmount Decimal?          @db.Decimal(14, 2)
+  approvedRefundAmount Decimal?          @db.Decimal(14, 2)
+  approvedByUserId     Int?
+  approvedAt           DateTime?
+  rejectedByUserId     Int?
+  rejectedAt           DateTime?
+  rejectionReason      String?
+  completedAt          DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  originalOrder      WholesaleOrder    @relation(fields: [originalOrderId], references: [id], onDelete: Restrict)
+  buyerBusinessUnit  BusinessUnit      @relation("ReturnOrderBuyer", fields: [buyerBusinessUnitId], references: [id], onDelete: Restrict)
+  sellerBusinessUnit BusinessUnit      @relation("ReturnOrderSeller", fields: [sellerBusinessUnitId], references: [id], onDelete: Restrict)
+  approvedByUser     User?             @relation("ReturnOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedByUser     User?             @relation("ReturnOrderRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  items              ReturnOrderItem[]
+  creditNotes        CreditNote[]
+
+  @@index([originalOrderId])
+  @@index([buyerBusinessUnitId])
+  @@index([sellerBusinessUnitId])
+  @@index([status])
+  @@index([returnNumber])
+}
+```
+
+### `ReturnOrderItem`
+
+```prisma
+model ReturnOrderItem {
+  id                  Int                 @id @default(autoincrement())
+  returnOrderId       Int
+  originalOrderItemId Int
+  quantityRequested   Int
+  quantityReceived    Int                 @default(0)
+  quantityAccepted    Int                 @default(0)
+  condition           ReturnItemCondition @default(SELLABLE)
+  sourceBatchId       Int?
+  notes               String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  returnOrder       ReturnOrder        @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
+  originalOrderItem WholesaleOrderItem @relation(fields: [originalOrderItemId], references: [id], onDelete: Restrict)
+  inventoryReturns  InventoryReturn[]
+  sourceBatch       InventoryBatch?    @relation("ReturnItemSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
+  @@index([returnOrderId])
+  @@index([originalOrderItemId])
+  @@index([sourceBatchId])
+}
+```
+
+### `InventoryReturn`
+
+```prisma
+model InventoryReturn {
+  id                Int                 @id @default(autoincrement())
+  returnOrderItemId Int
+  inventoryLedgerId Int                 @unique
+  sourceBatchId     Int?
+  condition         ReturnItemCondition
+  quantity          Int
+  createdAt         DateTime            @default(now())
+
+  returnOrderItem ReturnOrderItem @relation(fields: [returnOrderItemId], references: [id], onDelete: Cascade)
+  inventoryLedger InventoryLedger @relation(fields: [inventoryLedgerId], references: [id], onDelete: Restrict)
+  sourceBatch     InventoryBatch? @relation("InventoryReturnSourceBatch", fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
+  @@index([returnOrderItemId])
+  @@index([sourceBatchId])
+}
+```
+
+### `PriceComparisonCache`
+
+```prisma
+model PriceComparisonCache {
+  id                  Int      @id @default(autoincrement())
+  masterVariantId     Int
+  sellingUnitId       Int
+  tierMinQty          Int
+  tierMaxQty          Int?
+  lowestPrice         Decimal  @db.Decimal(14, 2)
+  lowestPriceOfferId  Int?
+  eligibleOffersCount Int
+  threshold5Percent   Decimal  @db.Decimal(14, 2)
+  threshold10Percent  Decimal  @db.Decimal(14, 2)
+  calculatedAt        DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  masterVariant MasterVariant @relation(fields: [masterVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([masterVariantId, sellingUnitId, tierMinQty])
+  @@index([masterVariantId])
+  @@index([calculatedAt])
+}
+```
+
+### `PriceAlertSetting`
+
+```prisma
+model PriceAlertSetting {
+  id               Int      @id @default(autoincrement())
+  masterCategoryId Int?
+  businessUnitType String?
+  thresholdPercent Decimal  @default(5.0) @db.Decimal(5, 2)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([masterCategoryId])
+  @@index([isActive])
+}
+```
+
+### `LedgerContact`
+
+```prisma
+model LedgerContact {
+  id             Int       @id @default(autoincrement())
+  businessUnitId Int
+  name           String
+  contactType    String    @default("EXTERNAL") // PLATFORM_TRADER | EXTERNAL | EMPLOYEE | SUPPLIER
+  linkedUserId   Int?
+  linkedBUId     Int?
+  phone          String?
+  email          String?
+  notes          String?
+  openingBalance Decimal   @default(0) @db.Decimal(12, 2)
+  currentBalance Decimal   @default(0) @db.Decimal(12, 2)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  businessUnit BusinessUnit         @relation("BULedgerContacts", fields: [businessUnitId], references: [id], onDelete: Cascade)
+  entries      LedgerContactEntry[]
+
+  @@index([businessUnitId, isActive])
+  @@index([businessUnitId, deletedAt])
+  @@index([linkedUserId])
+  @@index([linkedBUId])
+}
+```
+
+### `LedgerContactEntry`
+
+```prisma
+model LedgerContactEntry {
+  id              Int             @id @default(autoincrement())
+  contactId       Int
+  type            LedgerEntryType
+  amount          Decimal         @db.Decimal(12, 2)
+  balanceBefore   Decimal         @db.Decimal(12, 2)
+  balanceAfter    Decimal         @db.Decimal(12, 2)
+  entryDate       DateTime        @default(now())
+  description     String
+  referenceType   String? // MANUAL | WHOLESALE_ORDER | WHOLESALE_RETURN | PAYMENT
+  referenceId     Int?
+  attachmentUrl   String?
+  createdByUserId Int
+  createdAt       DateTime        @default(now())
+
+  contact LedgerContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, entryDate])
+  @@index([contactId, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([createdByUserId])
+}
+```
+
+### `InventoryTransfer`
+
+```prisma
+model InventoryTransfer {
+  id                Int      @id @default(autoincrement())
+  transferNumber    String   @unique
+  businessUnitId    Int
+  merchantVariantId Int
+  fromAccountId     Int
+  toAccountId       Int
+  quantity          Int
+  notes             String?
+  createdByUserId   Int
+  createdAt         DateTime @default(now())
+
+  businessUnit BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+
+  @@index([businessUnitId, createdAt])
+  @@index([merchantVariantId])
+}
+```
+
+---
+
+## Enums (74)
+
+### `ReturnShipmentStatus`
+
+```prisma
+enum ReturnShipmentStatus {
+  PENDING_PICKUP
+  PICKED_UP
+  IN_TRANSIT_TO_WAREHOUSE
+  RECEIVED_AT_WAREHOUSE
+  INSPECTED
+  IN_TRANSIT_TO_SELLER
+  DELIVERED_TO_SELLER
+  COMPLETED
+  CANCELLED
+}
+```
+
+### `ReturnInspectionStatus`
+
+```prisma
+enum ReturnInspectionStatus {
+  INTACT
+  DAMAGED
+  INCOMPLETE
+}
+```
+
+### `ZoneType`
+
+```prisma
+enum ZoneType {
+  COLLECTION
+  DELIVERY
+}
+```
+
+### `AssemblyStatus`
+
+```prisma
+enum AssemblyStatus {
+  PENDING
+  READY
+  PARTIALLY_SHIPPED
+  COMPLETED
+  CANCELLED
+}
+```
+
+### `UserRole`
+
+```prisma
+enum UserRole {
+  CUSTOMER
+  SELLER
+  ADMIN
+  SUPER_ADMIN
+  DELIVERY
+  COLLECTOR
+  WAREHOUSE_MANAGER
+}
+```
+
+### `OrderSource`
+
+```prisma
+enum OrderSource {
+  ONLINE // من الموقع الإلكتروني
+  IN_STORE // من المحل الحقيقي (بمسح QR)
+}
+```
+
+### `DeliveryPersonStatus`
+
+```prisma
+enum DeliveryPersonStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+```
+
+### `DeliveryAttemptType`
+
+```prisma
+enum DeliveryAttemptType {
+  DELIVERED
+  DEFERRED
+  REJECTED
+  RETURNED
+}
+```
+
+### `FulfillmentStatus`
+
+```prisma
+enum FulfillmentStatus {
+  PENDING
+  PREPARING
+  READY_FOR_COLLECTION
+  COLLECTED
+  IN_TRANSIT_TO_WAREHOUSE
+  RECEIVED
+  VERIFIED
+  AVAILABLE_FOR_SHIPMENT
+  ALLOCATED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+```
+
+### `CollectionStatus`
+
+```prisma
+enum CollectionStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+```
+
+### `WarehouseReceiptStatus`
+
+```prisma
+enum WarehouseReceiptStatus {
+  RECEIVED
+  VERIFIED
+  DAMAGED
+  REJECTED
+}
+```
+
+### `GroupingDecision`
+
+```prisma
+enum GroupingDecision {
+  WAIT_FOR_MORE
+  SHIP_AVAILABLE_NOW
+}
+```
+
+### `DeliveryAssignmentStatus`
+
+```prisma
+enum DeliveryAssignmentStatus {
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+  REASSIGNED
+}
+```
+
+### `ShipmentStatus`
+
+```prisma
+enum ShipmentStatus {
+  DRAFT
+  WAITING_FOR_ITEMS
+  READY
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  IN_TRANSIT
+  DELIVERED
+  PARTIALLY_DELIVERED
+  POSTPONED
+  REFUSED
+  RETURNED
+  CANCELLED
+}
+```
+
+### `PermissionCategory`
+
+```prisma
+enum PermissionCategory {
+  ORDERS
+  SHIPMENT
+  DELIVERY
+  SELLER
+  ADMIN
+  SYSTEM
+}
+```
+
+### `SellerStatus`
+
+```prisma
+enum SellerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+```
+
+### `ProductStatus`
+
+```prisma
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+```
+
+### `MovementType`
+
+```prisma
+enum MovementType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  SALE
+  RETURN
+  RESERVE
+  UNRESERVE
+}
+```
+
+### `ReferenceType`
+
+```prisma
+enum ReferenceType {
+  ORDER
+  MANUAL
+  SYSTEM
+  RETURN
+}
+```
+
+### `OrderStatus`
+
+```prisma
+enum OrderStatus {
+  NEW
+  PROCESSING
+  SHIPPED
+  PARTIALLY_DELIVERED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+```
+
+### `PaymentMethod`
+
+```prisma
+enum PaymentMethod {
+  COD
+}
+```
+
+### `PaymentStatus`
+
+```prisma
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+```
+
+### `ReservationStatus`
+
+```prisma
+enum ReservationStatus {
+  ACTIVE
+  CONFIRMED
+  RELEASED
+  EXPIRED
+}
+```
+
+### `CouponType`
+
+```prisma
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}
+```
+
+### `ReturnStatus`
+
+```prisma
+enum ReturnStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+```
+
+### `NotificationType`
+
+```prisma
+enum NotificationType {
+  RETURN_COMPLETED
+  ORDER_CREATED
+  ORDER_STATUS_CHANGED
+  PAYMENT_RECEIVED
+  SHIPPING_UPDATED
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  SELLER_ORDER_RECEIVED
+  SELLER_PAYOUT_READY
+  SELLER_PAYOUT_SENT
+  SELLER_PRODUCT_LOW_STOCK
+  SELLER_DOCUMENT_APPROVED
+  SELLER_DOCUMENT_REJECTED
+  SELLER_PERFORMANCE_WARNING
+  SELLER_SUSPENDED
+  SELLER_VERIFIED
+  SELLER_PRODUCT_EDITED
+  SELLER_PRODUCT_NEEDS_REVIEW
+  SELLER_NEW_REGISTRATION
+  REVIEW_SUBMITTED
+  // ═══ Wholesale ═══
+  WHOLESALE_MASTER_APPROVED
+  WHOLESALE_MASTER_REJECTED
+  WHOLESALE_OFFER_APPROVED
+  WHOLESALE_OFFER_REJECTED
+  WHOLESALE_BU_VERIFIED
+  WHOLESALE_BU_REJECTED
+  WHOLESALE_ORDER_RECEIVED
+  WHOLESALE_ORDER_CONFIRMED
+  WHOLESALE_ORDER_SHIPPED
+  WHOLESALE_ORDER_DELIVERED
+  WHOLESALE_ORDER_CANCELLED
+  WHOLESALE_RETURN_REQUESTED
+  WHOLESALE_RETURN_APPROVED
+  WHOLESALE_RETURN_REJECTED
+  WHOLESALE_RETURN_COMPLETED
+}
+```
+
+### `AuditAction`
+
+```prisma
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  STATUS_CHANGE
+  PERMISSION_CHANGE
+  PAYMENT_CHANGE
+  STOCK_ADJUSTMENT
+  QR_SCAN
+  QR_ROUTE_VIEW
+  SHIPMENT_CREATE
+  SHIPMENT_UPDATE
+  DELIVERY_ASSIGN
+  DELIVERY_ACTION
+  FULFILLMENT_PREPARE
+  FULFILLMENT_READY
+  COLLECTION_ASSIGN
+  COLLECTION_PICKUP
+  COLLECTION_DEPART
+  WAREHOUSE_RECEIVE
+  WAREHOUSE_VERIFY
+  GROUPING_DECISION
+  SHIPMENT_ITEM_ADD
+  SHIPMENT_ITEM_REMOVE
+  SHIPMENT_PICKUP
+  DELIVERY_ATTEMPT
+  RETURN_CREATE
+  RETURN_TO_SELLER_ASSIGN
+  RETURN_TO_SELLER_PICKUP
+  RETURN_TO_SELLER_DELIVER
+  RETURN_TO_SELLER_CONFIRM
+  RETURN_TO_SELLER_REJECT
+}
+```
+
+### `LoyaltyTransactionType`
+
+```prisma
+enum LoyaltyTransactionType {
+  EARN // نقاط من طلب
+  REVOKE // سحب بسبب إرجاع
+  BONUS // نقاط إضافية
+  ADMIN_ADJUST // تعديل يدوي
+}
+```
+
+### `LoyaltyRewardStatus`
+
+```prisma
+enum LoyaltyRewardStatus {
+  PENDING // فتحها، بانتظار اختيار الأدمن
+  PROCESSING // الأدمن بدأ التجهيز
+  SHIPPED // تم الشحن
+  DELIVERED // تم التسليم
+  CANCELLED // ملغى
+}
+```
+
+### `DistrictType`
+
+```prisma
+enum DistrictType {
+  NEIGHBORHOOD
+  RURAL
+  DOUAR
+  VILLAGE
+}
+```
+
+### `ProductType`
+
+```prisma
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+  SERVICE
+}
+```
+
+### `ProductUnit`
+
+```prisma
+enum ProductUnit {
+  PIECE
+  PAIR
+  SET
+  PACK
+  BOX
+  KG
+  GRAM
+  LITER
+  ML
+  METER
+  M2
+  M3
+}
+```
+
+### `DocumentType`
+
+```prisma
+enum DocumentType {
+  CIN
+  PASSPORT
+  ICE
+  RC
+  IF
+  BANK_STATEMENT
+  ADDRESS_PROOF
+  OTHER
+}
+```
+
+### `DocumentStatus`
+
+```prisma
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+```
+
+### `CostType`
+
+```prisma
+enum CostType {
+  SHIPPING
+  COD_REFUSAL
+  RETURN_SHIPPING
+  COMMISSION
+  REFUND
+  ADJUSTMENT
+}
+```
+
+### `CostBearer`
+
+```prisma
+enum CostBearer {
+  SELLER
+  PLATFORM
+  CUSTOMER
+  SHARED
+}
+```
+
+### `PayoutStatus`
+
+```prisma
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+```
+
+### `BankAccountType`
+
+```prisma
+enum BankAccountType {
+  PERSONAL
+  BUSINESS
+}
+```
+
+### `BankAccountVerification`
+
+```prisma
+enum BankAccountVerification {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+```
+
+### `AttributeValueStatus`
+
+```prisma
+enum AttributeValueStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+```
+
+### `CollectionBatchStatus`
+
+```prisma
+enum CollectionBatchStatus {
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+```
+
+### `WalletTransactionType`
+
+```prisma
+enum WalletTransactionType {
+  ONLINE_SALE_EARNING
+  HELD_EARNING
+  RELEASE_HOLD
+  COMMISSION_DEDUCTION
+  SUBSCRIPTION_PAYMENT
+  WITHDRAWAL
+  REFUND_DEDUCTION
+  MANUAL_ADJUSTMENT
+}
+```
+
+### `WalletOwnerType`
+
+```prisma
+enum WalletOwnerType {
+  SELLER
+  DRIVER
+  WAREHOUSE
+  PLATFORM
+}
+```
+
+### `OwnerType`
+
+```prisma
+enum OwnerType {
+  INDIVIDUAL
+  COMPANY
+  COOPERATIVE
+}
+```
+
+### `VerificationStatus`
+
+```prisma
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+```
+
+### `RegistrationStatus`
+
+```prisma
+enum RegistrationStatus {
+  REGISTERED
+  UNREGISTERED
+  NOT_REQUIRED
+  PENDING_VERIFICATION
+}
+```
+
+### `BusinessType`
+
+```prisma
+enum BusinessType {
+  FACTORY
+  SHOP
+  BRANCH
+  IMPORTER
+  WHOLESALER
+  DISTRIBUTOR
+}
+```
+
+### `BusinessUnitStatus`
+
+```prisma
+enum BusinessUnitStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+```
+
+### `MemberRole`
+
+```prisma
+enum MemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+```
+
+### `MerchantProductStatus`
+
+```prisma
+enum MerchantProductStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+```
+
+### `LocationType`
+
+```prisma
+enum LocationType {
+  WAREHOUSE
+  SHOP_FLOOR
+  TRANSIT
+}
+```
+
+### `InventoryAccountType`
+
+```prisma
+enum InventoryAccountType {
+  RETAIL
+  WHOLESALE
+  QUARANTINE
+  DAMAGED
+}
+```
+
+### `MasterProductStatus`
+
+```prisma
+enum MasterProductStatus {
+  PENDING_REVIEW
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+```
+
+### `PoolMode`
+
+```prisma
+enum PoolMode {
+  SHARED
+  SPLIT
+}
+```
+
+### `WholesaleOfferStatus`
+
+```prisma
+enum WholesaleOfferStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  REJECTED
+  OUT_OF_STOCK
+  SUSPENDED
+  ARCHIVED
+}
+```
+
+### `OfferReviewLevel`
+
+```prisma
+enum OfferReviewLevel {
+  AUTO
+  MANUAL
+  TRUSTED
+}
+```
+
+### `OfferClaimType`
+
+```prisma
+enum OfferClaimType {
+  MANUFACTURER
+  DISTRIBUTOR
+  IMPORTER
+  RESELLER
+}
+```
+
+### `WholesaleOrderStatus`
+
+```prisma
+enum WholesaleOrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+  DISPUTED
+}
+```
+
+### `WholesalePaymentStatus`
+
+```prisma
+enum WholesalePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  REFUNDED
+}
+```
+
+### `WholesaleFulfillmentStatus`
+
+```prisma
+enum WholesaleFulfillmentStatus {
+  PENDING
+  PREPARING
+  READY
+  SHIPPED
+  DELIVERED
+}
+```
+
+### `InventoryMovementType`
+
+```prisma
+enum InventoryMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_IN
+  RETURN_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+  DAMAGE
+  RESERVATION_HOLD
+  RESERVATION_RELEASE
+}
+```
+
+### `StockReservationStage`
+
+```prisma
+enum StockReservationStage {
+  TEMP
+  CONFIRMED
+}
+```
+
+### `StockReservationStatus`
+
+```prisma
+enum StockReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+```
+
+### `InventoryBatchSourceType`
+
+```prisma
+enum InventoryBatchSourceType {
+  PURCHASE
+  RETURN
+  TRANSFER
+  OPENING_BALANCE
+}
+```
+
+### `LedgerAccountType`
+
+```prisma
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+```
+
+### `LedgerAccountSubtype`
+
+```prisma
+enum LedgerAccountSubtype {
+  CASH
+  BANK
+  INVENTORY
+  AR
+  AP
+  COMMISSION
+  TAX
+  SALES
+  PURCHASES
+  COGS
+  OTHER
+}
+```
+
+### `WholesaleInvoiceType`
+
+```prisma
+enum WholesaleInvoiceType {
+  SALE
+  PURCHASE
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+```
+
+### `WholesaleInvoiceStatus`
+
+```prisma
+enum WholesaleInvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  VOID
+}
+```
+
+### `PaymentSettlementStatus`
+
+```prisma
+enum PaymentSettlementStatus {
+  PENDING
+  SETTLED
+  DISPUTED
+  CANCELLED
+}
+```
+
+### `PaymentRefundStatus`
+
+```prisma
+enum PaymentRefundStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+```
+
+### `CreditNoteReasonCode`
+
+```prisma
+enum CreditNoteReasonCode {
+  RETURN
+  PARTIAL_REFUND
+  DISPUTE
+  OVERPAYMENT
+  OTHER
+}
+```
+
+### `ReturnOrderStatus`
+
+```prisma
+enum ReturnOrderStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PENDING_SHIPMENT
+  RECEIVED
+  INSPECTED
+  PARTIALLY_ACCEPTED
+  COMPLETED
+  CANCELLED
+}
+```
+
+### `ReturnItemCondition`
+
+```prisma
+enum ReturnItemCondition {
+  SELLABLE
+  DAMAGED
+  QUARANTINED
+  REJECTED_RETURN
+}
+```
+
+### `LedgerEntryType`
+
+```prisma
+enum LedgerEntryType {
+  GAVE // "أعطيته" — balance increases (they owe us)
+  TOOK // "أخذت منه" — balance decreases (we owe them)
+  SETTLEMENT // direct balance adjustment (no direction)
+}
+```
