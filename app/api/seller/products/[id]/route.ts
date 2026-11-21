@@ -226,6 +226,14 @@ export async function PATCH(
       );
     }
 
+    // M12 — فرض صلاحية MANAGE_PRODUCTS على التعديل (الموظفون فقط)
+    if (!auth.user.isSellerOwner && !auth.user.staffPermissions.includes("MANAGE_PRODUCTS")) {
+      return NextResponse.json(
+        { success: false, message: "لا تملك صلاحية إدارة المنتجات" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);
     if (!parsed.success) {
