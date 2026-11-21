@@ -174,10 +174,10 @@ export default function Footer() {
         <div className="mt-10 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-xs text-white/50 sm:flex-row sm:items-center">
           <p>© {currentYear} متجر نخبة · جميع الحقوق محفوظة</p>
           <div className="flex flex-wrap gap-5">
-            <Link href="#" className="transition hover:text-orange-400">
+            <Link href="/terms" className="transition hover:text-orange-400">
               الشروط والأحكام
             </Link>
-            <Link href="#" className="transition hover:text-orange-400">
+            <Link href="/privacy" className="transition hover:text-orange-400">
               سياسة الخصوصية
             </Link>
           </div>
