@@ -34,3 +34,25 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## الاختبارات
+
+لا إطار آلي حاليًا. خطة M13: `vitest` + اختبارات وحدة للخدمات الحرجة.
+
+## روابط
+
+- [DECISIONS.md](./DECISIONS.md) — قرارات معمارية
+- [docs/SCHEMA_FULL.md](./docs/SCHEMA_FULL.md) — مرجع schema (114/63 → 142/74، يُحدّث في M12.5)
+- [.env.example](./.env.example) — قالب env
+
+## المساهمة
+
+1. اقرأ `DECISIONS.md` قبل تغيير معماري
+2. `tsc=0` → `build=0` → `commit` → `push`
+3. Prefix واضح: `feat:`, `fix:`, `chore:`, `docs:`
+4. لا سكربتات خطرة بلا guard
+5. لا تلمس migrations قديمة
+
+## الترخيص
+
+خاص © متجر نخبة
