@@ -1,23 +1,46 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import crypto from "crypto";
 
-export async function GET(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const code = url.searchParams.get("code");
-    const origin = url.origin;
+const STATE_COOKIE = "g_oauth_state";
+const STATE_PATH = "/api/auth/google";
 
-    if (!code) {
-      return NextResponse.redirect(new URL("/login?error=google_auth_failed", origin));
-    }
+function statesMatch(a: string | null, b: string | undefined) {
+  if (!a || !b) return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const origin = url.origin;
+  const fail = (code = "google_auth_failed") =>
+    NextResponse.redirect(new URL(`/login?error=${code}`, origin));
+
+  try {
+    // 0. التحقق من state (حماية CSRF) — يُستعمل مرة واحدة
+    const cookieStore = await cookies();
+    const expectedState = cookieStore.get(STATE_COOKIE)?.value;
+    cookieStore.set(STATE_COOKIE, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0,
+      path: STATE_PATH,
+    });
+    if (!statesMatch(url.searchParams.get("state"), expectedState)) return fail();
+
+    const code = url.searchParams.get("code");
+    if (!code) return fail();
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri = `${origin}/api/auth/google/callback`;
 
-    // 1. تبادل الكود مع Google للحصول على Access Token
+    // 1. تبادل الكود مع Google
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -29,47 +52,40 @@ export async function GET(request: Request) {
         grant_type: "authorization_code",
       }),
     });
-
     const tokenData = await tokenRes.json();
     if (!tokenRes.ok) throw new Error("Token exchange failed");
 
-    // 2. جلب بيانات المستخدم من Google
+    // 2. بيانات المستخدم
     const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
     const googleUser = await userRes.json();
-    if (!googleUser.email) throw new Error("No email from Google");
+    if (!googleUser.sub || !googleUser.email) throw new Error("No email from Google");
+    if (googleUser.email_verified !== true && googleUser.email_verified !== "true") {
+      throw new Error("Google email not verified");
+    }
 
-    // 3. البحث عن المستخدم أو إنشائه
+    // 3. البحث عن المستخدم أو إنشاؤه
     let user = await prisma.user.findFirst({
       where: { OR: [{ googleId: googleUser.sub }, { email: googleUser.email }] },
     });
 
     if (user) {
-      // M12 — سياسة ربط Google بحساب موجود (ق-1ب)
+      // حساب مرتبط بحساب Google مختلف → رفض
+      if (user.googleId && user.googleId !== googleUser.sub) return fail();
+
       if (!user.googleId) {
         if (user.emailVerified && user.passwordHash) {
-          // حساب مُثبت بكلمة مرور — لا ربط تلقائي (منع اختطاف)
-          return NextResponse.redirect(
-            new URL("/login?error=google_link_requires_password", origin)
-          );
+          return fail("google_link_requires_password");
         }
-        // غير محقق → نربط ونمسح passwordHash
-        // حساب Google أصلي (بلا passwordHash) → نربط فقط
         const updateData: { googleId: string; emailVerified: boolean; passwordHash?: null } = {
           googleId: googleUser.sub,
           emailVerified: true,
         };
-        if (user.passwordHash) {
-          updateData.passwordHash = null;
-        }
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: updateData,
-        });
+        if (user.passwordHash) updateData.passwordHash = null;
+        user = await prisma.user.update({ where: { id: user.id }, data: updateData });
       }
     } else {
-      // إنشاء مستخدم جديد عبر Google
       const referralCode = crypto.randomBytes(4).toString("hex").toUpperCase();
       user = await prisma.user.create({
         data: {
@@ -83,14 +99,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // 4. إنشاء الجلسة وتسجيل الدخول
+    // 4. الجلسة
     await SessionService.create(user.id);
-
-    // 5. التوجيه للصفحة الرئيسية
     return NextResponse.redirect(new URL("/", origin));
   } catch (error) {
     console.error("Google Callback Error:", error);
-    const origin = new URL(request.url).origin;
-    return NextResponse.redirect(new URL("/login?error=google_auth_failed", origin));
+    return fail();
   }
 }

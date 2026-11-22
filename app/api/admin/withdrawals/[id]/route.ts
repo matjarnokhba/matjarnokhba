@@ -20,63 +20,65 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const withdrawalId = parseInt(id);
-    const body = await request.json();
-    const parsed = schema.safeParse(body);
-    
-    if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
+    const withdrawalId = Number.parseInt(id, 10);
+    if (!Number.isInteger(withdrawalId) || withdrawalId <= 0) {
+      return NextResponse.json({ success: false, message: "معرّف غير صحيح" }, { status: 400 });
+    }
 
+    const parsed = schema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
+    }
     const { status, adminNote } = parsed.data;
 
     await prisma.$transaction(async (tx) => {
+      // 1. claim ذري: ينجح طلب واحد فقط مهما تزامنت الطلبات
+      const claim = await tx.withdrawalRequest.updateMany({
+        where: { id: withdrawalId, status: "PENDING" },
+        data: { status, adminNote: adminNote || null, processedAt: new Date() },
+      });
+      if (claim.count !== 1) throw new Error("الطلب غير موجود أو تمت معالجته مسبقاً");
+
       const req = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalId },
-        include: { seller: true }
+        include: { seller: true },
       });
-
-      if (!req || req.status !== "PENDING") throw new Error("الطلب غير موجود أو تمت معالجته مسبقاً");
-
-      // 1. تحديث حالة الطلب
-      await tx.withdrawalRequest.update({
-        where: { id: withdrawalId },
-        data: { status, adminNote: adminNote || null, processedAt: new Date() }
-      });
+      if (!req) throw new Error("الطلب غير موجود");
 
       if (status === "REJECTED") {
-        // إذا تم الرفض، نرجع المبلغ لمحفظة التاجر
-        const seller = req.seller;
-        const beforeBal = Number(seller.walletBalance);
-        const afterBal = beforeBal + Number(req.amount);
-
-        await tx.seller.update({
-          where: { id: seller.id },
-          data: { walletBalance: { increment: req.amount } }
+        // إرجاع المبلغ لمحفظة التاجر
+        const updatedSeller = await tx.seller.update({
+          where: { id: req.seller.id },
+          data: { walletBalance: { increment: req.amount } },
+          select: { walletBalance: true },
         });
+        const afterBal = Number(updatedSeller.walletBalance);
+        const beforeBal = afterBal - Number(req.amount);
 
         await tx.walletTransaction.create({
           data: {
-            sellerId: seller.id,
+            sellerId: req.seller.id,
             type: WalletTransactionType.MANUAL_ADJUSTMENT,
             amount: req.amount,
             balanceBefore: beforeBal,
             balanceAfter: afterBal,
-            description: `إرجاع مبلغ السحب المرفوض #${req.id} - ${adminNote || ""}`
-          }
+            description: `إرجاع مبلغ السحب المرفوض #${req.id} - ${adminNote || ""}`,
+          },
         });
-      } else if (status === "PAID") {
-        // إذا تم الدفع، نخصم من محفظة المنصة (الأدمن)
+      } else {
+        // خصم من محفظة المنصة بشرط كفاية الرصيد (ذرياً)
         const platformWallet = await tx.wallet.findUnique({
-          where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: 1 } }
+          where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: 1 } },
         });
+        if (!platformWallet) throw new Error("محفظة المنصة غير موجودة");
 
-        if (!platformWallet || Number(platformWallet.balance) < Number(req.amount)) {
+        const debit = await tx.wallet.updateMany({
+          where: { id: platformWallet.id, balance: { gte: req.amount } },
+          data: { balance: { decrement: req.amount } },
+        });
+        if (debit.count !== 1) {
           throw new Error("رصيد محفظة المنصة غير كافٍ لدفع مستحقات التاجر.");
         }
-
-        await tx.wallet.update({
-          where: { id: platformWallet.id },
-          data: { balance: { decrement: req.amount } }
-        });
 
         await tx.walletTransactionUnified.create({
           data: {
@@ -84,7 +86,7 @@ export async function PATCH(
             amount: -Number(req.amount),
             type: "PAYOUT",
             description: `دفع مستحقات للتاجر: ${req.seller.storeName} (طلب سحب #${req.id})`,
-          }
+          },
         });
       }
     });

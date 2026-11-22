@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
 import { requireStaffPermission } from "@/lib/seller-guards";
 import { InventoryService } from "@/services/inventory.service";
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 const schema = z.object({
-  items: z.array(
-    z.object({
-      variantId: z.number(),
-      quantity: z.number().min(1),
-      unitPrice: z.number().min(0),
-    })
-  ).min(1),
+  items: z
+    .array(
+      z.object({
+        variantId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(10000),
+        // لا يُعتمد إلا كتخفيض من المالك (انظر أدناه)
+        unitPrice: z.number().min(0).optional(),
+      })
+    )
+    .min(1),
   customerName: z.string().trim().max(100).optional().nullable(),
   customerPhone: z.string().trim().max(20).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
@@ -23,20 +28,19 @@ export async function POST(request: Request) {
     const _sGuard = await requireStaffPermission("SELL_ON_POS");
     if (!_sGuard.ok) return _sGuard.response;
     const current = _sGuard.current;
-
     const sellerId = current.user.seller!.id;
-    
-    // ═══ التحقق من صلاحية الاشتراك ═══
+    const isOwner = !!current.user.isSellerOwner;
+
+    // ═══ صلاحية الاشتراك ═══
     const seller = await prisma.seller.findUnique({
       where: { id: sellerId },
-      select: { subscriptionStatus: true, subscriptionEndsAt: true }
+      select: { subscriptionStatus: true, subscriptionEndsAt: true },
     });
-
     if (!seller) {
       return NextResponse.json({ success: false, message: "التاجر غير موجود" }, { status: 404 });
     }
-
-    const isExpired = seller.subscriptionEndsAt && new Date(seller.subscriptionEndsAt) < new Date();
+    const isExpired =
+      seller.subscriptionEndsAt && new Date(seller.subscriptionEndsAt) < new Date();
     if (isExpired || seller.subscriptionStatus === "EXPIRED") {
       return NextResponse.json(
         { success: false, message: "اشتراك نظام البيع في المحل قد انتهى. يرجى التجديد من صفحة الاشتراك." },
@@ -44,44 +48,81 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
-    const parsed = schema.safeParse(body);
-
+    const parsed = schema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
     }
-
     const { items, customerName, customerPhone, note } = parsed.data;
 
-    const variantIds = items.map((i) => i.variantId);
-    const variants = await prisma.productVariant.findMany({
-      where: { id: { in: variantIds }, sellerId },
-      select: { id: true, price: true, storePrice: true },
-    });
-
-    if (variants.length !== variantIds.length) {
-      return NextResponse.json({ success: false, message: "بعض المنتجات غير موجودة أو لا تخصك" }, { status: 400 });
+    // دمج السطور المكررة + ترتيب ثابت (يمنع deadlock)
+    const merged = new Map<number, { variantId: number; quantity: number; unitPrice?: number }>();
+    for (const it of items) {
+      const prev = merged.get(it.variantId);
+      if (prev) {
+        prev.quantity += it.quantity;
+        if (prev.unitPrice !== it.unitPrice) prev.unitPrice = undefined;
+      } else {
+        merged.set(it.variantId, { ...it });
+      }
     }
+    const lines = [...merged.values()].sort((a, b) => a.variantId - b.variantId);
 
+    const variants = await prisma.productVariant.findMany({
+      where: {
+        id: { in: lines.map((l) => l.variantId) },
+        sellerId,
+        isActive: true,
+        product: { deletedAt: null },
+      },
+      select: {
+        id: true,
+        price: true,
+        storePrice: true,
+        inventory: { select: { quantity: true } },
+        product: { select: { name: true } },
+      },
+    });
+    if (variants.length !== lines.length) {
+      return NextResponse.json(
+        { success: false, message: "بعض المنتجات غير موجودة أو غير متاحة أو لا تخصك" },
+        { status: 400 }
+      );
+    }
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     let totalAmount = 0;
-    const saleItemsData = items.map((item) => {
-      const variant = variantMap.get(item.variantId)!;
-      const finalPrice = item.unitPrice > 0 ? item.unitPrice : (variant.storePrice ? Number(variant.storePrice) : Number(variant.price));
-      const lineTotal = finalPrice * item.quantity;
-      totalAmount += lineTotal;
+    const saleItemsData: { variantId: number; quantity: number; unitPrice: number; total: number }[] = [];
+    for (const line of lines) {
+      const v = variantMap.get(line.variantId)!;
 
-      return {
-        variantId: item.variantId,
-        quantity: item.quantity,
-        unitPrice: finalPrice,
+      if ((v.inventory?.quantity ?? 0) < line.quantity) {
+        return NextResponse.json(
+          { success: false, message: `الكمية غير متوفرة للمنتج "${v.product.name}"` },
+          { status: 400 }
+        );
+      }
+
+      // السعر من قاعدة البيانات دائماً
+      const listPrice = Number(v.storePrice ?? v.price);
+      let unitPrice = listPrice;
+      // تخفيض مسموح للمالك فقط
+      if (isOwner && line.unitPrice !== undefined && line.unitPrice > 0 && line.unitPrice < listPrice) {
+        unitPrice = line.unitPrice;
+      }
+
+      const lineTotal = round2(unitPrice * line.quantity);
+      totalAmount += lineTotal;
+      saleItemsData.push({
+        variantId: line.variantId,
+        quantity: line.quantity,
+        unitPrice,
         total: lineTotal,
-      };
-    });
+      });
+    }
+    totalAmount = round2(totalAmount);
 
     const receipt = await prisma.$transaction(async (tx) => {
-      const receiptNumber = `POS-${Date.now()}`;
+      const receiptNumber = `POS-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
       const sale = await tx.storeSale.create({
         data: {
@@ -91,16 +132,13 @@ export async function POST(request: Request) {
           customerName: customerName || null,
           customerPhone: customerPhone || null,
           note: note || null,
-          items: {
-            create: saleItemsData,
-          },
+          items: { create: saleItemsData },
         },
       });
 
-      for (const item of items) {
-        await InventoryService.saleDirect(tx, item.variantId, item.quantity, sale.id);
+      for (const line of lines) {
+        await InventoryService.saleDirect(tx, line.variantId, line.quantity, sale.id);
       }
-
       return sale;
     });
 
@@ -112,7 +150,6 @@ export async function POST(request: Request) {
         total: Number(receipt.totalAmount),
       },
     });
-
   } catch (error) {
     console.error("Store sale error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ أثناء الحفظ" }, { status: 500 });
