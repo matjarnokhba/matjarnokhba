@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { STAFF_PERMISSIONS, ALL_STAFF_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, hasStaffPermission, isValidStaffPermission } from "./staff-permissions";
 
 describe("STAFF_PERMISSIONS", () => {
-  it("has 17 permissions", () => expect(Object.keys(STAFF_PERMISSIONS).length).toBe(17));
+  it("has 18 permissions", () => expect(Object.keys(STAFF_PERMISSIONS).length).toBe(18));
   it("includes SELL_ON_POS", () => expect(STAFF_PERMISSIONS.SELL_ON_POS).toBe("SELL_ON_POS"));
   it("includes UPDATE_ORDER_STATUS", () => expect(STAFF_PERMISSIONS.UPDATE_ORDER_STATUS).toBe("UPDATE_ORDER_STATUS"));
-  it("ALL equals values", () => expect(ALL_STAFF_PERMISSIONS.length).toBe(17));
+  it("ALL equals values", () => expect(ALL_STAFF_PERMISSIONS.length).toBe(18));
   it("DEFAULT has 5 perms", () => expect(DEFAULT_STAFF_PERMISSIONS.length).toBe(5));
 });
 

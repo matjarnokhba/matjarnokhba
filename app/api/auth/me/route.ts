@@ -39,6 +39,7 @@ export async function GET() {
         role: current.user.role,
         emailVerified: current.user.emailVerified,
         walletBalance: Number((current.user as any).walletBalance || 0),
+        canGiveDiscount: !!current.user.isSellerOwner || current.user.staffPermissions.includes("GIVE_DISCOUNT"),
       },
     });
   } catch (error) {

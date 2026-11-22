@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     if (!_sGuard.ok) return _sGuard.response;
     const current = _sGuard.current;
     const sellerId = current.user.seller!.id;
-    const isOwner = !!current.user.isSellerOwner;
+    const canDiscount = !!current.user.isSellerOwner || current.user.staffPermissions.includes("GIVE_DISCOUNT");
 
     // ═══ صلاحية الاشتراك ═══
     const seller = await prisma.seller.findUnique({
@@ -105,8 +105,8 @@ export async function POST(request: Request) {
       // السعر من قاعدة البيانات دائماً
       const listPrice = Number(v.storePrice ?? v.price);
       let unitPrice = listPrice;
-      // تخفيض مسموح للمالك فقط
-      if (isOwner && line.unitPrice !== undefined && line.unitPrice > 0 && line.unitPrice < listPrice) {
+      // تخفيض مسموح للمالك أو لمن منحه المالك صلاحية GIVE_DISCOUNT
+      if (canDiscount && line.unitPrice !== undefined && line.unitPrice > 0 && line.unitPrice < listPrice) {
         unitPrice = line.unitPrice;
       }
 
