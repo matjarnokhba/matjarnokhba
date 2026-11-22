@@ -86,6 +86,14 @@ function ScannerContent() {
   // POS State
   const [products, setProducts] = useState<ScannedProduct[]>([]);
   const [lines, setLines] = useState<CartLine[]>([]);
+  // صلاحية تعديل السعر (خصم): يحددها السيرفر، والسيرفر يتحقق منها مرة أخرى عند البيع
+  const [canDiscount, setCanDiscount] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCanDiscount(!!d?.user?.canGiveDiscount))
+      .catch(() => setCanDiscount(false));
+  }, []);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [note, setNote] = useState("");
@@ -490,7 +498,7 @@ function ScannerContent() {
                     <Edit3 className="h-3 w-3 text-gray-400" />
                     <input 
                       type="number" 
-                      value={l.price} 
+                      value={l.price} disabled={!canDiscount} title={canDiscount ? undefined : "تعديل السعر غير مسموح لك"} 
                       onChange={(e) => updatePrice(l.variantId, Number(e.target.value))}
                       className="w-16 text-center text-sm font-bold outline-none"
                     />
