@@ -40,6 +40,9 @@ export async function GET() {
         emailVerified: current.user.emailVerified,
         walletBalance: Number((current.user as any).walletBalance || 0),
         canGiveDiscount: !!current.user.isSellerOwner || current.user.staffPermissions.includes("GIVE_DISCOUNT"),
+        canAddStock: !!current.user.isSellerOwner || current.user.staffPermissions.includes("ADD_STOCK"),
+        canApproveStock: !!current.user.isSellerOwner || current.user.staffPermissions.includes("APPROVE_STOCK"),
+        isSellerOwner: !!current.user.isSellerOwner,
       },
     });
   } catch (error) {

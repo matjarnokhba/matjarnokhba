@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { isSafeDocumentUrl } from "@/lib/url-safety";
 import { requireSeller, requireStaffPermission } from "@/lib/seller-guards";
 import { StockReceiptService, STOCK_SOURCE_TYPES } from "@/services/stock-receipt.service";
 import {
@@ -12,7 +13,7 @@ import {
   loadUserNames,
 } from "@/lib/stock-api";
 
-const httpsUrl = z.string().trim().url().max(1000).refine((u) => u.startsWith("https://"), "https only");
+const httpsUrl = z.string().trim().url().max(1000).refine((u) => isSafeDocumentUrl(u), "unsafe url");
 
 const schema = z.object({
   sourceType: z.enum(STOCK_SOURCE_TYPES),

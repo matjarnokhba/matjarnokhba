@@ -25,6 +25,7 @@ import {
   PackageX,
   Users,
   AlertTriangle,
+  PackagePlus,
   Settings,
 } from "lucide-react";
 
@@ -43,6 +44,7 @@ type NavItem = {
   exact: boolean;
   ownerOnly?: boolean;
   permission?: string;
+  permissions?: string[];
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -51,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false, permission: "VIEW_FULFILLMENTS" },
   { href: "/seller/scanner", label: "نقطة البيع (POS)", icon: ScanLine, exact: false, permission: "SELL_ON_POS" },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permission: "VIEW_PRODUCTS" },
+  { href: "/seller/stock-receipts", label: "طلبات المخزون", icon: PackagePlus, exact: false, permissions: ["ADD_STOCK", "APPROVE_STOCK", "VIEW_STOCK_HISTORY"] },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false, permission: "VIEW_RETURNS" },
@@ -101,6 +104,7 @@ export default function SellerSidebar({
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (isSellerOwner) return true;
     if (item.ownerOnly) return false;
+    if (item.permissions && !item.permissions.some((p) => staffPermissions.includes(p))) return false;
     if (item.permission && !staffPermissions.includes(item.permission)) {
       return false;
     }
