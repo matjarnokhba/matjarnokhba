@@ -142,7 +142,7 @@ export async function GET(request: Request) {
       total,
       page,
       limit,
-      receipts: rows.map((r) => receiptToDto(r, names)),
+      receipts: rows.map((r) => ({ ...receiptToDto(r, names), canEdit: r.status === "PENDING" && r.enteredByUserId === current.user.id, edited: r.status === "PENDING" && r.updatedAt.getTime() - r.createdAt.getTime() > 2000 })),
     });
   } catch (e) {
     console.error("List stock receipts error:", e);

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, AlertCircle, PackagePlus, FileText, Check, X } from "lucide-react";
 import { STOCK_SOURCE_LABELS } from "@/lib/stock-labels";
+import StockReceiptEditForm from "@/components/seller/StockReceiptEditForm";
 
 type Person = { id: number; name: string | null } | null;
 type Item = {
@@ -31,6 +32,8 @@ type Receipt = {
   decidedBy: Person;
   decidedAt: string | null;
   rejectionReason: string | null;
+  canEdit?: boolean;
+  edited?: boolean;
   createdAt: string;
   items: Item[];
 };
@@ -55,10 +58,23 @@ function ReceiptCard({ r, canApprove, onChanged }: { r: Receipt; canApprove: boo
   const [qty, setQty] = useState<Record<number, string>>(() => Object.fromEntries(r.items.map((i) => [i.id, String(i.quantity)])));
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [rejecting, setRejecting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const badge = STATUS_BADGE[r.status] ?? { label: r.status, cls: "bg-gray-100 text-gray-700" };
+  if (editing) {
+    return (
+      <StockReceiptEditForm
+        receipt={r}
+        onCancel={() => setEditing(false)}
+        onSaved={() => {
+          setEditing(false);
+          onChanged();
+        }}
+      />
+    );
+  }
 
   async function call(path: string, body: unknown) {
     setBusy(true);
@@ -105,7 +121,17 @@ function ReceiptCard({ r, canApprove, onChanged }: { r: Receipt; canApprove: boo
     <div className="rounded-xl bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-black text-gray-900">طلب #{r.id}</div>
-        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
+        <span className="flex items-center gap-2">
+          {r.edited && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">عُدّل بعد الإرسال</span>
+          )}
+          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
+          {r.canEdit && (
+            <button type="button" onClick={() => setEditing(true)} className="rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-gray-700 transition hover:border-[#ff5c00] hover:text-[#ff5c00]">
+              تعديل
+            </button>
+          )}
+        </span>
       </div>
 
       <div className="mb-3 grid gap-1 text-xs text-gray-600">
