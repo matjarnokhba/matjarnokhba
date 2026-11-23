@@ -11,13 +11,100 @@ type LockedInventory = {
   quantity: number;
   reservedQuantity: number;
   lowStockThreshold: number;
+  defectiveQuantity: number;
 };
 
 export const InventoryService = {
+  // ═══════ استلام مخزون معتمد من طلب إضافة (StockReceipt) ═══════
+  async receiveStock(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    opts: { receiptItemId: number; performedById: number; reason: string }
+  ) {
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    // Idempotency: كل بند في الطلب يُضاف مرة واحدة فقط
+    const already = await this.hasMovement(tx, "STOCK_RECEIPT", opts.receiptItemId, "STOCK_IN", inv.id);
+    if (already) return { inventoryId: inv.id, added: 0, idempotent: true };
+
+    const beforeQty = inv.quantity;
+    const afterQty = beforeQty + quantity;
+
+    await tx.inventory.update({ where: { id: inv.id }, data: { quantity: afterQty } });
+    await PoolService.syncInventoryToPool(tx, variantId, quantity);
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "STOCK_IN",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: opts.reason,
+        referenceType: "STOCK_RECEIPT",
+        referenceId: BigInt(opts.receiptItemId),
+        receiptItemId: opts.receiptItemId,
+        performedById: opts.performedById,
+      },
+    });
+
+    return { inventoryId: inv.id, added: quantity, idempotent: false };
+  },
+
+  // ═══════ مخزون العيوب: لا يدخل الكمية القابلة للبيع أبداً ═══════
+  async addDefective(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    opts: {
+      referenceType: "STORE_SALE_RETURN";
+      referenceId: number;
+      performedById: number;
+      reason: string;
+    }
+  ) {
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    const already = await this.hasMovement(tx, opts.referenceType, opts.referenceId, "RETURN", inv.id);
+    if (already) return { inventoryId: inv.id, added: 0, idempotent: true };
+
+    const beforeQty = inv.defectiveQuantity ?? 0;
+    const afterQty = beforeQty + quantity;
+
+    await tx.inventory.update({ where: { id: inv.id }, data: { defectiveQuantity: afterQty } });
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "RETURN",
+        stockBucket: "DEFECTIVE",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: opts.reason,
+        referenceType: opts.referenceType,
+        referenceId: BigInt(opts.referenceId),
+        performedById: opts.performedById,
+      },
+    });
+
+    return { inventoryId: inv.id, added: quantity, idempotent: false };
+  },
   // ═══════ قفل المخزون (SELECT ... FOR UPDATE) ═══════
   async lockInventory(tx: any, variantId: number): Promise<LockedInventory> {
     const rows: any[] = await tx.$queryRaw`
-      SELECT id, quantity, "reservedQuantity", "lowStockThreshold"
+      SELECT id, quantity, "reservedQuantity", "lowStockThreshold", "defectiveQuantity"
       FROM "Inventory"
       WHERE "variantId" = ${variantId}
       FOR UPDATE
@@ -105,7 +192,7 @@ export const InventoryService = {
     quantity: number,
     referenceId: number,
     reason: string = "إرجاع منتج",
-    referenceType: "ORDER" | "RETURN" = "RETURN"
+    referenceType: "ORDER" | "RETURN" | "STORE_SALE_RETURN" = "RETURN"
   ) {
     if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
 
@@ -262,6 +349,7 @@ export const InventoryService = {
         quantity: true,
         reservedQuantity: true,
         lowStockThreshold: true,
+        defectiveQuantity: true,
       },
     });
     if (!inv) return null;
@@ -271,6 +359,7 @@ export const InventoryService = {
       available: inv.quantity - inv.reservedQuantity,
       isLowStock: inv.quantity <= inv.lowStockThreshold,
       isOutOfStock: inv.quantity === 0,
+      defectiveQuantity: inv.defectiveQuantity,
     };
   },
 };
