@@ -31,7 +31,7 @@ export const RECEIPT_INCLUDE = {
         select: {
           id: true,
           sku: true,
-          product: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true, images: { orderBy: { order: "asc" as const }, take: 1, select: { url: true } } } },
           optionValues: {
             select: { optionValue: { select: { value: true, option: { select: { name: true } } } } },
           },
@@ -79,6 +79,7 @@ export function receiptToDto(r: any, names: Map<number, string>) {
         id: i.id as number,
         variantId: i.variantId ?? null,
         productName: i.variant?.product?.name ?? null,
+        productImage: i.variant?.product?.images?.[0]?.url ?? null,
         optionsLabel: opts.join(" / "),
         sku: i.variant?.sku ?? null,
         quantity: i.quantity as number,
