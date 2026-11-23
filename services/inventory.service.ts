@@ -15,6 +15,45 @@ type LockedInventory = {
 };
 
 export const InventoryService = {
+  // ═══════ إرجاع سلعة صالحة للبيع من بيع المحل (POS) ═══════
+  async returnFromStoreSale(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    opts: { returnItemId: number; performedById: number; reason: string }
+  ) {
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+
+    const inv = await this.lockInventory(tx, variantId);
+
+    const already = await this.hasMovement(tx, "STORE_SALE_RETURN", opts.returnItemId, "RETURN", inv.id);
+    if (already) return { inventoryId: inv.id, returned: 0, idempotent: true };
+
+    const beforeQty = inv.quantity;
+    const afterQty = beforeQty + quantity;
+
+    await tx.inventory.update({ where: { id: inv.id }, data: { quantity: afterQty } });
+    await PoolService.syncInventoryToPool(tx, variantId, quantity);
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "RETURN",
+        beforeQuantity: beforeQty,
+        afterQuantity: afterQty,
+        quantityChange: quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: opts.reason,
+        referenceType: "STORE_SALE_RETURN",
+        referenceId: BigInt(opts.returnItemId),
+        performedById: opts.performedById,
+      },
+    });
+
+    return { inventoryId: inv.id, returned: quantity, idempotent: false };
+  },
   // ═══════ استلام مخزون معتمد من طلب إضافة (StockReceipt) ═══════
   async receiveStock(
     tx: any,
