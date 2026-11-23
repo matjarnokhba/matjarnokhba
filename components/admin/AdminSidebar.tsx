@@ -29,6 +29,7 @@ import {
   Banknote,
   AlertTriangle,
   ShoppingBag,
+  ImagePlus,
 } from "lucide-react";
 
 type AdminSidebarProps = {
@@ -49,6 +50,7 @@ const NAV_ITEMS = [
   { href: "/admin/attribute-values", label: "قيم الخصائص", icon: Palette, exact: false },
   { href: "/admin/loyalty", label: "نظام الولاء", icon: Gift, exact: false },
   { href: "/admin/categories", label: "التصنيفات", icon: FolderTree, exact: false },
+  { href: "/admin/banners", label: "البانرات", icon: ImagePlus, exact: false },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart, exact: false },
   { href: "/admin/fulfillments", label: "متابعة التجهيز", icon: PackageCheck, exact: false },
   { href: "/admin/collections", label: "جمع المنتجات", icon: Truck, exact: false },

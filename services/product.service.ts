@@ -394,7 +394,7 @@ export const CategoryService = {
     const categories = await prisma.category.findMany({
       where: { isActive: true, deletedAt: null },
       orderBy: { order: "asc" },
-      select: { id: true, name: true, slug: true, order: true },
+      select: { id: true, name: true, slug: true, order: true, image: true },
     });
     return categories;
   },
