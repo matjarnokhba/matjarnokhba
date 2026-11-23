@@ -15,6 +15,10 @@ export const STAFF_PERMISSIONS = {
   USE_SCANNER: "USE_SCANNER",
   SELL_ON_POS: "SELL_ON_POS",
   GIVE_DISCOUNT: "GIVE_DISCOUNT",
+  ADD_STOCK: "ADD_STOCK",
+  APPROVE_STOCK: "APPROVE_STOCK",
+  VIEW_STOCK_HISTORY: "VIEW_STOCK_HISTORY",
+  RETURN_POS_SALE: "RETURN_POS_SALE",
   VIEW_QR: "VIEW_QR",
   VIEW_PERFORMANCE: "VIEW_PERFORMANCE",
 } as const;
@@ -53,6 +57,10 @@ export const PERMISSION_LABELS: Record<
   USE_SCANNER: { label: "استخدام الماسح", group: "أدوات" },
   SELL_ON_POS: { label: "البيع عبر نقطة البيع (POS)", group: "أدوات", sensitive: true },
   GIVE_DISCOUNT: { label: "منح خصم عند البيع (POS)", group: "أدوات", sensitive: true },
+  ADD_STOCK: { label: "إضافة مخزون (طلب بانتظار موافقة المالك)", group: "مخزون", sensitive: true },
+  APPROVE_STOCK: { label: "اعتماد أو رفض طلبات إضافة المخزون", group: "مخزون", sensitive: true },
+  VIEW_STOCK_HISTORY: { label: "عرض سجل حركات المخزون والتكاليف", group: "مخزون", sensitive: true },
+  RETURN_POS_SALE: { label: "إرجاع بيع المحل (POS)", group: "أدوات", sensitive: true },
   VIEW_QR: { label: "عرض QR", group: "أدوات" },
   VIEW_PERFORMANCE: { label: "عرض الأداء", group: "أداء" },
 };
