@@ -41,6 +41,7 @@ export async function GET() {
         walletBalance: Number((current.user as any).walletBalance || 0),
         canGiveDiscount: !!current.user.isSellerOwner || current.user.staffPermissions.includes("GIVE_DISCOUNT"),
         canAddStock: !!current.user.isSellerOwner || current.user.staffPermissions.includes("ADD_STOCK"),
+        canViewProducts: !!current.user.isSellerOwner || current.user.staffPermissions.includes("VIEW_PRODUCTS"),
         canApproveStock: !!current.user.isSellerOwner || current.user.staffPermissions.includes("APPROVE_STOCK"),
         isSellerOwner: !!current.user.isSellerOwner,
       },

@@ -52,7 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/notifications", label: "الإشعارات", icon: Bell, exact: false, permission: "VIEW_NOTIFICATIONS" },
   { href: "/seller/fulfillments", label: "تجهيزاتي", icon: Package, exact: false, permission: "VIEW_FULFILLMENTS" },
   { href: "/seller/scanner", label: "نقطة البيع (POS)", icon: ScanLine, exact: false, permission: "SELL_ON_POS" },
-  { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permission: "VIEW_PRODUCTS" },
+  { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permissions: ["VIEW_PRODUCTS", "ADD_STOCK"] },
   { href: "/seller/stock-receipts", label: "طلبات المخزون", icon: PackagePlus, exact: false, permissions: ["ADD_STOCK", "APPROVE_STOCK", "VIEW_STOCK_HISTORY"] },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },

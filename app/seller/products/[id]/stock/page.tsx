@@ -152,8 +152,8 @@ export default function AddStockPage() {
               : "لن تُحتسب الكمية ضمن المخزون القابل للبيع قبل أن يعتمدها صاحب المتجر."}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
-            <Link href={`/seller/products/${productId}`} className="rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white">
-              العودة للمنتج
+            <Link href="/seller/products" className="rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white">
+              العودة للمنتجات
             </Link>
             <Link href="/seller/stock-receipts" className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-bold text-gray-700">
               طلبات المخزون
@@ -167,11 +167,11 @@ export default function AddStockPage() {
   return (
     <div className="w-full max-w-full overflow-x-hidden px-3 pb-24 pt-16 sm:px-4 lg:px-8 lg:pt-8">
       <Link
-        href={`/seller/products/${productId}`}
+        href="/seller/products"
         className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-gray-500 transition hover:text-[#ff5c00]"
       >
         <ArrowRight className="h-3.5 w-3.5" />
-        رجوع إلى المنتج
+        رجوع إلى المنتجات
       </Link>
 
       <div className="mb-5 flex items-center gap-3">
