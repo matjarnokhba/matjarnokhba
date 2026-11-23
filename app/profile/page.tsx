@@ -98,7 +98,7 @@ export default function ProfilePage() {
           const loyaltyData = await loyaltyRes.json();
           if (loyaltyData.success) {
             setLoyaltyStats({
-              balance: loyaltyData.account?.balance || 0,
+              balance: Number(loyaltyData.balance) || 0,
               tier: loyaltyData.currentTier?.name || null,
             });
           }
