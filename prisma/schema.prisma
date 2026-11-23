@@ -4159,3 +4159,22 @@ model StoreSaleReturnItem {
   @@index([returnId])
   @@index([storeSaleItemId])
 }
+
+// بانرات الصفحة الرئيسية (يديرها الأدمن)
+model Banner {
+  id             Int       @id @default(autoincrement())
+  title          String?
+  subtitle       String?
+  buttonText     String?
+  linkUrl        String?
+  imageUrl       String
+  mobileImageUrl String?
+  order          Int       @default(0)
+  isActive       Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive, order])
+}
