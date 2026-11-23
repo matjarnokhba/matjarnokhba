@@ -194,6 +194,7 @@ export default function CategoryGrid({ categories }: CategoryGridProps) {
                     alt={category.name}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
                 </div>
 
