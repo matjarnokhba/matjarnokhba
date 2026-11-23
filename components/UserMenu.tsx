@@ -15,6 +15,7 @@ import {
   UserCheck,
   Truck,
   Store,
+  Mail,
 } from "lucide-react";
 
 type UserData = {
@@ -116,6 +117,8 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,6 +165,30 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
     }
   }
 
+  async function sendVerification() {
+    setSending(true);
+    setVerifyMsg(null);
+    try {
+      const res = await fetch("/api/auth/send-verification", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (data?.success && data.alreadyVerified) {
+        setUser((u) => (u ? { ...u, emailVerified: true } : u));
+        return;
+      }
+      if (data?.success) {
+        setVerifyMsg({
+          ok: true,
+          text: `أرسلنا الرابط إلى ${data.email}. افتح بريدك (وتفقد الرسائل غير المرغوبة).`,
+        });
+      } else {
+        setVerifyMsg({ ok: false, text: data?.message || "تعذر الإرسال، حاول لاحقاً" });
+      }
+    } catch {
+      setVerifyMsg({ ok: false, text: "فشل الاتصال بالخادم" });
+    } finally {
+      setSending(false);
+    }
+  }
   if (loading) {
     return (
       <div
@@ -254,6 +281,32 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
             )}
           </div>
 
+          {!user.emailVerified && (
+            <div className="border-b border-amber-100 bg-amber-50 px-3 py-2.5">
+              <div className="flex items-start gap-2">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-black text-amber-800">بريدك الإلكتروني غير مؤكد</div>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-amber-700">
+                    أرسل رابط التأكيد إلى بريدك، ثم افتح الرسالة واضغط «تأكيد البريد».
+                  </p>
+                  <button
+                    type="button"
+                    onClick={sendVerification}
+                    disabled={sending}
+                    className="mt-2 w-full rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-black text-white transition hover:bg-amber-600 disabled:opacity-60"
+                  >
+                    {sending ? "جارٍ الإرسال..." : "أرسل رابط التأكيد"}
+                  </button>
+                  {verifyMsg && (
+                    <p className={`mt-1.5 text-[10px] font-bold ${verifyMsg.ok ? "text-green-700" : "text-red-600"}`}>
+                      {verifyMsg.text}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="p-1">
             {dashboard && (
               <Link
