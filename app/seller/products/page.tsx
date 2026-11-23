@@ -34,6 +34,20 @@ const STATUS_INFO: Record<string, { label: string; color: string; bg: string }> 
   INACTIVE: { label: "معطّل", color: "text-red-700", bg: "bg-red-100" },
 };
 
+// زر غير متاح لهذا المستخدم: رمادي باهت جداً وغير قابل للضغط
+function DisabledAction({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <span
+      aria-disabled="true"
+      aria-label={label}
+      title="لا تملك صلاحية هذا الإجراء"
+      className="flex h-7 flex-1 cursor-not-allowed items-center justify-center rounded text-gray-300 opacity-40 sm:h-8"
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function SellerProductsPage() {
   const [products, setProducts] = useState<SellerProduct[]>([]);
   const [sellerSlug, setSellerSlug] = useState<string>("");
@@ -42,6 +56,8 @@ export default function SellerProductsPage() {
   const [offerModalProductId, setOfferModalProductId] = useState<number | null>(null);
   const [wholesaleSummary, setWholesaleSummary] = useState<Record<number, WholesaleSummary>>({});
   const [canAddStock, setCanAddStock] = useState(false);
+  const [canView, setCanView] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
 
   async function loadProducts() {
     setLoading(true);
@@ -78,9 +94,14 @@ export default function SellerProductsPage() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setCanAddStock(!!d?.user?.canAddStock))
+      .then((d) => {
+        setCanAddStock(!!d?.user?.canAddStock);
+        setCanView(!!d?.user?.canViewProducts);
+        setIsOwner(!!d?.user?.isSellerOwner);
+      })
       .catch(() => setCanAddStock(false));
   }, []);
+
   useEffect(() => {
     loadProducts();
   }, []);
@@ -94,14 +115,22 @@ export default function SellerProductsPage() {
             {loading ? "جاري التحميل..." : `${products.length} منتج`}
           </p>
         </div>
-        <Link
-          href="/seller/products/new"
-          className="inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
-        >
-          <Plus className="h-4 w-4" />
-          إضافة منتج
-        </Link>
+        {canView && (
+          <Link
+            href="/seller/products/new"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
+          >
+            <Plus className="h-4 w-4" />
+            إضافة منتج
+          </Link>
+        )}
       </div>
+
+      {!canView && canAddStock && (
+        <div className="mb-4 rounded-lg border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-purple-800">
+          صلاحيتك هنا هي إضافة المخزون: اضغط أيقونة المخزون (+) على المنتج الذي وصلتك كميات منه.
+        </div>
+      )}
 
       {loading && (
         <div className="flex justify-center py-20">
@@ -125,11 +154,15 @@ export default function SellerProductsPage() {
             <Package className="h-10 w-10 text-[#ff5c00]" />
           </div>
           <h2 className="mt-5 text-lg font-black">لا توجد منتجات</h2>
-          <p className="mt-2 text-sm text-gray-500">ابدأ بإضافة أول منتج لمتجرك</p>
-          <Link href="/seller/products/new" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#ff5c00] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]">
-            <Plus className="h-4 w-4" />
-            إضافة منتج جديد
-          </Link>
+          {canView && (
+            <>
+              <p className="mt-2 text-sm text-gray-500">ابدأ بإضافة أول منتج لمتجرك</p>
+              <Link href="/seller/products/new" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#ff5c00] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#e64a00]">
+                <Plus className="h-4 w-4" />
+                إضافة منتج جديد
+              </Link>
+            </>
+          )}
         </div>
       )}
 
@@ -187,34 +220,50 @@ export default function SellerProductsPage() {
 
                   {/* Actions */}
                   <div className="mt-1.5 flex items-center gap-0.5 border-t border-gray-100 pt-1.5 sm:gap-1">
-                    <Link href={productHref} target="_blank" className="flex h-7 flex-1 items-center justify-center rounded text-gray-500 transition hover:bg-gray-50 sm:h-8" aria-label="عرض">
-                      <Eye className="h-3.5 w-3.5" />
-                    </Link>
-                    <Link href={`/seller/products/${product.id}/ticket`} className="flex h-7 flex-1 items-center justify-center rounded text-[#ff5c00] transition hover:bg-[#fff4ed] sm:h-8" aria-label="بطاقة المنتج (QR)">
-                      <QrCode className="h-3.5 w-3.5" />
-                    </Link>
-                    <Link href={`/seller/products/${product.id}`} className="flex h-7 flex-1 items-center justify-center rounded text-blue-600 transition hover:bg-blue-50 sm:h-8" aria-label="تعديل">
-                      <Edit3 className="h-3.5 w-3.5" />
-                    </Link>
+                    {canView ? (
+                      <Link href={productHref} target="_blank" className="flex h-7 flex-1 items-center justify-center rounded text-gray-500 transition hover:bg-gray-50 sm:h-8" aria-label="عرض">
+                        <Eye className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <DisabledAction label="عرض"><Eye className="h-3.5 w-3.5" /></DisabledAction>
+                    )}
+                    {canView ? (
+                      <Link href={`/seller/products/${product.id}/ticket`} className="flex h-7 flex-1 items-center justify-center rounded text-[#ff5c00] transition hover:bg-[#fff4ed] sm:h-8" aria-label="بطاقة المنتج (QR)">
+                        <QrCode className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <DisabledAction label="بطاقة المنتج (QR)"><QrCode className="h-3.5 w-3.5" /></DisabledAction>
+                    )}
+                    {canView ? (
+                      <Link href={`/seller/products/${product.id}`} className="flex h-7 flex-1 items-center justify-center rounded text-blue-600 transition hover:bg-blue-50 sm:h-8" aria-label="تعديل">
+                        <Edit3 className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <DisabledAction label="تعديل"><Edit3 className="h-3.5 w-3.5" /></DisabledAction>
+                    )}
                     {canAddStock && (
                       <Link href={`/seller/products/${product.id}/stock`} className="flex h-7 flex-1 items-center justify-center rounded text-purple-600 transition hover:bg-purple-50 sm:h-8" aria-label="إضافة مخزون" title="إضافة مخزون">
                         <PackagePlus className="h-3.5 w-3.5" />
                       </Link>
                     )}
-                    <button
-                      onClick={() => {
-                        if (ws?.offerId) {
-                          window.location.href = `/wholesale/offers/${ws.offerId}`;
-                        } else {
-                          setOfferModalProductId(product.id);
-                        }
-                      }}
-                      className="flex h-7 flex-1 items-center justify-center rounded text-emerald-600 transition hover:bg-emerald-50 sm:h-8"
-                      aria-label="اعرض بالجملة"
-                      title={ws?.offerId ? "عرض بالجملة موجود — اضغط للتفاصيل" : "اعرض بالجملة"}
-                    >
-                      <ShoppingBag className="h-3.5 w-3.5" />
-                    </button>
+                    {isOwner ? (
+                      <button
+                        onClick={() => {
+                          if (ws?.offerId) {
+                            window.location.href = `/wholesale/offers/${ws.offerId}`;
+                          } else {
+                            setOfferModalProductId(product.id);
+                          }
+                        }}
+                        className="flex h-7 flex-1 items-center justify-center rounded text-emerald-600 transition hover:bg-emerald-50 sm:h-8"
+                        aria-label="اعرض بالجملة"
+                        title={ws?.offerId ? "عرض بالجملة موجود — اضغط للتفاصيل" : "اعرض بالجملة"}
+                      >
+                        <ShoppingBag className="h-3.5 w-3.5" />
+                      </button>
+                    ) : (
+                      <DisabledAction label="اعرض بالجملة"><ShoppingBag className="h-3.5 w-3.5" /></DisabledAction>
+                    )}
                   </div>
                 </div>
               </div>
@@ -222,7 +271,7 @@ export default function SellerProductsPage() {
           })}
         </div>
       )}
-          {offerModalProductId !== null && (
+      {offerModalProductId !== null && (
         <OfferToWholesaleModal
           productId={offerModalProductId}
           onClose={() => setOfferModalProductId(null)}
@@ -231,6 +280,7 @@ export default function SellerProductsPage() {
             window.location.href = `/wholesale/offers/${offerId}`;
           }}
         />
-      )}    </div>
+      )}
+    </div>
   );
 }
