@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus, Package, Loader2, Edit3, Eye, AlertTriangle, QrCode,
-  Tag, Settings2, ShoppingBag,
+  Tag, Settings2, ShoppingBag, PackagePlus,
 } from "lucide-react";
 import OfferToWholesaleModal from "@/components/seller/OfferToWholesaleModal";
 
@@ -41,6 +41,7 @@ export default function SellerProductsPage() {
   const [error, setError] = useState("");
   const [offerModalProductId, setOfferModalProductId] = useState<number | null>(null);
   const [wholesaleSummary, setWholesaleSummary] = useState<Record<number, WholesaleSummary>>({});
+  const [canAddStock, setCanAddStock] = useState(false);
 
   async function loadProducts() {
     setLoading(true);
@@ -74,6 +75,12 @@ export default function SellerProductsPage() {
     }
   }
 
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCanAddStock(!!d?.user?.canAddStock))
+      .catch(() => setCanAddStock(false));
+  }, []);
   useEffect(() => {
     loadProducts();
   }, []);
@@ -189,6 +196,11 @@ export default function SellerProductsPage() {
                     <Link href={`/seller/products/${product.id}`} className="flex h-7 flex-1 items-center justify-center rounded text-blue-600 transition hover:bg-blue-50 sm:h-8" aria-label="تعديل">
                       <Edit3 className="h-3.5 w-3.5" />
                     </Link>
+                    {canAddStock && (
+                      <Link href={`/seller/products/${product.id}/stock`} className="flex h-7 flex-1 items-center justify-center rounded text-purple-600 transition hover:bg-purple-50 sm:h-8" aria-label="إضافة مخزون" title="إضافة مخزون">
+                        <PackagePlus className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
                     <button
                       onClick={() => {
                         if (ws?.offerId) {
