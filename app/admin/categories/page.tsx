@@ -11,6 +11,7 @@ import {
   FolderTree,
   AlertTriangle,
 } from "lucide-react";
+import ImageUploader from "@/components/admin/ImageUploader";
 
 type Category = {
   id: number;
@@ -30,6 +31,7 @@ type FormState = {
   slug: string;
   order: number;
   isActive: boolean;
+  image: string;
 };
 
 export default function AdminCategoriesPage() {
@@ -43,6 +45,7 @@ export default function AdminCategoriesPage() {
     slug: "",
     order: 0,
     isActive: true,
+    image: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +72,7 @@ export default function AdminCategoriesPage() {
   function openCreate() {
     setFormMode("create");
     setEditingId(null);
-    setForm({ name: "", slug: "", order: 0, isActive: true });
+    setForm({ name: "", slug: "", order: 0, isActive: true, image: "" });
     setError("");
     setShowForm(true);
   }
@@ -82,6 +85,7 @@ export default function AdminCategoriesPage() {
       slug: cat.slug,
       order: cat.order,
       isActive: cat.isActive,
+      image: cat.image || "",
     });
     setError("");
     setShowForm(true);
@@ -117,6 +121,7 @@ export default function AdminCategoriesPage() {
           slug: form.slug.trim(),
           order: form.order,
           isActive: form.isActive,
+          image: form.image || null,
         }),
       });
       const data = await res.json();
@@ -257,7 +262,7 @@ export default function AdminCategoriesPage() {
       {/* ═══ Modal النموذج ═══ */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-black">
                 {formMode === "create" ? "تصنيف جديد" : "تعديل التصنيف"}
@@ -313,6 +318,20 @@ export default function AdminCategoriesPage() {
                   }
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-gray-700">
+                  صورة التصنيف (تظهر في الصفحة الرئيسية)
+                </label>
+                <ImageUploader
+                  value={form.image ? [form.image] : []}
+                  onChange={(urls) => setForm({ ...form, image: urls[0] || "" })}
+                  maxImages={1}
+                />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  يفضّل صورة مربعة واضحة. إن تُركت فارغة تُستعمل الصورة الافتراضية.
+                </p>
               </div>
 
               <label className="flex cursor-pointer items-center gap-2">

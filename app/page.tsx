@@ -10,7 +10,7 @@ import Navigation from "@/components/layout/Navigation";
 import Footer from "@/components/layout/Footer";
 import BottomNav from "@/components/layout/BottomNav";
 
-import Hero from "@/components/home/Hero";
+import HeroBanners from "@/components/home/HeroBanners";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import PromoBanners from "@/components/home/PromoBanners";
 import FlashDeals from "@/components/home/FlashDeals";
@@ -204,7 +204,7 @@ export default function Home() {
         onCategoryChange={handleCategoryChange}
       />
 
-      <Hero />
+      <HeroBanners />
 
       <CategoryGrid
         categories={uiCategories}

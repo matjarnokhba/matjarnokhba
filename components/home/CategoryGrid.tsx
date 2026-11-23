@@ -90,7 +90,7 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
     bgColor: "bg-green-600",
   },
   tools: {
-    image: "https://images.unsplash.com/photo-1581147036324-c1c88bb6aec3?w=150&q=80",
+    image: "",
     icon: Wrench,
     bgColor: "bg-slate-600",
   },
@@ -134,10 +134,10 @@ function CategoryImage({ src, alt, Icon, bgColor }: { src: string; alt: string; 
     if (el && el.complete && el.naturalWidth === 0) setFailed(true);
   }, []);
 
-  if (failed) {
+  if (failed || !src) {
     return (
       <div className={`flex h-full w-full items-center justify-center text-white ${bgColor}`}>
-        <Icon className="h-6 w-6" />
+        <span className="text-lg font-black">{alt.charAt(0)}</span>
       </div>
     );
   }
@@ -156,6 +156,26 @@ function CategoryImage({ src, alt, Icon, bgColor }: { src: string; alt: string; 
 }
 export default function CategoryGrid({ categories }: CategoryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // صور التصنيفات التي رفعها الأدمن (تُفضَّل على الصور الافتراضية)
+  const [dbImages, setDbImages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!alive || !d.success || !Array.isArray(d.categories)) return;
+        const m: Record<string, string> = {};
+        for (const c of d.categories) {
+          if (c.slug && c.image) m[c.slug] = c.image;
+        }
+        setDbImages(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function scroll(direction: "left" | "right") {
     if (!scrollRef.current) return;
@@ -211,6 +231,7 @@ export default function CategoryGrid({ categories }: CategoryGridProps) {
         >
           {categories.map((category) => {
             const meta = CATEGORY_META[category.slug] || DEFAULT_META;
+            const imgSrc = dbImages[category.slug] || meta.image;
 
             return (
               <Link
@@ -221,7 +242,7 @@ export default function CategoryGrid({ categories }: CategoryGridProps) {
               >
                 {/* الدائرة بالصورة */}
                 <div className="relative h-14 w-14 overflow-hidden rounded-full bg-gray-100 shadow-sm ring-2 ring-gray-100 transition-all duration-300 group-hover:ring-[#ff5c00] group-hover:shadow-md sm:h-16 sm:w-16">
-                  <CategoryImage src={meta.image} alt={category.name} Icon={meta.icon} bgColor={meta.bgColor} />
+                  <CategoryImage key={imgSrc} src={imgSrc} alt={category.name} Icon={meta.icon} bgColor={meta.bgColor} />
                 </div>
 
                 {/* الاسم */}
