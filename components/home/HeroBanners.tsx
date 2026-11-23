@@ -5,6 +5,10 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Hero from "@/components/home/Hero";
 
+// ⏱ مدة بقاء كل شريحة (بالميلي ثانية) ومدة الانزلاق
+const AUTOPLAY_MS = 2000;
+const SLIDE_MS = 600;
+
 type BannerItem = {
   id: number;
   title: string | null;
@@ -15,37 +19,31 @@ type BannerItem = {
   mobileImageUrl: string | null;
 };
 
+// banner = null تعني اللافتة الأصلية (Hero)
+type SlideData = { key: string; banner: BannerItem | null };
+
 export default function HeroBanners() {
-  const [banners, setBanners] = useState<BannerItem[] | null>(null);
+  const [banners, setBanners] = useState<BannerItem[]>([]);
 
   useEffect(() => {
     let alive = true;
     fetch("/api/banners")
       .then((r) => r.json())
       .then((d) => {
-        if (alive) setBanners(d.success && Array.isArray(d.banners) ? d.banners : []);
+        if (alive && d.success && Array.isArray(d.banners)) setBanners(d.banners);
       })
-      .catch(() => {
-        if (alive) setBanners([]);
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  if (banners === null) {
-    return (
-      <div className="mx-auto max-w-7xl px-3 py-3 sm:px-4">
-        <div className="aspect-[16/9] w-full animate-pulse rounded-2xl bg-gray-200 sm:aspect-[16/5]" />
-      </div>
-    );
-  }
-  // لا بانرات فعّالة: يبقى التصميم القديم كما هو
+  // لا بانرات: اللافتة الأصلية وحدها كما كانت
   if (banners.length === 0) return <Hero />;
-  return <BannerSlider banners={banners} />;
+  return <Slider banners={banners} />;
 }
 
-function Slide({ b, priority }: { b: BannerItem; priority: boolean }) {
+function BannerSlide({ b, priority }: { b: BannerItem; priority: boolean }) {
   const hasText = !!(b.title || b.subtitle || b.buttonText);
   const inner = (
     <div className="relative h-full w-full">
@@ -61,22 +59,25 @@ function Slide({ b, priority }: { b: BannerItem; priority: boolean }) {
       </picture>
       {hasText && (
         <>
-          <div className="absolute inset-0 bg-gradient-to-l from-black/60 via-black/20 to-transparent" />
-          <div
-            dir="rtl"
-            className="absolute inset-y-0 right-0 flex w-full max-w-[75%] flex-col justify-center gap-1.5 p-4 text-white sm:max-w-[55%] sm:gap-3 sm:p-10"
-          >
-            {b.title && (
-              <h2 className="text-base font-black leading-tight sm:text-3xl">{b.title}</h2>
-            )}
-            {b.subtitle && (
-              <p className="line-clamp-2 text-[11px] text-white/90 sm:text-base">{b.subtitle}</p>
-            )}
-            {b.buttonText && (
-              <span className="mt-1 w-fit rounded-full bg-[#ff5c00] px-4 py-1.5 text-[11px] font-bold text-white shadow sm:px-6 sm:py-2 sm:text-sm">
-                {b.buttonText}
-              </span>
-            )}
+          <div className="absolute inset-0 bg-gradient-to-l from-black/65 via-black/25 to-transparent" />
+          <div className="absolute inset-0 z-10">
+            <div dir="rtl" className="mx-auto flex h-full max-w-7xl items-center px-4 text-white sm:px-6">
+              <div className="flex max-w-[72%] flex-col items-start gap-1 sm:max-w-[50%] sm:gap-2">
+                {b.title && (
+                  <h2 className="text-sm font-black leading-tight sm:text-2xl lg:text-4xl">{b.title}</h2>
+                )}
+                {b.subtitle && (
+                  <p className="line-clamp-1 text-[10px] text-white/90 sm:line-clamp-2 sm:text-base">
+                    {b.subtitle}
+                  </p>
+                )}
+                {b.buttonText && (
+                  <span className="mt-0.5 rounded-full bg-[#ff5c00] px-3 py-1 text-[10px] font-bold text-white shadow sm:px-6 sm:py-2 sm:text-sm">
+                    {b.buttonText}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -104,9 +105,31 @@ function Slide({ b, priority }: { b: BannerItem; priority: boolean }) {
   );
 }
 
-function BannerSlider({ banners }: { banners: BannerItem[] }) {
-  const n = banners.length;
-  const [index, setIndex] = useState(0);
+function SlideView({ data, priority }: { data: SlideData; priority: boolean }) {
+  if (data.banner) return <BannerSlide b={data.banner} priority={priority} />;
+  // اللافتة الأصلية: تملأ ارتفاع الشريط وتتوسط عمودياً دون تعديل ملفها
+  return (
+    <div className="h-full w-full [&>section]:flex [&>section]:h-full [&>section]:items-center [&>section>div:last-child]:w-full">
+      <Hero />
+    </div>
+  );
+}
+
+function Slider({ banners }: { banners: BannerItem[] }) {
+  const slides: SlideData[] = [
+    { key: "hero", banner: null },
+    ...banners.map((b) => ({ key: `b${b.id}`, banner: b })),
+  ];
+  const n = slides.length; // دائماً >= 2
+  // نسخة من الأخيرة في البداية ونسخة من الأولى في النهاية لدوران سلس بلا قفزة
+  const ext: SlideData[] = [
+    { ...slides[n - 1], key: "clone-last" },
+    ...slides,
+    { ...slides[0], key: "clone-first" },
+  ];
+
+  const [pos, setPos] = useState(1);
+  const [anim, setAnim] = useState(true);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -116,19 +139,47 @@ function BannerSlider({ banners }: { banners: BannerItem[] }) {
   const captured = useRef(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  const go = useCallback((i: number) => setIndex(((i % n) + n) % n), [n]);
+  const go = useCallback(
+    (delta: number) => setPos((p) => Math.max(0, Math.min(n + 1, p + delta))),
+    [n]
+  );
 
-  // تحريك تلقائي كل 5 ثوانٍ (يتوقف عند اللمس/المرور أو عند تفضيل تقليل الحركة)
+  // عند الوصول إلى النسخة: قفز فوري (بلا حركة) إلى الشريحة الحقيقية المطابقة
   useEffect(() => {
-    if (n < 2 || paused || dragging) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(() => setIndex((i) => (i + 1) % n), 5000);
-    return () => clearInterval(t);
-  }, [n, paused, dragging, index]);
+    if (pos >= 1 && pos <= n) return;
+    const t = setTimeout(() => {
+      setAnim(false);
+      setPos(pos > n ? 1 : n);
+    }, SLIDE_MS + 40);
+    return () => clearTimeout(t);
+  }, [pos, n]);
+
+  // إعادة تفعيل الحركة بعد القفزة
+  useEffect(() => {
+    if (anim) return;
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => setAnim(true));
+    });
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [anim]);
+
+  // تبديل تلقائي
+  useEffect(() => {
+    if (paused || dragging || !anim) return;
+    const t = setTimeout(() => setPos((p) => Math.min(p + 1, n + 1)), AUTOPLAY_MS);
+    return () => clearTimeout(t);
+  }, [pos, paused, dragging, anim, n]);
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (n < 2) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (pos < 1 || pos > n) {
+      setAnim(false);
+      setPos(pos > n ? 1 : n);
+    }
     startX.current = e.clientX;
     moved.current = 0;
     captured.current = false;
@@ -152,22 +203,23 @@ function BannerSlider({ banners }: { banners: BannerItem[] }) {
   function endDrag() {
     if (!dragging) return;
     const th = Math.min(80, width.current * 0.2);
-    if (dragX < -th) go(index + 1);
-    else if (dragX > th) go(index - 1);
+    if (dragX < -th) go(1);
+    else if (dragX > th) go(-1);
     setDragX(0);
     setDragging(false);
   }
 
+  const active = (((pos - 1) % n) + n) % n;
+
   return (
     <section
-      className="mx-auto max-w-7xl px-3 py-3 sm:px-4"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
       <div
         ref={boxRef}
         dir="ltr"
-        className="relative aspect-[16/9] w-full select-none overflow-hidden rounded-2xl bg-gray-100 shadow-sm sm:aspect-[16/5]"
+        className="relative aspect-[25/9] min-h-[128px] w-full select-none overflow-hidden bg-[#0a1a35] sm:aspect-[4/1] sm:max-h-[300px] sm:min-h-[152px] lg:aspect-[5/1] lg:min-h-[170px]"
         style={{ touchAction: "pan-y" }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -183,54 +235,51 @@ function BannerSlider({ banners }: { banners: BannerItem[] }) {
         <div
           className="flex h-full w-full"
           style={{
-            transform: `translateX(calc(${-index * 100}% + ${dragX}px))`,
-            transition: dragging ? "none" : "transform 500ms ease",
+            transform: `translateX(calc(${-pos * 100}% + ${dragX}px))`,
+            transition: dragging || !anim ? "none" : `transform ${SLIDE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+            willChange: "transform",
           }}
         >
-          {banners.map((b, i) => (
-            <div key={b.id} className="h-full w-full shrink-0" aria-hidden={i !== index}>
-              <Slide b={b} priority={i === 0} />
+          {ext.map((s, i) => (
+            <div key={s.key} className="h-full w-full shrink-0">
+              <SlideView data={s} priority={i <= 2} />
             </div>
           ))}
         </div>
 
-        {n > 1 && (
-          <>
-            <button
-              type="button"
-              aria-label="السابق"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => go(index - 1)}
-              className="absolute left-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow transition hover:bg-white sm:flex"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              aria-label="التالي"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => go(index + 1)}
-              className="absolute right-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow transition hover:bg-white sm:flex"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
+        <button
+          type="button"
+          aria-label="السابق"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => go(-1)}
+          className="absolute left-3 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow transition hover:bg-white sm:flex"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label="التالي"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => go(1)}
+          className="absolute right-3 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow transition hover:bg-white sm:flex"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
 
-            <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
-              {banners.map((b, i) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  aria-label={`بانر ${i + 1}`}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => go(i)}
-                  className={`h-1.5 rounded-full transition-all ${
-                    i === index ? "w-5 bg-[#ff5c00]" : "w-1.5 bg-white/70"
-                  }`}
-                />
-              ))}
-            </div>
-          </>
-        )}
+        <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 sm:bottom-2">
+          {slides.map((s, i) => (
+            <button
+              key={s.key}
+              type="button"
+              aria-label={`شريحة ${i + 1}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setPos(i + 1)}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i === active ? "w-5 bg-[#ff5c00]" : "w-1.5 bg-white/60"
+              }`}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
