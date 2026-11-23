@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Loader2, AlertCircle, History as HistoryIcon, PackagePlus } from "lucide-react";
+import { ArrowRight, Loader2, AlertCircle, History as HistoryIcon } from "lucide-react";
 import ProductWizard from "@/components/seller/product-wizard/ProductWizard";
 import type { ExistingVariant } from "@/components/seller/product-wizard/types";
 
@@ -39,13 +39,6 @@ export default function EditSellerProductPage() {
   const [data, setData] = useState<ProductData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [canAddStock, setCanAddStock] = useState(false);
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setCanAddStock(!!d?.user?.canAddStock))
-      .catch(() => setCanAddStock(false));
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -110,15 +103,6 @@ export default function EditSellerProductPage() {
         <div>
           <h1 className="text-2xl font-black text-gray-900">تعديل المنتج</h1>
           <p className="mt-1 text-sm text-gray-500">{data.name}</p>
-          {canAddStock && (
-            <Link
-              href={`/seller/products/${productId}/stock`}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#ff5c00] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#e64a00]"
-            >
-              <PackagePlus className="h-3.5 w-3.5" />
-              إضافة مخزون
-            </Link>
-          )}
         </div>
         <Link
           href={`/seller/products/${productId}/history`}

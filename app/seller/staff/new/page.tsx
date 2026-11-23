@@ -133,7 +133,7 @@ export default function NewStaffPage() {
               الصلاحيات * ({perms.length} محددة)
             </label>
             <div className="space-y-3">
-              {GROUP_ORDER.map((group) => {
+              {[...GROUP_ORDER, ...Array.from(new Set(ALL_STAFF_PERMISSIONS.map((k) => PERMISSION_LABELS[k].group))).filter((g) => !(GROUP_ORDER as readonly string[]).includes(g))].map((group) => {
                 const groupPerms = ALL_STAFF_PERMISSIONS.filter(
                   (k) => PERMISSION_LABELS[k].group === group
                 );
