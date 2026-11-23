@@ -933,6 +933,7 @@ model OrderItem {
   fulfillmentItems FulfillmentItem[]
 
   returnItems ReturnItem[]
+  flashLine FlashSaleOrderLine?
 
   @@index([orderId])
   @@index([productId])
@@ -4211,6 +4212,53 @@ model FlashSaleItem {
   sale    FlashSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  // ═══ موافقة وتكلفة العرض ═══
+  source         FlashItemSource @default(ADMIN)
+  status         FlashItemStatus @default(APPROVED)
+  sellerSharePct Decimal         @default(0) @db.Decimal(5, 2)
+  respondedAt    DateTime?
+  respondedById  Int?
+  responseNote   String?
+  version        Int             @default(1)
+  orderLines     FlashSaleOrderLine[]
+
+  @@index([saleId, status])
   @@unique([saleId, productId])
   @@index([productId])
+}
+
+// حالة سطر العرض المحدود
+enum FlashItemSource {
+  ADMIN
+  SELLER
+}
+
+enum FlashItemStatus {
+  PENDING_SELLER
+  PENDING_ADMIN
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+// سجل مالي: كل بند طلب بيع بسعر عرض محدود (للتسوية مع التاجر)
+model FlashSaleOrderLine {
+  id              Int       @id @default(autoincrement())
+  orderItemId     Int       @unique
+  flashSaleItemId Int
+  sellerId        Int
+  quantity        Int
+  listUnitPrice   Decimal   @db.Decimal(10, 2)
+  dealUnitPrice   Decimal   @db.Decimal(10, 2)
+  sellerSharePct  Decimal   @db.Decimal(5, 2)
+  platformSubsidy Decimal   @db.Decimal(10, 2)
+  settledAt       DateTime?
+  reversedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  orderItem     OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  flashSaleItem FlashSaleItem @relation(fields: [flashSaleItemId], references: [id], onDelete: Restrict)
+
+  @@index([flashSaleItemId])
+  @@index([sellerId, settledAt])
 }
