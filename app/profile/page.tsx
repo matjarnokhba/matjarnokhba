@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import EmailVerificationCard from "@/components/EmailVerificationCard";
 import {
   Loader2,
   User,
@@ -235,18 +236,7 @@ export default function ProfilePage() {
       {/* ═══════ Sections ═══════ */}
       <div className="mx-auto mt-6 max-w-3xl space-y-4 px-4">
         
-        {/* تنبيه البريد الإلكتروني غير المؤكد */}
-        {!user.emailVerified && (
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 shadow-sm">
-            <span className="text-xl">⚠️</span>
-            <div>
-              <div className="text-sm font-bold">بريدك الإلكتروني غير مؤكد</div>
-              <div className="mt-1 text-xs">
-                يرجى تأكيد بريدك الإلكتروني لتتمكن من استعادة كلمة المرور واستلام الإشعارات الهامة.
-              </div>
-            </div>
-          </div>
-        )}
+        <EmailVerificationCard email={user.email} verified={!!user.emailVerified} />
 
         {/* ═══ التسوق ═══ */}
         <Section title="التسوق 🛒">
