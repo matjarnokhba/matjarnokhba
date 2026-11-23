@@ -692,6 +692,7 @@ model Product {
   favorites Favorite[]
 
   orderItems OrderItem[]
+  flashSaleItems FlashSaleItem[]
 
   @@unique([sellerId, slug])
   @@index([slug])
@@ -4177,4 +4178,39 @@ model Banner {
   updatedAt      DateTime  @updatedAt
 
   @@index([isActive, order])
+}
+
+// حملات العروض المحدودة (يديرها الأدمن)
+model FlashSale {
+  id            Int             @id @default(autoincrement())
+  title         String          @default("عروض محدودة")
+  subtitle      String?
+  startsAt      DateTime
+  endsAt        DateTime
+  isActive      Boolean         @default(true)
+  showCountdown Boolean         @default(true)
+  showProgress  Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  items         FlashSaleItem[]
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+// منتج داخل حملة: dealPrice فارغ = سعر المنتج الحالي
+model FlashSaleItem {
+  id            Int      @id @default(autoincrement())
+  saleId        Int
+  productId     Int
+  dealPrice     Decimal? @db.Decimal(10, 2)
+  quantityLimit Int?
+  soldCount     Int      @default(0)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  sale    FlashSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([saleId, productId])
+  @@index([productId])
 }
