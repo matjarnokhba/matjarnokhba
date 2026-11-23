@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ReferenceType" ADD VALUE IF NOT EXISTS 'STORE_SALE';

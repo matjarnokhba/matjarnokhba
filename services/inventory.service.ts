@@ -51,14 +51,15 @@ export const InventoryService = {
     tx: any,
     variantId: number,
     quantity: number,
-    orderId: number
+    orderId: number,
+    referenceType: "ORDER" | "STORE_SALE" = "ORDER"
   ) {
     if (quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
 
     const inv = await this.lockInventory(tx, variantId);
 
     // ═══ Idempotency: هل سبق البيع لنفس الطلب؟ ═══
-    const already = await this.hasMovement(tx, "ORDER", orderId, "SALE", inv.id);
+    const already = await this.hasMovement(tx, referenceType, orderId, "SALE", inv.id);
     if (already) {
       return { inventoryId: inv.id, sold: 0, idempotent: true };
     }
@@ -89,7 +90,7 @@ export const InventoryService = {
         afterReserved: inv.reservedQuantity,
         reservedChange: 0,
         reason: "بيع مباشر (دفع عند الاستلام)",
-        referenceType: "ORDER",
+        referenceType,
         referenceId: BigInt(orderId),
       },
     });
