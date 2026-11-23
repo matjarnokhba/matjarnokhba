@@ -137,7 +137,7 @@ export async function POST(request: Request) {
       });
 
       for (const line of lines) {
-        await InventoryService.saleDirect(tx, line.variantId, line.quantity, sale.id);
+        await InventoryService.saleDirect(tx, line.variantId, line.quantity, sale.id, "STORE_SALE");
       }
       return sale;
     });
