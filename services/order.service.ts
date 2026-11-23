@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { FlashDealService, applyDealPrice } from "@/services/flash-deal.service";
 import { CouponService } from "@/services/coupon.service";
 import { InventoryService } from "@/services/inventory.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
@@ -191,10 +192,42 @@ export const OrderService = {
       }
     }
 
+    // ═══ 3.0 العروض المحدودة الفعّالة (السعر يُحسب في الخادم فقط) ═══
+    const dealMap = await FlashDealService.getActiveDeals(
+      prisma,
+      Array.from(new Set(variants.map((v) => v.product.id)))
+    );
+    const dealUsage = new Map<
+      number,
+      { itemId: number; qty: number; name: string; remaining: number | null }
+    >();
+    for (const item of data.items) {
+      const v = variantMap.get(item.variantId)!;
+      const deal = dealMap.get(v.product.id);
+      if (!deal) continue;
+      const cur = dealUsage.get(deal.productId) ?? {
+        itemId: deal.itemId,
+        qty: 0,
+        name: v.product.name,
+        remaining: deal.remaining,
+      };
+      cur.qty += item.quantity;
+      dealUsage.set(deal.productId, cur);
+    }
+    for (const u of dealUsage.values()) {
+      if (u.remaining !== null && u.qty > u.remaining) {
+        throw new Error(
+          `الكمية المتبقية في العرض للمنتج "${u.name}" هي ${u.remaining} فقط`
+        );
+      }
+    }
     // ═══ 3. حساب السعر من DB ═══
     const itemsWithPrice = data.items.map((item) => {
       const variant = variantMap.get(item.variantId)!;
-      const unitPrice = Number(variant.price);
+      const deal = dealMap.get(variant.product.id);
+      const unitPrice = deal
+        ? applyDealPrice(Number(variant.price), deal.basePrice, deal.dealPrice)
+        : Number(variant.price);
       const lineTotal = unitPrice * item.quantity;
 
       const sortedOV = [...variant.optionValues].sort(
@@ -338,6 +371,15 @@ export const OrderService = {
           );
         }
 
+        // ═══ 🔥 حجز كمية العرض المحدود (ذرّي داخل نفس المعاملة) ═══
+        for (const u of dealUsage.values()) {
+          const reserved = await FlashDealService.reserve(tx, u.itemId, u.qty);
+          if (!reserved) {
+            throw new Error(
+              `نفدت كمية العرض للمنتج "${u.name}"، حدّث السلة وحاول مجدداً`
+            );
+          }
+        }
         for (const [sellerId, items] of itemsBySeller) {
           const sellerSubtotal = items.reduce((s, i) => s + i.lineTotal, 0);
           const sellerShipping = shippingBySeller.get(sellerId) ?? 0;

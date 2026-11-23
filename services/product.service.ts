@@ -161,7 +161,7 @@ type FullDetail = {
   videoUrl?: string | null;
 };
 
-export const ProductService = {
+const ProductServiceBase = {
   async getAll() {
     const products = await prisma.product.findMany({
       where: publicProductWhere,
@@ -389,6 +389,13 @@ export const ProductService = {
   },
 };
 
+import { withFlashDeals } from "./flash-deal.service";
+
+// تطبيق أسعار العروض المحدودة الفعّالة على نتائج المتجر العام فقط
+export const ProductService: typeof ProductServiceBase = withFlashDeals(
+  ProductServiceBase,
+  prisma
+);
 export const CategoryService = {
   async getAll() {
     const categories = await prisma.category.findMany({

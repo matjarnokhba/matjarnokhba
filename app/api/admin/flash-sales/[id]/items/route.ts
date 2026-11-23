@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, parseJson, ok, fail, handleError } from "@/lib/api/handler";
 import { itemsSchema } from "@/lib/flash-sale-schema";
 
-// يستبدل قائمة منتجات الحملة بالقائمة المرسلة (بنفس الترتيب)
+// يستبدل منتجات الحملة بالقائمة المرسلة (بنفس الترتيب) مع سعر العرض والكمية
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -16,7 +16,9 @@ export async function PUT(
 
     const parsed = await parseJson(request, itemsSchema);
     if (!parsed.ok) return parsed.response;
-    const ids = Array.from(new Set(parsed.data.productIds));
+    const rows = parsed.data.items;
+    const ids = rows.map((r) => r.productId);
+    if (new Set(ids).size !== ids.length) return fail("منتج مكرر في القائمة", 400);
 
     const sale = await prisma.flashSale.findUnique({ where: { id }, select: { id: true } });
     if (!sale) return fail("الحملة غير موجودة", 404);
@@ -29,13 +31,32 @@ export async function PUT(
       if (found.length !== ids.length) return fail("بعض المنتجات غير موجودة", 400);
     }
 
+    // سعر العرض يجب أن يكون أقل من سعر المنتج الحالي
+    const priced = rows.filter((r) => r.dealPrice != null);
+    if (priced.length > 0) {
+      const defaults = await prisma.productVariant.findMany({
+        where: { productId: { in: priced.map((r) => r.productId) }, isDefault: true },
+        select: { productId: true, price: true },
+      });
+      const base = new Map(defaults.map((v) => [v.productId, Number(v.price)]));
+      for (const r of priced) {
+        const b = base.get(r.productId);
+        if (!b) return fail(`المنتج #${r.productId} بلا سعر افتراضي`, 400);
+        if ((r.dealPrice as number) >= b) {
+          return fail(`سعر العرض للمنتج #${r.productId} يجب أن يكون أقل من سعره الحالي (${b})`, 400);
+        }
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.flashSaleItem.deleteMany({ where: { saleId: id, productId: { notIn: ids } } });
-      for (let i = 0; i < ids.length; i++) {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const data = { order: i, dealPrice: r.dealPrice ?? null, quantityLimit: r.quantityLimit ?? null };
         await tx.flashSaleItem.upsert({
-          where: { saleId_productId: { saleId: id, productId: ids[i] } },
-          update: { order: i },
-          create: { saleId: id, productId: ids[i], order: i },
+          where: { saleId_productId: { saleId: id, productId: r.productId } },
+          update: data,
+          create: { saleId: id, productId: r.productId, ...data },
         });
       }
     });

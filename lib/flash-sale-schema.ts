@@ -16,7 +16,21 @@ export const saleCreateSchema = saleBase;
 export const saleUpdateSchema = saleBase.partial();
 
 export const itemsSchema = z.object({
-  productIds: z.array(z.number().int().positive()).max(24, "الحد الأقصى 24 منتجاً"),
+  items: z
+    .array(
+      z.object({
+        productId: z.number().int().positive(),
+        dealPrice: z.number().positive("سعر العرض يجب أن يكون أكبر من صفر").max(10000000).nullable().optional(),
+        quantityLimit: z
+          .number()
+          .int("الكمية يجب أن تكون رقماً صحيحاً")
+          .min(1, "الكمية يجب أن تكون 1 على الأقل")
+          .max(1000000)
+          .nullable()
+          .optional(),
+      })
+    )
+    .max(24, "الحد الأقصى 24 منتجاً"),
 });
 
 type SaleInput = z.infer<typeof saleUpdateSchema>;

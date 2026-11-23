@@ -25,7 +25,7 @@ type Sale = {
   isActive: boolean;
   showCountdown: boolean;
   showProgress: boolean;
-  items: { id: number; productId: number; order: number }[];
+  items: { id: number; productId: number; order: number; dealPrice: number | null; quantityLimit: number | null; soldCount: number }[];
 };
 
 type Prod = { id: number; name: string; price: number; oldPrice?: number; images: string[] };
@@ -84,6 +84,7 @@ export default function AdminFlashSalesPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [q, setQ] = useState("");
   const [itemsError, setItemsError] = useState("");
+  const [extra, setExtra] = useState<Record<number, { price: string; limit: string; sold: number }>>({});
 
   const load = useCallback(async () => {
     try {
@@ -168,6 +169,7 @@ export default function AdminFlashSalesPage() {
       const created: Sale = { ...r.data.sale, items: [] };
       setItemsFor(created);
       setSelected([]);
+      setExtra({});
       setQ("");
       setItemsError("");
     }
@@ -196,6 +198,14 @@ export default function AdminFlashSalesPage() {
   function openItems(s: Sale) {
     setItemsFor(s);
     setSelected([...s.items].sort((a, b) => a.order - b.order).map((i) => i.productId));
+    setExtra(
+      Object.fromEntries(
+        s.items.map((i) => [
+          i.productId,
+          { price: i.dealPrice ? String(i.dealPrice) : "", limit: i.quantityLimit ? String(i.quantityLimit) : "", sold: i.soldCount },
+        ])
+      )
+    );
     setQ("");
     setItemsError("");
   }
@@ -212,7 +222,26 @@ export default function AdminFlashSalesPage() {
     if (!itemsFor) return;
     setSaving(true);
     setItemsError("");
-    const r = await call(`/api/admin/flash-sales/${itemsFor.id}/items`, "PUT", { productIds: selected });
+    const items = selected.map((pid) => {
+      const e = extra[pid];
+      const price = e?.price?.trim();
+      const limit = e?.limit?.trim();
+      return {
+        productId: pid,
+        dealPrice: price ? Number(price) : null,
+        quantityLimit: limit ? Number(limit) : null,
+      };
+    });
+    const invalid = items.some(
+      (i) =>
+        (i.dealPrice !== null && !(i.dealPrice > 0)) ||
+        (i.quantityLimit !== null && !(Number.isInteger(i.quantityLimit) && i.quantityLimit >= 1))
+    );
+    if (invalid) {
+      setSaving(false);
+      return setItemsError("تحقق من سعر العرض والكمية (أرقام موجبة، والكمية عدد صحيح)");
+    }
+    const r = await call(`/api/admin/flash-sales/${itemsFor.id}/items`, "PUT", { items });
     setSaving(false);
     if (!r.ok) return setItemsError(r.data.message || "فشل الحفظ");
     setItemsFor(null);
@@ -490,7 +519,7 @@ export default function AdminFlashSalesPage() {
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               <div>
                 <div className="mb-2 text-xs font-bold text-gray-700">
-                  المنتجات المختارة ({selected.length}/24) — بترتيب ظهورها
+                  المنتجات المختارة ({selected.length}/24) — اترك «سعر العرض» فارغاً لإبقاء السعر الحالي
                 </div>
                 {selected.length === 0 ? (
                   <p className="rounded-lg bg-gray-50 p-3 text-center text-xs text-gray-500">لم تختر أي منتج بعد.</p>
@@ -512,6 +541,35 @@ export default function AdminFlashSalesPage() {
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-xs font-bold">{p?.name || `منتج #${id} (غير ظاهر في المتجر)`}</div>
                             {p && <div className="text-[10px] text-gray-500">{p.price} د.م</div>}
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputMode="decimal"
+                                placeholder="سعر العرض"
+                                value={extra[id]?.price ?? ""}
+                                onChange={(e) =>
+                                  setExtra({ ...extra, [id]: { price: e.target.value, limit: extra[id]?.limit ?? "", sold: extra[id]?.sold ?? 0 } })
+                                }
+                                className="w-24 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
+                              />
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                inputMode="numeric"
+                                placeholder="الكمية"
+                                value={extra[id]?.limit ?? ""}
+                                onChange={(e) =>
+                                  setExtra({ ...extra, [id]: { price: extra[id]?.price ?? "", limit: e.target.value, sold: extra[id]?.sold ?? 0 } })
+                                }
+                                className="w-20 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
+                              />
+                              {(extra[id]?.sold ?? 0) > 0 && (
+                                <span className="text-[10px] text-gray-500">مباع: {extra[id]?.sold}</span>
+                              )}
+                            </div>
                           </div>
                           <button
                             type="button"

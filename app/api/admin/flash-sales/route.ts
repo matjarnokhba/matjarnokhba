@@ -6,12 +6,29 @@ export async function GET() {
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;
-    const sales = await prisma.flashSale.findMany({
+    const rows = await prisma.flashSale.findMany({
       orderBy: [{ endsAt: "desc" }, { id: "desc" }],
       include: {
-        items: { orderBy: { order: "asc" }, select: { id: true, productId: true, order: true } },
+        items: {
+          orderBy: { order: "asc" },
+          select: {
+            id: true,
+            productId: true,
+            order: true,
+            dealPrice: true,
+            quantityLimit: true,
+            soldCount: true,
+          },
+        },
       },
     });
+    const sales = rows.map((s) => ({
+      ...s,
+      items: s.items.map((i) => ({
+        ...i,
+        dealPrice: i.dealPrice === null ? null : Number(i.dealPrice),
+      })),
+    }));
     return ok({ sales });
   } catch (err) {
     return handleError(err, "admin-flash-get");
