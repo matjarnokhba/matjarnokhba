@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import EmailVerificationCard from "@/components/EmailVerificationCard";
 import {
   Loader2,
   User,
@@ -236,7 +235,19 @@ export default function ProfilePage() {
       {/* ═══════ Sections ═══════ */}
       <div className="mx-auto mt-6 max-w-3xl space-y-4 px-4">
         
-        <EmailVerificationCard email={user.email} verified={!!user.emailVerified} />
+        {!user.emailVerified && (
+          <Link
+            href="/profile/edit"
+            className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 shadow-sm transition hover:bg-amber-100"
+          >
+            <span className="text-xl">⚠️</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold">بريدك الإلكتروني غير مؤكد</div>
+              <div className="mt-0.5 text-xs">اضغط هنا للتأكيد من «معلوماتي الشخصية».</div>
+            </div>
+            <ChevronLeft className="h-4 w-4 shrink-0" />
+          </Link>
+        )}
 
         {/* ═══ التسوق ═══ */}
         <Section title="التسوق 🛒">
