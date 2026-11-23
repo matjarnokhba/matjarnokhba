@@ -73,6 +73,19 @@ function clean(v: string | null | undefined, max = 500): string | null {
   return t ? t.slice(0, max) : null;
 }
 
+export type UpdateReceiptInput = {
+  receiptId: number;
+  sellerId: number;
+  actorUserId: number;
+  sourceType?: StockSourceType;
+  sourceName?: string | null;
+  sourcePhone?: string | null;
+  sourceNote?: string | null;
+  totalCost?: number | null;
+  invoiceUrl?: string | null;
+  invoiceName?: string | null;
+  items?: { itemId: number; quantity: number; unitCost?: number | null }[];
+};
 export const StockReceiptService = {
   // ═══════ إنشاء طلب إضافة مخزون ═══════
   async createReceipt(tx: any, input: CreateReceiptInput) {
@@ -217,6 +230,15 @@ export const StockReceiptService = {
       data: { status: "APPROVED", decidedByUserId: input.decidedByUserId, decidedAt: new Date() },
     });
     if (claimed.count !== 1) fail("CONFLICT", "تم البت في هذا الطلب مسبقاً");
+    // إعادة قراءة البنود بعد المطالبة: أي تعديل من الموظف أثناء الاعتماد يُبطل العملية (تتراجع المعاملة)
+    const after = await tx.stockReceipt.findFirst({
+      where: { id: input.receiptId, sellerId: input.sellerId },
+      include: { items: true },
+    });
+    const sig = (arr: any[]) => arr.map((i) => `${i.id}:${i.variantId}:${i.quantity}`).sort().join("|");
+    if (!after || sig(after.items) !== sig(items)) {
+      fail("CONFLICT", "عُدّل الطلب أثناء الاعتماد، راجعه وأعد المحاولة");
+    }
 
     for (const it of items) {
       const a = adj.get(it.id);
@@ -236,6 +258,97 @@ export const StockReceiptService = {
       }
     }
     return { receiptId: receipt.id as number, status: "APPROVED" as const, added: accepted };
+  },
+
+  // ═══════ تعديل طلب بانتظار الموافقة (صاحب الإدخال فقط، قبل بتّ التاجر) ═══════
+  async updatePendingReceipt(tx: any, input: UpdateReceiptInput) {
+    const receipt = await tx.stockReceipt.findFirst({
+      where: { id: input.receiptId, sellerId: input.sellerId },
+      include: { items: true },
+    });
+    if (!receipt) fail("NOT_FOUND", "طلب الإضافة غير موجود");
+    if (receipt.enteredByUserId !== input.actorUserId) {
+      fail("CONFLICT", "يمكنك تعديل الطلبات التي أدخلتها أنت فقط");
+    }
+    if (receipt.status !== "PENDING") fail("CONFLICT", "تم البت في هذا الطلب ولم يعد التعديل ممكناً");
+
+    const data: Record<string, unknown> = {};
+    const setIf = (key: string, next: unknown, cur: unknown) => {
+      if ((next ?? null) !== (cur ?? null)) data[key] = next ?? null;
+    };
+
+    if (input.sourceType !== undefined) {
+      if (!STOCK_SOURCE_TYPES.includes(input.sourceType)) fail("VALIDATION", "مصدر المخزون غير صالح");
+      if (input.sourceType !== receipt.sourceType && receipt.externalRefType !== null) {
+        fail("VALIDATION", "لا يمكن تغيير مصدر طلب مرتبط بعملية تحويل");
+      }
+      setIf("sourceType", input.sourceType, receipt.sourceType);
+    }
+    if (input.sourceName !== undefined) setIf("sourceName", clean(input.sourceName, 200), receipt.sourceName);
+    if (input.sourcePhone !== undefined) setIf("sourcePhone", clean(input.sourcePhone, 40), receipt.sourcePhone);
+    if (input.sourceNote !== undefined) setIf("sourceNote", clean(input.sourceNote, 1000), receipt.sourceNote);
+    if (input.invoiceUrl !== undefined) setIf("invoiceUrl", clean(input.invoiceUrl, 1000), receipt.invoiceUrl);
+    if (input.invoiceName !== undefined) setIf("invoiceName", clean(input.invoiceName, 200), receipt.invoiceName);
+    if (input.totalCost !== undefined) {
+      const c = input.totalCost;
+      if (c !== null && (!Number.isFinite(c) || c < 0)) fail("VALIDATION", "التكلفة الإجمالية غير صالحة");
+      setIf(
+        "totalCost",
+        c === null ? null : Number(c.toFixed(2)),
+        receipt.totalCost == null ? null : Number(receipt.totalCost)
+      );
+    }
+
+    const finalType = "sourceType" in data ? data.sourceType : receipt.sourceType;
+    const finalName = "sourceName" in data ? data.sourceName : receipt.sourceName;
+    const finalNote = "sourceNote" in data ? data.sourceNote : receipt.sourceNote;
+    if (finalType === "OTHER" && !finalName && !finalNote) fail("VALIDATION", "اكتب تفاصيل المصدر");
+
+    const itemUpdates: { id: number; data: { quantity: number; unitCost: number | null } }[] = [];
+    const seen = new Set<number>();
+    const finalQty = new Map<number, number>(receipt.items.map((i: any) => [i.id, i.quantity]));
+    for (const u of input.items ?? []) {
+      const item = receipt.items.find((i: any) => i.id === u.itemId);
+      if (!item) fail("VALIDATION", "بند التعديل لا يتبع هذا الطلب");
+      if (seen.has(u.itemId)) fail("VALIDATION", "بند مكرر في التعديل");
+      seen.add(u.itemId);
+      if (!Number.isInteger(u.quantity) || u.quantity < 0 || u.quantity > MAX_QTY) {
+        fail("VALIDATION", "الكمية يجب أن تكون عدداً صحيحاً");
+      }
+      const curCost = item.unitCost == null ? null : Number(item.unitCost);
+      let nextCost = curCost;
+      if (u.unitCost !== undefined) {
+        if (u.unitCost !== null && (!Number.isFinite(u.unitCost) || u.unitCost < 0)) {
+          fail("VALIDATION", "تكلفة الوحدة غير صالحة");
+        }
+        nextCost = u.unitCost === null ? null : Number(u.unitCost.toFixed(2));
+      }
+      finalQty.set(u.itemId, u.quantity);
+      if (u.quantity !== item.quantity || nextCost !== curCost) {
+        itemUpdates.push({ id: u.itemId, data: { quantity: u.quantity, unitCost: nextCost } });
+      }
+    }
+    let total = 0;
+    for (const q of finalQty.values()) total += q;
+    if (total <= 0) fail("VALIDATION", "يجب أن تبقى كمية واحدة على الأقل في الطلب");
+    if (Object.keys(data).length === 0 && itemUpdates.length === 0) fail("VALIDATION", "لا توجد تغييرات للحفظ");
+
+    // مطالبة ذرّية: تفشل إن بتّ التاجر في الطلب في هذه الأثناء
+    const claimed = await tx.stockReceipt.updateMany({
+      where: {
+        id: input.receiptId,
+        sellerId: input.sellerId,
+        status: "PENDING",
+        enteredByUserId: input.actorUserId,
+      },
+      data: { ...data, updatedAt: new Date() },
+    });
+    if (claimed.count !== 1) fail("CONFLICT", "تم البت في هذا الطلب ولم يعد التعديل ممكناً");
+
+    for (const u of itemUpdates) {
+      await tx.stockReceiptItem.update({ where: { id: u.id }, data: u.data });
+    }
+    return { receiptId: input.receiptId, status: "PENDING" as const };
   },
 
   // ═══════ رفض الطلب (لا أثر على المخزون، ويبقى السجل) ═══════

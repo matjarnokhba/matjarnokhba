@@ -30,7 +30,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!row) return NextResponse.json({ success: false, message: "الطلب غير موجود" }, { status: 404 });
 
     const names = await loadUserNames(prisma, receiptUserIds([row]));
-    return NextResponse.json({ success: true, receipt: receiptToDto(row, names) });
+    return NextResponse.json({ success: true, receipt: { ...receiptToDto(row, names), canEdit: row.status === "PENDING" && row.enteredByUserId === current.user.id, edited: row.status === "PENDING" && row.updatedAt.getTime() - row.createdAt.getTime() > 2000 } });
   } catch (e) {
     console.error("Get stock receipt error:", e);
     return NextResponse.json({ success: false, message: "حدث خطأ غير متوقع" }, { status: 500 });
