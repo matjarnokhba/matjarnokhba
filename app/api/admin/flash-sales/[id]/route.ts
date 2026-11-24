@@ -48,6 +48,8 @@ export async function DELETE(
     if (!id) return fail("معرف غير صحيح", 400);
     const existing = await prisma.flashSale.findUnique({ where: { id }, select: { id: true } });
     if (!existing) return fail("الحملة غير موجودة", 404);
+    const used = await prisma.flashSaleOrderLine.count({ where: { flashSaleItem: { saleId: id } } });
+    if (used > 0) return fail("لا يمكن حذف حملة لها مبيعات. أوقفها أو أنهِها بدل الحذف", 400);
     await prisma.flashSale.delete({ where: { id } });
     return ok({});
   } catch (err) {
