@@ -16,6 +16,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approve"),
     reasonType: z.enum(["DEFECTIVE", "WRONG_ITEM", "MISSING_ITEM", "LOST", "CHANGED_MIND"]).optional(),
+    shippingFee: z.number().min(0).max(1000).optional(),
   }),
   z.object({
     action: z.literal("reject"),
@@ -99,7 +100,7 @@ export async function PATCH(
     }
 
     if (parsed.data.action === "approve") {
-      await ReturnService.approve(returnId, auth.user.id, parsed.data.reasonType);
+      await ReturnService.approve(returnId, auth.user.id, parsed.data.reasonType, parsed.data.shippingFee);
       return NextResponse.json({ success: true, message: "تمت الموافقة" });
     }
 
