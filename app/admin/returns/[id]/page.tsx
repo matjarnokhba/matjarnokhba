@@ -20,6 +20,11 @@ type ReturnRequest = {
   status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
   reason: string;
   adminNote: string | null;
+  reasonType?: string;
+  evidenceUrls?: string[];
+  decisionDueAt?: string | null;
+  shippingPayer?: string | null;
+  shippingFee?: string;
   requestedAt: string;
   processedAt: string | null;
   user: { id: number; name: string; email: string };
@@ -60,6 +65,21 @@ const STATUS_INFO: Record<
 
 const CURRENCY = "د.م";
 
+const REASON_LABEL: Record<string, string> = {
+  CHANGED_MIND: "غيّر رأيه",
+  DEFECTIVE: "مكسور أو معيب",
+  WRONG_ITEM: "منتج خاطئ",
+  MISSING_ITEM: "ينقصه جزء أو قطعة",
+  LOST: "ضاع جزء من الطلب",
+};
+const PAYER_LABEL: Record<string, string> = {
+  CUSTOMER: "العميل",
+  SELLER: "التاجر",
+  PLATFORM: "المنصة",
+  NONE: "لا أحد",
+};
+const isVideoUrl = (u: string) => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u);
+
 export default function AdminReturnDetailPage() {
   const params = useParams();
   const returnId = params.id as string;
@@ -70,6 +90,7 @@ export default function AdminReturnDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [adminNote, setAdminNote] = useState("");
+  const [reasonOverride, setReasonOverride] = useState("");
 
   async function loadData() {
     try {
@@ -100,6 +121,7 @@ export default function AdminReturnDetailPage() {
     try {
       const body: any = { action };
       if (action === "reject") body.adminNote = adminNote.trim() || undefined;
+      if (action === "approve" && reasonOverride && reasonOverride !== ret?.reasonType) body.reasonType = reasonOverride;
 
       const res = await fetch(`/api/admin/returns/${returnId}`, {
         method: "PATCH",
@@ -237,6 +259,70 @@ export default function AdminReturnDetailPage() {
         <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
           {ret.reason}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-gray-100 px-3 py-1 font-bold text-gray-700">
+            النوع: {REASON_LABEL[ret.reasonType ?? "CHANGED_MIND"] ?? ret.reasonType}
+          </span>
+          {ret.decisionDueAt && ret.status === "PENDING" && (
+            <span
+              className={`rounded-full px-3 py-1 font-bold ${
+                new Date(ret.decisionDueAt).getTime() < Date.now()
+                  ? "bg-red-100 text-red-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {new Date(ret.decisionDueAt).getTime() < Date.now() ? "تجاوزت مهلة القرار (48 ساعة)" : "مهلة القرار حتى"}{" "}
+              {new Date(ret.decisionDueAt).toLocaleString("ar-MA")}
+            </span>
+          )}
+          {ret.shippingPayer && (
+            <span className="rounded-full bg-blue-100 px-3 py-1 font-bold text-blue-700">
+              من تحمّل شحن المرتجع: {PAYER_LABEL[ret.shippingPayer] ?? ret.shippingPayer}
+              {ret.shippingFee ? ` (${ret.shippingFee} ${CURRENCY})` : ""}
+            </span>
+          )}
+        </div>
+        {(ret.evidenceUrls ?? []).length > 0 ? (
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-bold text-gray-700">أدلة العميل:</div>
+            <div className="flex flex-wrap gap-2">
+              {(ret.evidenceUrls ?? []).map((u) =>
+                isVideoUrl(u) ? (
+                  <video key={u} src={u} controls className="h-32 w-48 rounded-lg bg-black" />
+                ) : (
+                  <a key={u} href={u} target="_blank" rel="noreferrer">
+                    <img src={u} alt="دليل" className="h-24 w-24 rounded-lg object-cover" />
+                  </a>
+                )
+              )}
+            </div>
+          </div>
+        ) : (
+          (ret.reasonType ?? "CHANGED_MIND") !== "CHANGED_MIND" && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              لم يُرفق العميل أي دليل.
+            </p>
+          )
+        )}
+        {ret.status === "PENDING" && (
+          <div className="mt-3">
+            <label className="mb-1 block text-xs font-bold text-gray-700">
+              تغيير نوع السبب قبل الموافقة (يحدد من يتحمل الشحن)
+            </label>
+            <select
+              value={reasonOverride || ret.reasonType || "CHANGED_MIND"}
+              onChange={(e) => setReasonOverride(e.target.value)}
+              disabled={actionLoading}
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+            >
+              {Object.entries(REASON_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {ret.adminNote && (
           <div className="mt-3">
             <div className="mb-1 text-xs font-bold text-gray-700">
