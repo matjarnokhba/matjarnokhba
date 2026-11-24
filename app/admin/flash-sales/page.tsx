@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2,
@@ -37,13 +38,19 @@ type ExtraRow = {
   mode?: "platform" | "shared";
   share?: string;
   status?: string;
+  source?: string;
   note?: string;
 };
 
 const BLANK_EXTRA: ExtraRow = { price: "", limit: "", sold: 0 };
 
-function flashBadge(status?: string, shared?: boolean): { label: string; cls: string } | null {
+function flashBadge(status?: string, shared?: boolean, source?: string): { label: string; cls: string } | null {
   if (!status) return null;
+  if (source === "SELLER") {
+    if (status === "APPROVED") return { label: "عرض تاجر (معتمد)", cls: "bg-green-100 text-green-700" };
+    if (status === "PENDING_ADMIN") return { label: "طلب تاجر بانتظارك", cls: "bg-blue-100 text-blue-700" };
+    return { label: "عرض تاجر", cls: "bg-gray-100 text-gray-600" };
+  }
   if (!shared) return { label: "المنصة تتحمل", cls: "bg-gray-100 text-gray-600" };
   if (status === "PENDING_SELLER") return { label: "بانتظار التاجر", cls: "bg-amber-100 text-amber-700" };
   if (status === "APPROVED") return { label: "وافق التاجر", cls: "bg-green-100 text-green-700" };
@@ -225,7 +232,7 @@ export default function AdminFlashSalesPage() {
       Object.fromEntries(
         s.items.map((i) => [
           i.productId,
-          { price: i.dealPrice ? String(i.dealPrice) : "", limit: i.quantityLimit ? String(i.quantityLimit) : "", sold: i.soldCount, mode: (i.sellerSharePct > 0 ? "shared" : "platform") as "shared" | "platform", share: i.sellerSharePct > 0 ? String(i.sellerSharePct) : "", status: i.status, note: i.responseNote ?? "" },
+          { price: i.dealPrice ? String(i.dealPrice) : "", limit: i.quantityLimit ? String(i.quantityLimit) : "", sold: i.soldCount, mode: (i.sellerSharePct > 0 ? "shared" : "platform") as "shared" | "platform", share: i.sellerSharePct > 0 ? String(i.sellerSharePct) : "", status: i.status, source: i.source, note: i.responseNote ?? "" },
         ])
       )
     );
@@ -298,13 +305,21 @@ export default function AdminFlashSalesPage() {
             حملات تظهر في الرئيسية بعدّاد حقيقي. يظهر قسم واحد فقط: الحملة الجارية التي تنتهي أولاً.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
-        >
-          <Plus className="h-4 w-4" />
-          حملة جديدة
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/flash-sales/requests"
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+          >
+            طلبات التجّار
+          </Link>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#e64a00]"
+          >
+            <Plus className="h-4 w-4" />
+            حملة جديدة
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -636,7 +651,7 @@ export default function AdminFlashSalesPage() {
                                 </span>
                               )}
                               {(() => {
-                                const b = flashBadge(extra[id]?.status, (extra[id]?.mode ?? "platform") === "shared");
+                                const b = flashBadge(extra[id]?.status, (extra[id]?.mode ?? "platform") === "shared", extra[id]?.source);
                                 return b ? (
                                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${b.cls}`}>{b.label}</span>
                                 ) : null;

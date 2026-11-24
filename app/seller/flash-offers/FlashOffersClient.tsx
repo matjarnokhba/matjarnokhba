@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Flame, Loader2, CheckCircle2, XCircle, Clock, Info } from "lucide-react";
+import { Flame, Loader2, CheckCircle2, XCircle, Clock, Info, Plus } from "lucide-react";
 
 type Offer = {
   id: number;
@@ -29,10 +29,11 @@ const when = (iso: string) =>
 
 function statusInfo(o: Offer, ended: boolean): { label: string; cls: string } {
   if (o.status === "PENDING_SELLER") return { label: "بانتظار ردّك", cls: "bg-amber-100 text-amber-700" };
-  if (o.status === "REJECTED") return { label: "رفضتَه", cls: "bg-red-100 text-red-700" };
+  if (o.status === "REJECTED") return { label: o.source === "SELLER" ? "رفضته الإدارة" : "رفضتَه", cls: "bg-red-100 text-red-700" };
   if (o.status === "PENDING_ADMIN") return { label: "بانتظار الإدارة", cls: "bg-blue-100 text-blue-700" };
   if (o.status === "WITHDRAWN") return { label: "مسحوب", cls: "bg-gray-100 text-gray-600" };
   if (ended) return { label: "منتهٍ", cls: "bg-gray-100 text-gray-600" };
+  if (o.source === "SELLER") return { label: "معتمد من الإدارة", cls: "bg-green-100 text-green-700" };
   if (o.sellerSharePct > 0) return { label: "وافقتَ عليه", cls: "bg-green-100 text-green-700" };
   return { label: "المنصة تتحمل", cls: "bg-gray-100 text-gray-700" };
 }
@@ -46,6 +47,66 @@ export default function FlashOffersClient() {
   const [rejectFor, setRejectFor] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
+  const [showPropose, setShowPropose] = useState(false);
+  const [campaigns, setCampaigns] = useState<{ id: number; title: string; startsAt: string; endsAt: string }[]>([]);
+  const [myProducts, setMyProducts] = useState<{ id: number; name: string; price: number }[]>([]);
+  const [pf, setPf] = useState({ saleId: "", productId: "", price: "", qty: "" });
+  const [proposing, setProposing] = useState(false);
+  const [pErr, setPErr] = useState("");
+
+  async function openPropose() {
+    setShowPropose(true);
+    setPErr("");
+    setPf({ saleId: "", productId: "", price: "", qty: "" });
+    try {
+      const [c, p] = await Promise.all([
+        fetch("/api/seller/flash-offers/campaigns", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/seller/products", { cache: "no-store" }).then((r) => r.json()),
+      ]);
+      setCampaigns(c.campaigns ?? c.data?.campaigns ?? []);
+      const list = p.products ?? p.data?.products ?? p.data ?? [];
+      setMyProducts(Array.isArray(list) ? list.map((x: any) => ({ id: x.id, name: x.name, price: Number(x.price) || 0 })) : []);
+    } catch {
+      setPErr("تعذر تحميل الحملات أو المنتجات");
+    }
+  }
+
+  async function submitPropose() {
+    const prod = myProducts.find((p) => String(p.id) === pf.productId);
+    const price = Number(pf.price);
+    const qty = Number(pf.qty);
+    if (!pf.saleId || !prod) return setPErr("اختر الحملة والمنتج");
+    if (!(price > 0) || (prod.price > 0 && price >= prod.price)) return setPErr("سعر العرض يجب أن يكون أقل من سعر المنتج الحالي");
+    if (!Number.isInteger(qty) || qty < 1) return setPErr("الكمية عدد صحيح موجب");
+    setProposing(true);
+    setPErr("");
+    try {
+      const res = await fetch("/api/seller/flash-offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId: Number(pf.saleId), productId: prod.id, dealPrice: price, quantityLimit: qty }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return setPErr(j.message || "تعذر إرسال الاقتراح");
+      setShowPropose(false);
+      await load();
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  async function withdraw(o: Offer) {
+    setBusy(o.id);
+    setErr("");
+    try {
+      const res = await fetch(`/api/seller/flash-offers/${o.id}/withdraw`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) setErr(j.message || "تعذر سحب العرض");
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -107,6 +168,97 @@ export default function FlashOffersClient() {
         <Flame className="h-5 w-5 text-[#ff5c00]" />
         <h1 className="text-lg font-black">عروضي المحدودة</h1>
       </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openPropose}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white hover:bg-[#e64a00]"
+        >
+          <Plus className="h-4 w-4" /> اقتراح عرض على منتج
+        </button>
+      </div>
+
+      {showPropose && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowPropose(false)}>
+          <div
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            <h2 className="mb-1 text-base font-black">اقتراح عرض محدود</h2>
+            <p className="mb-3 text-[11px] leading-5 text-gray-500">
+              تتحمل أنت كامل الخصم (مناسب لتصريف مخزون راكد). يظهر العرض بعد اعتماد الإدارة.
+            </p>
+            <div className="space-y-2.5">
+              <select
+                value={pf.saleId}
+                onChange={(e) => setPf({ ...pf, saleId: e.target.value })}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs outline-none focus:border-[#ff5c00]"
+              >
+                <option value="">اختر الحملة</option>
+                {campaigns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} — {when(c.startsAt)} → {when(c.endsAt)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={pf.productId}
+                onChange={(e) => setPf({ ...pf, productId: e.target.value })}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs outline-none focus:border-[#ff5c00]"
+              >
+                <option value="">اختر المنتج</option>
+                {myProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({money(p.price)})
+                  </option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="سعر العرض"
+                  value={pf.price}
+                  onChange={(e) => setPf({ ...pf, price: e.target.value })}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs outline-none focus:border-[#ff5c00]"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  placeholder="الكمية المعروضة"
+                  value={pf.qty}
+                  onChange={(e) => setPf({ ...pf, qty: e.target.value })}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs outline-none focus:border-[#ff5c00]"
+                />
+              </div>
+              {pErr && <div className="rounded-lg bg-red-50 p-2 text-[11px] text-red-700">{pErr}</div>}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={proposing}
+                  onClick={submitPropose}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#ff5c00] py-2.5 text-xs font-bold text-white disabled:opacity-60"
+                >
+                  {proposing && <Loader2 className="h-3.5 w-3.5 animate-spin" />} إرسال للإدارة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPropose(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-600"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-xl border border-gray-100 bg-white p-3 text-center">
@@ -183,7 +335,9 @@ export default function FlashOffersClient() {
                 </div>
 
                 <div className="mt-2 rounded-lg bg-gray-50 p-2 text-[11px] leading-5 text-gray-700">
-                  {o.sellerSharePct > 0 ? (
+                  {o.source === "SELLER" ? (
+                    <>عرض اقترحتَه أنت: تتحمل كامل الخصم، وتُحاسَب بسعر العرض.</>
+                  ) : o.sellerSharePct > 0 ? (
                     <>
                       تتحمل <b>{o.sellerSharePct}%</b> من الخصم
                       {perUnit != null && (
@@ -214,6 +368,21 @@ export default function FlashOffersClient() {
                     <Info className="mt-0.5 h-3 w-3 shrink-0" /> سبب الرفض: {o.responseNote}
                   </div>
                 )}
+
+                {o.source === "SELLER" &&
+                  (o.status === "PENDING_ADMIN" || o.status === "APPROVED") &&
+                  !ended &&
+                  o.soldQty === 0 &&
+                  o.soldCount === 0 && (
+                    <button
+                      type="button"
+                      disabled={busy === o.id}
+                      onClick={() => withdraw(o)}
+                      className="mt-3 w-full rounded-lg border border-gray-200 py-2 text-xs font-bold text-gray-700 disabled:opacity-60"
+                    >
+                      {busy === o.id ? "..." : "سحب العرض"}
+                    </button>
+                  )}
 
                 {canAnswer && (
                   <div className="mt-3">
