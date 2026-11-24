@@ -1,3 +1,4 @@
+import { FlashDealService } from "@/services/flash-deal.service";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -425,6 +426,12 @@ export async function POST(
               "RETURN"
             );
           }
+
+          // العروض المحدودة: شحنة أُرجعت/رُفضت كاملة قبل التسليم تعيد حصة العرض
+          await FlashDealService.releaseForShipmentItems(
+            tx,
+            shipment.items.map((i) => ({ orderItemId: i.orderItemId, quantity: i.quantity }))
+          );
 
           const uniqueOrderItemIds = Array.from(
             new Set(shipment.items.map((i) => i.orderItemId))

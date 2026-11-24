@@ -107,6 +107,33 @@ export const FlashDealService = {
       await tx.flashSaleOrderLine.update({ where: { id: l.id }, data: { reversedAt: new Date() } });
     }
   },
+
+  /** شحنة أُرجعت/رُفضت قبل التسليم: يعيد الحصة بكمية بنود الشحنة ويعكس السجل إن اكتملت كمية البند. */
+  async releaseForShipmentItems(
+    tx: any,
+    items: { orderItemId: number; quantity: number }[]
+  ): Promise<void> {
+    if (items.length === 0) return;
+    const lines: any[] =
+      (await tx.flashSaleOrderLine?.findMany({
+        where: {
+          orderItemId: { in: items.map((i) => i.orderItemId) },
+          reversedAt: null,
+          settledAt: null,
+        },
+        select: { id: true, orderItemId: true, flashSaleItemId: true, quantity: true },
+      })) ?? [];
+    const qtyByItem = new Map<number, number>();
+    for (const i of items) qtyByItem.set(i.orderItemId, (qtyByItem.get(i.orderItemId) ?? 0) + i.quantity);
+    for (const l of lines) {
+      const q = Math.min(qtyByItem.get(l.orderItemId) ?? 0, l.quantity);
+      if (q <= 0) continue;
+      await FlashDealService.releaseQuota(tx, l.flashSaleItemId, q);
+      if (q >= l.quantity) {
+        await tx.flashSaleOrderLine.update({ where: { id: l.id }, data: { reversedAt: new Date() } });
+      }
+    }
+  },
 };
 
 const isList = (x: any) =>
