@@ -15,6 +15,39 @@ type ReturnableItem = {
   availableQuantity: number;
 };
 
+const SUB_REASONS: Record<string, string[]> = {
+  CHANGED_MIND: [
+    "المقاس لا يناسبني",
+    "اللون مختلف عن الصور",
+    "لا يعجبني بعد الاستلام",
+    "طلبته بالخطأ",
+    "لم أعد بحاجة إليه",
+    "وجدت سعراً أفضل",
+  ],
+  DEFECTIVE: [
+    "وصل مكسوراً",
+    "لا يعمل",
+    "به عيب تصنيع",
+    "مخدوش أو متسخ",
+    "منتهي الصلاحية",
+  ],
+  WRONG_ITEM: [
+    "وصلني لون مختلف",
+    "وصلني مقاس مختلف",
+    "وصلني موديل مختلف",
+    "وصلني منتج مختلف تماماً",
+  ],
+  MISSING_ITEM: [
+    "ينقصه ملحق",
+    "ينقص قطعة من الطقم",
+    "الكمية أقل مما طلبت",
+  ],
+  LOST: [
+    "لم تصلني بعض المنتجات",
+    "وصل الطرد مفتوحاً",
+  ],
+};
+
 type ReturnModalProps = {
   orderId: number;
   onClose: () => void;
@@ -217,6 +250,23 @@ export default function ReturnModal({
                   <option value="MISSING_ITEM">ينقصني جزء أو قطعة</option>
                   <option value="LOST">ضاع جزء من طلبي</option>
                 </select>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(SUB_REASONS[reasonType] ?? []).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setReason(s)}
+                      disabled={submitting}
+                      className={`rounded-full border px-3 py-1 text-[11px] ${
+                        reason === s
+                          ? "border-[#ff5c00] bg-orange-50 font-bold text-[#ff5c00]"
+                          : "border-gray-200 bg-white text-gray-600"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
                 <p className="mt-1 text-[10px] text-gray-500">
                   شروط الإرجاع: خلال 7 أيام من التسليم، والمنتج غير مستعمل وغير مغسول وفي علبته الأصلية.
                 </p>
@@ -225,19 +275,24 @@ export default function ReturnModal({
                     🎁 عندك حق إرجاع مجاني — لن تدفع رسوم الشحن في هذا الطلب.
                   </p>
                 )}
-                {isSellerFault(reasonType) && (
+                {(
                   <div className="mt-3 rounded-lg border border-dashed border-gray-300 p-3">
                     <p className="mb-2 text-[11px] text-gray-600">
-                      أرفق صورة أو فيديو يوضح المشكلة قبل إرسال الطرد (إلزامي). بدون دليل لا يُقبل الإرجاع المجاني.
+                      {isSellerFault(reasonType)
+                        ? "أرفق صورة أو فيديو يوضح المشكلة قبل إرسال الطرد (إلزامي). بدون دليل لا يُقبل الإرجاع المجاني."
+                        : "يمكنك إرفاق صور للمنتج (اختياري)."}
                     </p>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      multiple
-                      disabled={submitting || uploading}
-                      onChange={handleEvidence}
-                      className="text-xs"
-                    />
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white hover:bg-[#e64a00]">
+                      📷 أرفق صوراً أو فيديو
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        multiple
+                        disabled={submitting || uploading}
+                        onChange={handleEvidence}
+                        className="hidden"
+                      />
+                    </label>
                     {uploading && <p className="mt-1 text-[11px] text-gray-500">جاري الرفع...</p>}
                     {evidence.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
