@@ -391,6 +391,7 @@ model User {
   emailVerificationExpiresAt DateTime?
   name                       String
   phone                      String?
+  identityId                 Int?
   role                       UserRole  @default(CUSTOMER)
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
@@ -440,7 +441,10 @@ model User {
   returnOrdersApproved ReturnOrder[] @relation("ReturnOrderApprovedBy")
   returnOrdersRejected ReturnOrder[] @relation("ReturnOrderRejectedBy")
 
+  identity CustomerIdentity? @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
   @@index([email])
+  @@index([identityId])
   @@index([deletedAt])
 }
 
@@ -909,6 +913,10 @@ model Order {
   @@index([deliveryPersonId])
   @@index([deliveryPersonId, status])
   @@index([shippingAddressId])
+  // بطاقة الإرجاع المجاني: الطلبية التي احتُسبت ضمن بطاقة
+  countedForCardId Int?
+  countedForCard   FreeReturnCard? @relation(fields: [countedForCardId], references: [id], onDelete: SetNull)
+  @@index([countedForCardId])
 }
 
 model OrderItem {
@@ -1042,6 +1050,15 @@ model ReturnRequest {
   requestedAt   DateTime     @default(now())
   processedAt   DateTime?
   processedById Int?
+
+  // سياسة الإرجاع
+  reasonType    ReturnReasonType     @default(CHANGED_MIND)
+  evidenceUrls  String[]            @default([])
+  shippingPayer ReturnShippingPayer?
+  shippingFee   Decimal             @default(0) @db.Decimal(10, 2)
+  decisionDueAt DateTime?
+  freeCardId    Int?                @unique
+  freeCard      FreeReturnCard?     @relation(fields: [freeCardId], references: [id], onDelete: SetNull)
 
   order    Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   user     User            @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -4270,4 +4287,49 @@ model FlashSaleOrderLine {
 
   @@index([flashSaleItemId])
   @@index([sellerId, settledAt])
+}
+
+// ═══ سياسة الإرجاع + الهوية + بطاقة الإرجاع المجاني ═══
+enum ReturnReasonType {
+  DEFECTIVE
+  WRONG_ITEM
+  MISSING_ITEM
+  LOST
+  CHANGED_MIND
+}
+
+enum ReturnShippingPayer {
+  CUSTOMER
+  SELLER
+  PLATFORM
+  NONE
+}
+
+// هوية واحدة لكل إنسان (الهاتف هو الأساس)، والحساب مجرد واجهة
+model CustomerIdentity {
+  id         Int       @id @default(autoincrement())
+  phoneE164  String?   @unique
+  emailNorm  String?   @unique
+  flaggedAt  DateTime?
+  flagReason String?
+  createdAt  DateTime  @default(now())
+
+  users User[]
+  cards FreeReturnCard[]
+
+  @@index([flaggedAt])
+}
+
+// البطاقة تتبع الهوية لا الحساب
+model FreeReturnCard {
+  id         Int       @id @default(autoincrement())
+  identityId Int
+  earnedAt   DateTime  @default(now())
+  usedAt     DateTime?
+
+  identity      CustomerIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  usedReturn    ReturnRequest?
+  countedOrders Order[]
+
+  @@index([identityId, usedAt])
 }
