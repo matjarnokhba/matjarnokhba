@@ -9,6 +9,7 @@ export type ActiveDeal = {
   basePrice: number; // سعر الخيار الافتراضي الأصلي
   remaining: number | null; // null = بلا حدّ
   endsAt: Date;
+  sellerSharePct: number;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -33,6 +34,7 @@ export const FlashDealService = {
         where: {
           productId: { in: productIds },
           dealPrice: { not: null },
+          status: "APPROVED",
           sale: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
         },
         select: {
@@ -42,6 +44,7 @@ export const FlashDealService = {
           dealPrice: true,
           quantityLimit: true,
           soldCount: true,
+          sellerSharePct: true,
           sale: { select: { endsAt: true } },
         },
         orderBy: [{ sale: { endsAt: "asc" } }, { id: "asc" }],
@@ -69,6 +72,7 @@ export const FlashDealService = {
           dealPrice,
           basePrice,
           remaining,
+          sellerSharePct: Math.min(100, Math.max(0, Number(it.sellerSharePct ?? 0))),
           endsAt: it.sale.endsAt,
         });
       }
@@ -141,4 +145,14 @@ export function withFlashDeals<T extends Record<string, any>>(svc: T, db: any): 
         : fn;
   }
   return out as T;
+}
+
+/** تقسيم تكلفة الخصم بين التاجر والمنصة لبند واحد (قيم بالدرهم، تقريب لرقمين). */
+export function computeSubsidy(listUnitPrice: number, dealUnitPrice: number, quantity: number, sellerSharePct: number) {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const pct = Math.min(100, Math.max(0, Number(sellerSharePct) || 0));
+  const discount = r2(Math.max(0, listUnitPrice - dealUnitPrice) * quantity);
+  const sellerPart = r2((discount * pct) / 100);
+  const platformSubsidy = r2(discount - sellerPart);
+  return { discount, sellerPart, platformSubsidy };
 }
