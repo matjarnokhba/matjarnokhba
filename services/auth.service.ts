@@ -1,3 +1,5 @@
+import { IdentityService } from "@/services/identity.service";
+import { normalizePhone } from "@/lib/identity";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -43,7 +45,7 @@ const emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         name: data.name,
         email: data.email,
         passwordHash,
-        phone: data.phone || null,
+        phone: normalizePhone(data.phone) ?? (data.phone || null),
         role: "CUSTOMER",
         referralCode,
         emailVerificationToken,
@@ -59,6 +61,12 @@ const emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         emailVerified: true,
       },
     });
+
+    try {
+      await IdentityService.attachUser(prisma, user.id);
+    } catch (err) {
+      console.error("Identity attach failed:", err);
+    }
 
     // 7. إرسال إيميل التأكيد (في الخلفية لا نوقف التسجيل إذا فشل)
     try {

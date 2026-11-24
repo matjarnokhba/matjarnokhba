@@ -1,3 +1,4 @@
+import { IdentityService } from "@/services/identity.service";
 import { decideReturnShipping, isSellerFault, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
 import { prisma } from "@/lib/prisma";
@@ -417,10 +418,11 @@ export const ReturnService = {
       let feeNote = "";
       if (totalOrderRefund > 0) {
         const owner = await tx.user.findUnique({ where: { id: ret.userId }, select: { identityId: true } });
+        const ownerIdentityId = owner?.identityId ?? (await IdentityService.attachUser(tx, ret.userId));
         let cardId: number | null = null;
-        if (ret.reasonType === "CHANGED_MIND" && owner?.identityId) {
+        if (ret.reasonType === "CHANGED_MIND" && ownerIdentityId) {
           const card = await tx.freeReturnCard.findFirst({
-            where: { identityId: owner.identityId, usedAt: null },
+            where: { identityId: ownerIdentityId, usedAt: null },
             orderBy: { earnedAt: "asc" },
             select: { id: true },
           });
