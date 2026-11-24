@@ -498,7 +498,27 @@ export const ReturnService = {
         },
       });
 
-      // 12. إذا full → Order = RETURNED
+      // ═══ عكس أرباح التاجر عن القطع المرجعة (ذرّي مع الإرجاع) ═══
+      await WalletService.clawbackReturn(tx, {
+        returnId,
+        isFull,
+        order: {
+          id: ret.order.id,
+          orderNumber: ret.order.orderNumber,
+          sellerId: ret.order.sellerId,
+          commission: ret.order.commission === null ? null : Number(ret.order.commission),
+          sellerPayout: ret.order.sellerPayout === null ? null : Number(ret.order.sellerPayout),
+          refundedCommission: Number(ret.order.refundedCommission),
+        },
+        items: ret.items.map((it) => ({
+          orderItemId: it.orderItem.id,
+          qty: it.quantity,
+          orderItemQty: it.orderItem.quantity,
+          unitPrice: Number(it.orderItem.unitPrice),
+        })),
+      });
+
+      // 12.  إذا full → Order = RETURNED
       if (isFull) {
         await tx.order.update({
           where: { id: ret.orderId },
