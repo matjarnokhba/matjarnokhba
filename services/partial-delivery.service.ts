@@ -341,8 +341,45 @@ export const PartialDeliveryService = {
             );
           }
 
+          // ═══ دعم المنصة للعروض المحدودة (التاجر يُحاسَب على سعر القائمة) ═══
+          const subsidyBySeller = new Map<number, number>();
+          const flashLines: any[] =
+            (await (tx as any).flashSaleOrderLine?.findMany({
+              where: {
+                orderItemId: { in: itemData.map((d) => d.item.orderItemId) },
+                settledAt: null,
+                reversedAt: null,
+              },
+            })) ?? [];
+          const flashByItem = new Map<number, any>(
+            flashLines.map((l: any) => [l.orderItemId, l])
+          );
+          const settledFlashIds: number[] = [];
+          for (const d of itemData) {
+            const fl = flashByItem.get(d.item.orderItemId);
+            if (!fl || d.acceptedQty <= 0) continue;
+            const part =
+              Math.round(
+                ((Number(fl.platformSubsidy) * d.acceptedQty) / fl.quantity) * 100
+              ) / 100;
+            subsidyBySeller.set(
+              fl.sellerId,
+              (subsidyBySeller.get(fl.sellerId) ?? 0) + part
+            );
+            settledFlashIds.push(fl.id);
+          }
+          if (settledFlashIds.length > 0) {
+            await (tx as any).flashSaleOrderLine.updateMany({
+              where: { id: { in: settledFlashIds } },
+              data: { settledAt: new Date() },
+            });
+          }
+
+          let totalSubsidy = 0;
           let totalCommission = 0;
-          for (const [sellerId, subtotal] of sellerSubtotals) {
+          for (const [sellerId, baseSubtotal] of sellerSubtotals) {
+            const platformSubsidy = subsidyBySeller.get(sellerId) ?? 0;
+            const subtotal = Math.round((baseSubtotal + platformSubsidy) * 100) / 100;
             const seller = await tx.seller.findUnique({
               where: { id: sellerId },
             });
@@ -354,6 +391,7 @@ export const PartialDeliveryService = {
             const netEarning =
               Math.round((subtotal - commission) * 100) / 100;
             totalCommission += commission;
+            totalSubsidy += platformSubsidy;
 
             await tx.seller.update({
               where: { id: sellerId },
@@ -377,6 +415,7 @@ export const PartialDeliveryService = {
           }
 
           if (totalCommission > 0) {
+            const netPlatform = Math.round((totalCommission - totalSubsidy) * 100) / 100;
             const pw = await tx.wallet.upsert({
               where: {
                 ownerType_ownerId: {
@@ -387,14 +426,14 @@ export const PartialDeliveryService = {
               create: {
                 ownerType: "PLATFORM",
                 ownerId: PLATFORM_ID,
-                balance: totalCommission,
+                balance: netPlatform,
               },
-              update: { balance: { increment: totalCommission } },
+              update: { balance: { increment: netPlatform } },
             });
             await tx.walletTransactionUnified.create({
               data: {
                 walletId: pw.id,
-                amount: totalCommission,
+                amount: netPlatform,
                 type: "COMMISSION",
                 description: `عمولة من شحنة #${shipment.shipmentNumber}`,
               },

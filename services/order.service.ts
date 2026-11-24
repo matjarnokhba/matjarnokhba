@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { FlashDealService, applyDealPrice } from "@/services/flash-deal.service";
+import { FlashDealService, applyDealPrice, computeSubsidy } from "@/services/flash-deal.service";
 import { CouponService } from "@/services/coupon.service";
 import { InventoryService } from "@/services/inventory.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
@@ -254,6 +254,9 @@ export const OrderService = {
         quantity: item.quantity,
         unitPrice,
         lineTotal,
+        listUnitPrice: Number(variant.price),
+        dealItemId: deal ? deal.itemId : null,
+        dealSharePct: deal ? deal.sellerSharePct : 0,
       };
     });
 
@@ -466,6 +469,35 @@ export const OrderService = {
           await FulfillmentService.createForOrder(tx, {
             orderId: order.id,
           });
+
+          // ═══ سجل تسوية العروض المحدودة (للمحاسبة مع التاجر) ═══
+          const usedFlashOrderItemIds = new Set<number>();
+          for (const it of items) {
+            if (!it.dealItemId) continue;
+            const oi = order.items.find(
+              (o) => o.variantId === it.variantId && !usedFlashOrderItemIds.has(o.id)
+            );
+            if (!oi) continue;
+            usedFlashOrderItemIds.add(oi.id);
+            const calc = computeSubsidy(
+              it.listUnitPrice,
+              it.unitPrice,
+              it.quantity,
+              it.dealSharePct
+            );
+            await tx.flashSaleOrderLine.create({
+              data: {
+                orderItemId: oi.id,
+                flashSaleItemId: it.dealItemId,
+                sellerId: it.sellerId,
+                quantity: it.quantity,
+                listUnitPrice: it.listUnitPrice,
+                dealUnitPrice: it.unitPrice,
+                sellerSharePct: it.dealSharePct,
+                platformSubsidy: calc.platformSubsidy,
+              },
+            });
+          }
 
           // ═══ تسجيل استخدام الكوبون داخل tx ═══
           if (isCouponOrder && couponLock && appliedDiscount > 0) {

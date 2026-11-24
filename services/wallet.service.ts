@@ -93,8 +93,21 @@ export const WalletService = {
       ? Number(seller.commissionRateOverride)
       : defaultRate;
 
-    const commissionAmount = Math.round(orderSubtotal * rate * 100) / 100;
-    const netEarning = Math.round((orderSubtotal - commissionAmount) * 100) / 100;
+    // ═══ دعم المنصة للعروض المحدودة: التاجر يُحاسَب على سعر القائمة ═══
+    const flashLines: any[] =
+      (await tx.flashSaleOrderLine?.findMany({
+        where: { orderItem: { orderId }, settledAt: null, reversedAt: null },
+        select: { id: true, platformSubsidy: true },
+      })) ?? [];
+    const platformSubsidy =
+      Math.round(
+        flashLines.reduce((s: number, l: any) => s + Number(l.platformSubsidy), 0) * 100
+      ) / 100;
+    const effectiveSubtotal = Math.round((orderSubtotal + platformSubsidy) * 100) / 100;
+
+    const commissionAmount = Math.round(effectiveSubtotal * rate * 100) / 100;
+    const netEarning = Math.round((effectiveSubtotal - commissionAmount) * 100) / 100;
+    const platformNetBalance = Math.round((commissionAmount - platformSubsidy) * 100) / 100;
     if (netEarning <= 0) return { commissionAmount: 0 };
 
     const beforeHeld = Number(seller.heldBalance);
@@ -104,7 +117,7 @@ export const WalletService = {
       where: { id: sellerId },
       data: {
         heldBalance: { increment: netEarning },
-        totalRevenue: { increment: orderSubtotal },
+        totalRevenue: { increment: effectiveSubtotal },
         totalCommission: { increment: commissionAmount },
       },
     });
@@ -125,11 +138,11 @@ export const WalletService = {
       create: {
         ownerType: "PLATFORM",
         ownerId: PLATFORM_ID,
-        balance: commissionAmount,
+        balance: platformNetBalance,
         heldBalance: netEarning,
       },
       update: {
-        balance: { increment: commissionAmount },
+        balance: { increment: platformNetBalance },
         heldBalance: { increment: netEarning },
       },
     });
@@ -142,6 +155,23 @@ export const WalletService = {
         description: `عمولة المنصة من الطلب #${orderId}`,
       },
     });
+
+    if (platformSubsidy > 0) {
+      await tx.walletTransactionUnified.create({
+        data: {
+          walletId: platformWallet.id,
+          amount: -platformSubsidy,
+          type: "COMMISSION",
+          description: `دعم المنصة لعرض محدود - الطلب #${orderId}`,
+        },
+      });
+    }
+    if (flashLines.length > 0) {
+      await tx.flashSaleOrderLine.updateMany({
+        where: { id: { in: flashLines.map((l: any) => l.id) } },
+        data: { settledAt: new Date() },
+      });
+    }
 
     return { commissionAmount };
   },
