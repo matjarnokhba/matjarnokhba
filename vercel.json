@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/cleanup-location-pings",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/accrue-return-cards",
+      "schedule": "0 7 * * *"
     }
   ]
 }

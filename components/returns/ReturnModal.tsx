@@ -33,6 +33,13 @@ export default function ReturnModal({
   const [reasonType, setReasonType] = useState<ReasonType>("CHANGED_MIND");
   const [evidence, setEvidence] = useState<{ url: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [hasCard, setHasCard] = useState(false);
+  useEffect(() => {
+    fetch("/api/returns/free-card")
+      .then((r) => r.json())
+      .then((d) => setHasCard(!!d?.hasCard))
+      .catch(() => setHasCard(false));
+  }, []);
   const { startUpload } = useUploadThing("returnEvidenceUploader", {
     onUploadError: (err) => setError(err.message || "فشل رفع الملف"),
   });
@@ -213,6 +220,11 @@ export default function ReturnModal({
                 <p className="mt-1 text-[10px] text-gray-500">
                   شروط الإرجاع: خلال 7 أيام من التسليم، والمنتج غير مستعمل وغير مغسول وفي علبته الأصلية.
                 </p>
+                {!isSellerFault(reasonType) && hasCard && (
+                  <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
+                    🎁 عندك حق إرجاع مجاني — لن تدفع رسوم الشحن في هذا الطلب.
+                  </p>
+                )}
                 {isSellerFault(reasonType) && (
                   <div className="mt-3 rounded-lg border border-dashed border-gray-300 p-3">
                     <p className="mb-2 text-[11px] text-gray-600">
