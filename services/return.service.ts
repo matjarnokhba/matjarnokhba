@@ -1,3 +1,4 @@
+import { decideReturnShipping, isSellerFault, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
 import { prisma } from "@/lib/prisma";
 import { InventoryService } from "@/services/inventory.service";
@@ -16,6 +17,8 @@ type CreateReturnInput = {
   orderId: number;
   reason: string;
   refundMethod: string;
+  reasonType?: string;
+  evidenceUrls?: string[];
   items: { orderItemId: number; quantity: number }[];
 };
 
@@ -58,6 +61,16 @@ export const ReturnService = {
       throw new Error("سبب الإرجاع مطلوب (5 أحرف على الأقل)");
     }
 
+    const reasonType = (data.reasonType ?? "CHANGED_MIND") as ReasonType;
+    if (!REASON_TYPES.includes(reasonType)) {
+      throw new Error("نوع سبب الإرجاع غير صالح");
+    }
+    const evidenceUrls = (data.evidenceUrls ?? [])
+      .filter((u) => typeof u === "string" && /^https:\/\//.test(u))
+      .slice(0, 10);
+    if (isSellerFault(reasonType) && evidenceUrls.length === 0) {
+      throw new Error("يجب إرفاق صورة أو فيديو يثبت المشكلة قبل إرسال الطلب");
+    }
     return prisma.$transaction(async (tx) => {
       // 1. Lock Order
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${data.orderId} FOR UPDATE`;
@@ -128,6 +141,9 @@ export const ReturnService = {
           status: "PENDING",
           reason: data.reason.trim(),
           refundMethod: data.refundMethod || "WALLET",
+          reasonType,
+          evidenceUrls,
+          decisionDueAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
         },
       });
 
@@ -397,11 +413,39 @@ export const ReturnService = {
       
       // ═══ خصم رسوم الإرجاع (15 درهم) وتحويلها للمستودع ═══
       let customerRefundAmount = totalOrderRefund;
+      let feeNote = "";
       if (totalOrderRefund > 0) {
-        await WalletService.processReturnFee(tx, returnId, ret.order.orderNumber);
-        customerRefundAmount = Math.max(0, totalOrderRefund - RETURN_FEE);
+        const owner = await tx.user.findUnique({ where: { id: ret.userId }, select: { identityId: true } });
+        let cardId: number | null = null;
+        if (ret.reasonType === "CHANGED_MIND" && owner?.identityId) {
+          const card = await tx.freeReturnCard.findFirst({
+            where: { identityId: owner.identityId, usedAt: null },
+            orderBy: { earnedAt: "asc" },
+            select: { id: true },
+          });
+          if (card) {
+            const claimed = await tx.freeReturnCard.updateMany({
+              where: { id: card.id, usedAt: null },
+              data: { usedAt: new Date() },
+            });
+            if (claimed.count === 1) cardId = card.id;
+          }
+        }
+        const pol = decideReturnShipping({ reasonType: ret.reasonType, hasCard: cardId !== null, fee: RETURN_FEE });
+        await WalletService.settleReturnShipping(tx, {
+          returnId,
+          orderNumber: ret.order.orderNumber,
+          sellerId: ret.order.sellerId,
+          payer: pol.payer,
+          fee: pol.fee,
+        });
+        await tx.returnRequest.update({
+          where: { id: returnId },
+          data: { shippingPayer: pol.payer, shippingFee: pol.fee, freeCardId: cardId },
+        });
+        customerRefundAmount = Math.max(0, totalOrderRefund - pol.customerPays);
+        if (pol.customerPays > 0) feeNote = `(بعد خصم ${pol.customerPays} د.م رسوم إرجاع)`;
       }
-
       // ═══ توزيع المبلغ حسب اختيار الزبون ═══
       if (customerRefundAmount > 0) {
         if (ret.refundMethod === "COUPON") {
@@ -424,7 +468,7 @@ export const ReturnService = {
               userId: ret.userId,
               type: "RETURN_COMPLETED",
               title: "تم إصدار قسيمة شراء",
-              message: `تم إصدار قسيمة شراء بقيمة ${customerRefundAmount.toFixed(2)} د.م (بعد خصم رسوم الإرجاع). الكود: ${code}`,
+              message: `تم إصدار قسيمة شراء بقيمة ${customerRefundAmount.toFixed(2)} د.م ${feeNote}. الكود: ${code}`,
               link: "/profile/coupons",
               category: "ORDER",
               severity: "INFO",
@@ -436,7 +480,7 @@ export const ReturnService = {
               userId: ret.userId,
               type: "RETURN_COMPLETED",
               title: "تحويل بنكي قيد المعالجة",
-              message: `تمت الموافقة على إرجاع طلبك. سيتم تحويل ${customerRefundAmount.toFixed(2)} د.م إلى حسابك البنكي قريباً (بعد خصم رسوم الإرجاع).`,
+              message: `تمت الموافقة على إرجاع طلبك. سيتم تحويل ${customerRefundAmount.toFixed(2)} د.م إلى حسابك البنكي قريباً ${feeNote}.`,
               link: "/orders/" + ret.orderId,
               category: "ORDER",
               severity: "INFO",
@@ -453,7 +497,7 @@ export const ReturnService = {
               userId: ret.userId,
               amount: customerRefundAmount,
               type: "REFUND",
-              description: `استرداد مبلغ طلب #${ret.order.orderNumber} (بعد خصم 15 د.م رسوم إرجاع)`
+              description: `استرداد مبلغ طلب #${ret.order.orderNumber} ${feeNote}`
             }
           });
           await tx.notification.create({
@@ -461,7 +505,7 @@ export const ReturnService = {
               userId: ret.userId,
               type: "RETURN_COMPLETED",
               title: "تم استرداد المبلغ لمحفظتك",
-              message: `تم إضافة ${customerRefundAmount.toFixed(2)} د.م إلى محفظتك (بعد خصم رسوم الإرجاع).`,
+              message: `تم إضافة ${customerRefundAmount.toFixed(2)} د.م إلى محفظتك ${feeNote}.`,
               link: "/profile",
               category: "ORDER",
               severity: "INFO",

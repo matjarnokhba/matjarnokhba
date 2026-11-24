@@ -380,6 +380,99 @@ export const WalletService = {
     }
   },
 
+  // ═══ تسوية كلفة شحن المرتجع حسب من يتحملها ═══
+  async settleReturnShipping(
+    tx: any,
+    input: {
+      returnId: number;
+      orderNumber: string;
+      sellerId: number | null;
+      payer: "CUSTOMER" | "SELLER" | "PLATFORM" | "NONE";
+      fee: number;
+    }
+  ) {
+    const { returnId, orderNumber, fee } = input;
+    if (fee <= 0 || input.payer === "NONE") return { skipped: true as const };
+
+    // المستودع يستلم كلفة النقل دائماً
+    const warehouseWallet = await tx.wallet.upsert({
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
+      create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: fee },
+      update: { balance: { increment: fee } },
+    });
+    await tx.walletTransactionUnified.create({
+      data: {
+        walletId: warehouseWallet.id,
+        amount: fee,
+        type: "RETURN_FEE",
+        description: `كلفة شحن مرتجع من الطلب #${orderNumber}`,
+        referenceId: String(returnId),
+      },
+    });
+
+    // الزبون: خُصمت من مبلغ الاسترداد في ReturnService، لا شيء آخر
+    if (input.payer === "CUSTOMER") return { skipped: false as const, payer: "CUSTOMER" as const };
+
+    // التاجر: خصم من رصيده (قد يصير سالباً = دين)
+    if (input.payer === "SELLER" && input.sellerId) {
+      const key = `retship:${returnId}`;
+      const dup = await tx.walletTransaction.findUnique({ where: { idempotencyKey: key } });
+      if (dup) return { skipped: true as const };
+      const upd = await tx.seller.update({
+        where: { id: input.sellerId },
+        data: { walletBalance: { decrement: fee } },
+        select: { walletBalance: true, userId: true },
+      });
+      const after = Number(upd.walletBalance);
+      await tx.walletTransaction.create({
+        data: {
+          sellerId: input.sellerId,
+          idempotencyKey: key,
+          type: "MANUAL_ADJUSTMENT",
+          amount: -fee,
+          balanceBefore: Math.round((after + fee) * 100) / 100,
+          balanceAfter: after,
+          description: `كلفة شحن مرتجع من الطلب #${orderNumber} (إرجاع رقم ${returnId})`,
+        },
+      });
+      try {
+        const { NotificationService } = await import("./notification.service");
+        await NotificationService.create(
+          {
+            userId: upd.userId,
+            type: "RETURN_COMPLETED",
+            title: "خصم كلفة شحن مرتجع",
+            message: `خُصمت كلفة شحن المرتجع (${fee.toFixed(2)} د.م) من رصيدك للطلب #${orderNumber}.`,
+            link: "/seller/wallet",
+            category: "WALLET",
+            severity: "WARNING",
+            metadata: { returnId, fee },
+          },
+          tx
+        );
+      } catch (e) {
+        console.error("return shipping notification failed", e);
+      }
+      return { skipped: false as const, payer: "SELLER" as const };
+    }
+
+    // المنصة (أو تاجر غير معروف): تتحمل من محفظتها
+    const pw = await tx.wallet.upsert({
+      where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
+      create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: -fee },
+      update: { balance: { decrement: fee } },
+    });
+    await tx.walletTransactionUnified.create({
+      data: {
+        walletId: pw.id,
+        amount: -fee,
+        type: "RETURN_FEE",
+        description: `المنصة تتحمل شحن مرتجع الطلب #${orderNumber}`,
+        referenceId: String(returnId),
+      },
+    });
+    return { skipped: false as const, payer: "PLATFORM" as const };
+  },
   // ═══ رسوم الإرجاع ═══
   async processReturnFee(tx: any, returnId: number, orderNumber: string) {
     const RETURN_FEE = 15;
