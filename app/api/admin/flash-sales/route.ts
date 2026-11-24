@@ -18,6 +18,10 @@ export async function GET() {
             dealPrice: true,
             quantityLimit: true,
             soldCount: true,
+            sellerSharePct: true,
+            status: true,
+            source: true,
+            responseNote: true,
           },
         },
       },
@@ -27,6 +31,7 @@ export async function GET() {
       items: s.items.map((i) => ({
         ...i,
         dealPrice: i.dealPrice === null ? null : Number(i.dealPrice),
+        sellerSharePct: Number(i.sellerSharePct),
       })),
     }));
     return ok({ sales });

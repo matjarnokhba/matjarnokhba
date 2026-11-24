@@ -25,10 +25,33 @@ type Sale = {
   isActive: boolean;
   showCountdown: boolean;
   showProgress: boolean;
-  items: { id: number; productId: number; order: number; dealPrice: number | null; quantityLimit: number | null; soldCount: number }[];
+  items: { id: number; productId: number; order: number; dealPrice: number | null; quantityLimit: number | null; soldCount: number; sellerSharePct: number; status: string; source: string; responseNote: string | null }[];
 };
 
 type Prod = { id: number; name: string; price: number; oldPrice?: number; images: string[] };
+
+type ExtraRow = {
+  price: string;
+  limit: string;
+  sold: number;
+  mode?: "platform" | "shared";
+  share?: string;
+  status?: string;
+  note?: string;
+};
+
+const BLANK_EXTRA: ExtraRow = { price: "", limit: "", sold: 0 };
+
+function flashBadge(status?: string, shared?: boolean): { label: string; cls: string } | null {
+  if (!status) return null;
+  if (!shared) return { label: "المنصة تتحمل", cls: "bg-gray-100 text-gray-600" };
+  if (status === "PENDING_SELLER") return { label: "بانتظار التاجر", cls: "bg-amber-100 text-amber-700" };
+  if (status === "APPROVED") return { label: "وافق التاجر", cls: "bg-green-100 text-green-700" };
+  if (status === "REJECTED") return { label: "رفض التاجر", cls: "bg-red-100 text-red-700" };
+  if (status === "PENDING_ADMIN") return { label: "بانتظار الأدمن", cls: "bg-blue-100 text-blue-700" };
+  if (status === "WITHDRAWN") return { label: "سحبه التاجر", cls: "bg-gray-100 text-gray-600" };
+  return null;
+}
 
 type FormState = {
   title: string;
@@ -84,7 +107,7 @@ export default function AdminFlashSalesPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [q, setQ] = useState("");
   const [itemsError, setItemsError] = useState("");
-  const [extra, setExtra] = useState<Record<number, { price: string; limit: string; sold: number }>>({});
+  const [extra, setExtra] = useState<Record<number, ExtraRow>>({});
 
   const load = useCallback(async () => {
     try {
@@ -202,7 +225,7 @@ export default function AdminFlashSalesPage() {
       Object.fromEntries(
         s.items.map((i) => [
           i.productId,
-          { price: i.dealPrice ? String(i.dealPrice) : "", limit: i.quantityLimit ? String(i.quantityLimit) : "", sold: i.soldCount },
+          { price: i.dealPrice ? String(i.dealPrice) : "", limit: i.quantityLimit ? String(i.quantityLimit) : "", sold: i.soldCount, mode: (i.sellerSharePct > 0 ? "shared" : "platform") as "shared" | "platform", share: i.sellerSharePct > 0 ? String(i.sellerSharePct) : "", status: i.status, note: i.responseNote ?? "" },
         ])
       )
     );
@@ -230,8 +253,19 @@ export default function AdminFlashSalesPage() {
         productId: pid,
         dealPrice: price ? Number(price) : null,
         quantityLimit: limit ? Number(limit) : null,
+        sellerSharePct: e?.mode === "shared" ? Number(e.share) : 0,
       };
     });
+    const sharedBad = selected.some((pid) => {
+      const x = extra[pid];
+      if (x?.mode !== "shared") return false;
+      const n = Number(x.share);
+      return !(n >= 1 && n <= 100);
+    });
+    if (sharedBad) {
+      setSaving(false);
+      return setItemsError("نسبة التاجر يجب أن تكون بين 1 و100");
+    }
     const invalid = items.some(
       (i) =>
         (i.dealPrice !== null && !(i.dealPrice > 0)) ||
@@ -550,7 +584,7 @@ export default function AdminFlashSalesPage() {
                                 placeholder="سعر العرض"
                                 value={extra[id]?.price ?? ""}
                                 onChange={(e) =>
-                                  setExtra({ ...extra, [id]: { price: e.target.value, limit: extra[id]?.limit ?? "", sold: extra[id]?.sold ?? 0 } })
+                                  setExtra({ ...extra, [id]: { ...BLANK_EXTRA, ...extra[id], price: e.target.value } })
                                 }
                                 className="w-24 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
                               />
@@ -562,10 +596,51 @@ export default function AdminFlashSalesPage() {
                                 placeholder="الكمية"
                                 value={extra[id]?.limit ?? ""}
                                 onChange={(e) =>
-                                  setExtra({ ...extra, [id]: { price: extra[id]?.price ?? "", limit: e.target.value, sold: extra[id]?.sold ?? 0 } })
+                                  setExtra({ ...extra, [id]: { ...BLANK_EXTRA, ...extra[id], limit: e.target.value } })
                                 }
                                 className="w-20 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
                               />
+                              <select
+                                value={extra[id]?.mode ?? "platform"}
+                                onChange={(e) =>
+                                  setExtra({
+                                    ...extra,
+                                    [id]: {
+                                      ...BLANK_EXTRA,
+                                      ...extra[id],
+                                      mode: e.target.value as "platform" | "shared",
+                                      share: e.target.value === "shared" ? extra[id]?.share || "30" : "",
+                                    },
+                                  })
+                                }
+                                className="rounded border border-gray-200 bg-gray-50 px-1.5 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
+                              >
+                                <option value="platform">المنصة تتحمل</option>
+                                <option value="shared">نسبة على التاجر</option>
+                              </select>
+                              {extra[id]?.mode === "shared" && (
+                                <span className="flex items-center gap-1 text-[11px] text-gray-600">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    step="1"
+                                    inputMode="numeric"
+                                    value={extra[id]?.share ?? ""}
+                                    onChange={(e) =>
+                                      setExtra({ ...extra, [id]: { ...BLANK_EXTRA, ...extra[id], share: e.target.value } })
+                                    }
+                                    className="w-14 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] outline-none focus:border-[#ff5c00]"
+                                  />
+                                  %
+                                </span>
+                              )}
+                              {(() => {
+                                const b = flashBadge(extra[id]?.status, (extra[id]?.mode ?? "platform") === "shared");
+                                return b ? (
+                                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${b.cls}`}>{b.label}</span>
+                                ) : null;
+                              })()}
                               {(extra[id]?.sold ?? 0) > 0 && (
                                 <span className="text-[10px] text-gray-500">مباع: {extra[id]?.sold}</span>
                               )}
