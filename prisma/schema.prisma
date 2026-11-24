@@ -2353,6 +2353,12 @@ model WalletTransaction {
 
   @@index([sellerId])
   @@index([createdAt])
+
+  // ربط الحركة بطلبها + مفتاح فريد يمنع تكرار نفس العملية
+  orderId        Int?
+  idempotencyKey String? @unique
+
+  @@index([orderId])
 }
 
 // Withdrawal Request (طلبات سحب الأرباح)
