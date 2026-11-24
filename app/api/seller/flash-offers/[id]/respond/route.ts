@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSellerOwner } from "@/lib/seller-guards";
 import { parseJson, ok, fail, handleError } from "@/lib/api/handler";
+import { NotificationService } from "@/services/notification.service";
 
 const bodySchema = z.object({
   action: z.enum(["APPROVE", "REJECT"]),
@@ -33,8 +34,8 @@ export async function POST(
         status: true,
         source: true,
         version: true,
-        product: { select: { sellerId: true } },
-        sale: { select: { endsAt: true } },
+        product: { select: { sellerId: true, name: true } },
+        sale: { select: { endsAt: true, title: true } },
       },
     });
     if (!item || item.product.sellerId !== sellerId) return fail("العرض غير موجود", 404);
@@ -57,6 +58,28 @@ export async function POST(
       },
     });
     if (res.count !== 1) return fail("تغيّر الطلب للتو، حدّث الصفحة", 409);
+    // إشعار الأدمن بردّ التاجر (لا يفشل الرد بسببه)
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, deletedAt: null },
+        select: { id: true },
+      });
+      const approved = d.action === "APPROVE";
+      for (const a of admins) {
+        await NotificationService.create({
+          userId: a.id,
+          type: "FLASH_OFFER_RESPONDED",
+          title: approved ? "✅ تاجر وافق على عرض محدود" : "❌ تاجر رفض عرضاً محدوداً",
+          message: `${approved ? "وافق" : "رفض"} التاجر على عرض «${item.product.name}» ضمن «${item.sale.title}».${d.note ? " السبب: " + d.note : ""}`,
+          link: "/admin/flash-sales",
+          category: "FLASH",
+          severity: approved ? "SUCCESS" : "WARNING",
+          metadata: { saleId: undefined, itemId: id, action: d.action },
+        });
+      }
+    } catch (e) {
+      console.error("flash respond admin notify failed", e);
+    }
     return ok({ status });
   } catch (err) {
     return handleError(err, "seller-flash-respond");
