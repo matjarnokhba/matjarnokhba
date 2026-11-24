@@ -67,10 +67,14 @@ export default function ReturnModal({
   const [evidence, setEvidence] = useState<{ url: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [hasCard, setHasCard] = useState(false);
+  const [returnFee, setReturnFee] = useState<number | null>(null);
   useEffect(() => {
-    fetch("/api/returns/free-card")
+    fetch(`/api/returns/free-card?orderId=${orderId}`)
       .then((r) => r.json())
-      .then((d) => setHasCard(!!d?.hasCard))
+      .then((d) => {
+        setHasCard(!!d?.hasCard);
+        setReturnFee(typeof d?.returnFee === "number" ? d.returnFee : null);
+      })
       .catch(() => setHasCard(false));
   }, []);
   const { startUpload } = useUploadThing("returnEvidenceUploader", {
@@ -230,7 +234,7 @@ export default function ReturnModal({
               {/* تنبيه رسوم الإرجاع */}
               <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-start gap-2">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>الإرجاع مجاني إن وصلك المنتج معيباً أو خاطئاً أو ناقصاً (مع إرفاق دليل). وعند تغيير الرأي: مجاني ببطاقة الإرجاع المجاني إن وُجدت، وإلا تُخصم <strong>15 درهماً</strong> من المبلغ المسترد.</p>
+                <p>الإرجاع مجاني إن وصلك المنتج معيباً أو خاطئاً أو ناقصاً (مع إرفاق دليل). وعند تغيير الرأي: مجاني ببطاقة الإرجاع المجاني إن وُجدت، وإلا تُخصم <strong>{returnFee !== null ? `${returnFee} درهماً` : "كلفة الشحن"}</strong> من المبلغ المسترد.</p>
               </div>
 
               {/* نوع الإرجاع */}

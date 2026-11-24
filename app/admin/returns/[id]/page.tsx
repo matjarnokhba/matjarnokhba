@@ -91,6 +91,7 @@ export default function AdminReturnDetailPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [adminNote, setAdminNote] = useState("");
   const [reasonOverride, setReasonOverride] = useState("");
+  const [feeOverride, setFeeOverride] = useState("");
 
   async function loadData() {
     try {
@@ -122,6 +123,7 @@ export default function AdminReturnDetailPage() {
       const body: any = { action };
       if (action === "reject") body.adminNote = adminNote.trim() || undefined;
       if (action === "approve" && reasonOverride && reasonOverride !== ret?.reasonType) body.reasonType = reasonOverride;
+      if (action === "approve" && Number(feeOverride) > 0) body.shippingFee = Number(feeOverride);
 
       const res = await fetch(`/api/admin/returns/${returnId}`, {
         method: "PATCH",
@@ -321,6 +323,19 @@ export default function AdminReturnDetailPage() {
                 </option>
               ))}
             </select>
+            <label className="mb-1 mt-3 block text-xs font-bold text-gray-700">
+              رسوم شحن المرتجع (د.م) — اتركه فارغاً لاستعمال سعر شحن الطلب الأصلي ({ret.order.shippingCost} د.م)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={feeOverride}
+              onChange={(e) => setFeeOverride(e.target.value)}
+              disabled={actionLoading}
+              placeholder={ret.order.shippingCost}
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+            />
           </div>
         )}
         {ret.adminNote && (

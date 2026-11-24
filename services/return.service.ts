@@ -1,5 +1,5 @@
 import { IdentityService } from "@/services/identity.service";
-import { decideReturnShipping, isSellerFault, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
+import { decideReturnShipping, isSellerFault, resolveReturnShippingFee, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
 import { prisma } from "@/lib/prisma";
 import { InventoryService } from "@/services/inventory.service";
@@ -9,7 +9,6 @@ import { LoyaltyService } from "@/services/loyalty.service";
 // الثوابت
 // ═══════════════════════════════════════════
 const RETURN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 أيام
-const RETURN_FEE = 15; // رسوم الإرجاع
 
 // ═══════════════════════════════════════════
 // الأنواع
@@ -211,7 +210,7 @@ export const ReturnService = {
   },
 
   // ═══════ الموافقة على الإرجاع (Admin) ═══════
-  async approve(returnId: number, adminId: number, reasonType?: string) {
+  async approve(returnId: number, adminId: number, reasonType?: string, shippingFee?: number) {
     return prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "ReturnRequest" WHERE id = ${returnId} FOR UPDATE`;
 
@@ -255,6 +254,7 @@ export const ReturnService = {
           processedAt: new Date(),
           processedById: adminId,
           ...(reasonType && REASON_TYPES.includes(reasonType as ReasonType) ? { reasonType: reasonType as ReasonType } : {}),
+          ...(shippingFee && shippingFee > 0 ? { shippingFee } : {}),
         },
       });
 
@@ -434,7 +434,13 @@ export const ReturnService = {
             if (claimed.count === 1) cardId = card.id;
           }
         }
-        const pol = decideReturnShipping({ reasonType: ret.reasonType, hasCard: cardId !== null, fee: RETURN_FEE });
+        const feePolicy = await tx.systemPolicy.findUnique({ where: { key: "RETURN_SHIPPING_FEE_DEFAULT" } });
+        const returnFee = resolveReturnShippingFee({
+          override: Number(ret.shippingFee ?? 0),
+          orderShipping: Number(ret.order.shippingCost ?? 0),
+          policyDefault: typeof feePolicy?.value === "number" ? feePolicy.value : null,
+        });
+        const pol = decideReturnShipping({ reasonType: ret.reasonType, hasCard: cardId !== null, fee: returnFee });
         await WalletService.settleReturnShipping(tx, {
           returnId,
           orderNumber: ret.order.orderNumber,
