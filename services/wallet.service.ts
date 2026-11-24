@@ -85,6 +85,11 @@ export const WalletService = {
     });
     if (!seller) return { commissionAmount: 0 };
 
+    // منع احتساب أرباح الطلب مرتين (مفتاح فريد في قاعدة البيانات)
+    const heldKey = `held:order:${orderId}`;
+    const dupHeld = await tx.walletTransaction.findUnique({ where: { idempotencyKey: heldKey } });
+    if (dupHeld) return { commissionAmount: 0 };
+
     const policy = await tx.systemPolicy.findUnique({
       where: { key: "DEFAULT_COMMISSION_RATE" },
     });
@@ -125,12 +130,20 @@ export const WalletService = {
     await tx.walletTransaction.create({
       data: {
         sellerId,
+        orderId,
+        idempotencyKey: heldKey,
         type: WalletTransactionType.HELD_EARNING,
         amount: netEarning,
         balanceBefore: beforeHeld,
         balanceAfter: afterHeld,
         description: `أرباح محجوزة من الطلب #${orderId} بعد خصم عمولة ${rate * 100}%`,
       },
+    });
+
+    // مصدر الحقيقة لأرباح الطلب (تعتمد عليه التقارير وعكس الإرجاع)
+    await tx.order.update({
+      where: { id: orderId },
+      data: { commission: commissionAmount, sellerPayout: netEarning },
     });
 
     const platformWallet = await tx.wallet.upsert({

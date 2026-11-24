@@ -344,6 +344,8 @@ export const PartialDeliveryService = {
 
           // ═══ دعم المنصة للعروض المحدودة (التاجر يُحاسَب على سعر القائمة) ═══
           const subsidyBySeller = new Map<number, number>();
+          const subsidyByOrder = new Map<number, number>();
+          const sellerRates = new Map<number, number>();
           const flashLines: any[] =
             (await (tx as any).flashSaleOrderLine?.findMany({
               where: {
@@ -376,6 +378,7 @@ export const PartialDeliveryService = {
               fl.sellerId,
               (subsidyBySeller.get(fl.sellerId) ?? 0) + part
             );
+            subsidyByOrder.set(d.item.orderId, (subsidyByOrder.get(d.item.orderId) ?? 0) + part);
             settledFlashIds.push(fl.id);
           }
           if (reversedFlashIds.length > 0) {
@@ -403,6 +406,7 @@ export const PartialDeliveryService = {
             const rate = seller.commissionRateOverride
               ? Number(seller.commissionRateOverride)
               : defaultRate;
+            sellerRates.set(sellerId, rate);
             const commission = Math.round(subtotal * rate * 100) / 100;
             const netEarning =
               Math.round((subtotal - commission) * 100) / 100;
@@ -421,12 +425,28 @@ export const PartialDeliveryService = {
             await tx.walletTransaction.create({
               data: {
                 sellerId,
+                idempotencyKey: `held:ship:${shipmentId}:${sellerId}`,
                 type: "HELD_EARNING",
                 amount: netEarning,
                 balanceBefore: Number(seller.heldBalance),
                 balanceAfter: Number(seller.heldBalance) + netEarning,
                 description: `أرباح محجوزة من شحنة #${shipment.shipmentNumber}`,
               },
+            });
+          }
+
+          // تسجيل العمولة وصافي التاجر في كل طلب (مصدر الحقيقة لعكس الإرجاع)
+          for (const u of orderUpdates) {
+            if (u.acceptedSubtotal <= 0) continue;
+            const ord = shipment.items.find((i) => i.orderId === u.orderId)!.order;
+            if (!ord.sellerId) continue;
+            const rate = sellerRates.get(ord.sellerId);
+            if (rate === undefined) continue;
+            const eff = Math.round((u.acceptedSubtotal + (subsidyByOrder.get(u.orderId) ?? 0)) * 100) / 100;
+            const comm = Math.round(eff * rate * 100) / 100;
+            await tx.order.update({
+              where: { id: u.orderId },
+              data: { commission: comm, sellerPayout: Math.round((eff - comm) * 100) / 100 },
             });
           }
 
