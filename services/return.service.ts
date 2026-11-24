@@ -210,7 +210,7 @@ export const ReturnService = {
   },
 
   // ═══════ الموافقة على الإرجاع (Admin) ═══════
-  async approve(returnId: number, adminId: number) {
+  async approve(returnId: number, adminId: number, reasonType?: string) {
     return prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "ReturnRequest" WHERE id = ${returnId} FOR UPDATE`;
 
@@ -253,6 +253,7 @@ export const ReturnService = {
           status: "APPROVED",
           processedAt: new Date(),
           processedById: adminId,
+          ...(reasonType && REASON_TYPES.includes(reasonType as ReasonType) ? { reasonType: reasonType as ReasonType } : {}),
         },
       });
 

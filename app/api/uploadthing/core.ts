@@ -64,6 +64,19 @@ export const ourFileRouter = {
         size: file.size,
       };
     }),
+  // ═══ أدلة الإرجاع (العميل): صور أو فيديو ═══
+  returnEvidenceUploader: f({
+    image: { maxFileSize: "8MB", maxFileCount: 5 },
+    video: { maxFileSize: "32MB", maxFileCount: 1 },
+  })
+    .middleware(async () => {
+      const current = await SessionService.getCurrent();
+      if (!current) throw new UploadThingError("يجب تسجيل الدخول");
+      return { userId: current.user.id };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      return { uploadedBy: metadata.userId, url: file.url, name: file.name };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;

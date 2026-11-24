@@ -13,7 +13,10 @@ async function requireAdmin() {
 }
 
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("approve") }),
+  z.object({
+    action: z.literal("approve"),
+    reasonType: z.enum(["DEFECTIVE", "WRONG_ITEM", "MISSING_ITEM", "LOST", "CHANGED_MIND"]).optional(),
+  }),
   z.object({
     action: z.literal("reject"),
     adminNote: z.string().trim().max(500).optional(),
@@ -96,7 +99,7 @@ export async function PATCH(
     }
 
     if (parsed.data.action === "approve") {
-      await ReturnService.approve(returnId, auth.user.id);
+      await ReturnService.approve(returnId, auth.user.id, parsed.data.reasonType);
       return NextResponse.json({ success: true, message: "تمت الموافقة" });
     }
 

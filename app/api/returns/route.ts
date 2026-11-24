@@ -7,6 +7,8 @@ const createSchema = z.object({
   orderId: z.number().int().positive(),
   reason: z.string().trim().min(5, "سبب الإرجاع يجب أن يكون 5 أحرف على الأقل").max(500),
   refundMethod: z.enum(["WALLET", "COUPON", "BANK"]).default("WALLET"),
+  reasonType: z.enum(["DEFECTIVE", "WRONG_ITEM", "MISSING_ITEM", "LOST", "CHANGED_MIND"]).default("CHANGED_MIND"),
+  evidenceUrls: z.array(z.string().url()).max(10).default([]),
   items: z
     .array(
       z.object({
