@@ -36,7 +36,9 @@ export type NotificationType =
   | "WHOLESALE_RETURN_REQUESTED"
   | "WHOLESALE_RETURN_APPROVED"
   | "WHOLESALE_RETURN_REJECTED"
-  | "WHOLESALE_RETURN_COMPLETED";
+  | "WHOLESALE_RETURN_COMPLETED"
+  | "FLASH_OFFER_REQUESTED"
+  | "FLASH_OFFER_RESPONDED";
 
 export const NotificationService = {
   // ═══ Create (works inside or outside transactions) ═══

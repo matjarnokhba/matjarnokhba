@@ -282,6 +282,9 @@ enum NotificationType {
   WHOLESALE_RETURN_APPROVED
   WHOLESALE_RETURN_REJECTED
   WHOLESALE_RETURN_COMPLETED
+  // === Flash offers ===
+  FLASH_OFFER_REQUESTED
+  FLASH_OFFER_RESPONDED
 }
 
 /// نوع العملية الم​دقَ​قة
