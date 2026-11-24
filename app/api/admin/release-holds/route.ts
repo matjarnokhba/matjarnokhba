@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
+import { releasedHeldIds, releaseKey, releaseDescription } from "@/lib/release-holds";
 
+// تحرير الأرباح المحجوزة بعد 3 أيام: ذرّي، بمفتاح فريد، ويؤجل الطلبات التي عليها إرجاع معلّق
 export async function POST() {
   try {
     const current = await SessionService.getCurrent();
@@ -10,62 +12,81 @@ export async function POST() {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 3);
 
-    const heldTransactions = await prisma.walletTransaction.findMany({
+    // ما حُرّر سابقاً (بالمفتاح أو بالوصف القديم بمطابقة دقيقة)
+    const releases = await prisma.walletTransaction.findMany({
+      where: { type: WalletTransactionType.RELEASE_HOLD },
+      select: { description: true, idempotencyKey: true },
+    });
+    const done = releasedHeldIds(releases);
+
+    const held = await prisma.walletTransaction.findMany({
       where: {
         type: WalletTransactionType.HELD_EARNING,
-        createdAt: { lte: threeDaysAgo },
-        // نتحقق أن لم يتم تحريره سابقاً (عن طريق البحث عن حركة تحرير بنفس الوصف)
-      }
+        createdAt: { lte: cutoff },
+        ...(done.size > 0 ? { id: { notIn: Array.from(done) } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: 500,
+      select: { id: true, sellerId: true, amount: true, orderId: true },
     });
 
+    // طلبات عليها إرجاع قيد الدراسة/الموافقة: لا تُحرَّر أرباحها الآن
+    const orderIds = Array.from(new Set(held.map((h) => h.orderId).filter((x): x is number => x !== null)));
+    const pendingReturns = orderIds.length
+      ? await prisma.returnRequest.findMany({
+          where: { orderId: { in: orderIds }, status: { in: ["PENDING", "APPROVED"] } },
+          select: { orderId: true },
+        })
+      : [];
+    const blockedOrders = new Set(pendingReturns.map((r) => r.orderId));
+
     let releasedCount = 0;
+    let skippedPendingReturn = 0;
 
-    for (const txRecord of heldTransactions) {
-      // التحقق مما إذا كان قد تم تحريره بالفعل
-      const alreadyReleased = await prisma.walletTransaction.findFirst({
-        where: {
-          sellerId: txRecord.sellerId,
-          type: WalletTransactionType.RELEASE_HOLD,
-          description: { contains: txRecord.id.toString() }
-        }
-      });
-
-      if (alreadyReleased) continue;
-
-      await prisma.$transaction(async (tx) => {
-        const seller = await tx.seller.findUnique({ where: { id: txRecord.sellerId } });
-        if (!seller) return;
-
-        const beforeBal = Number(seller.walletBalance);
-        const afterBal = beforeBal + Number(txRecord.amount);
-
-        await tx.seller.update({
-          where: { id: seller.id },
-          data: {
-            walletBalance: { increment: txRecord.amount },
-            heldBalance: { decrement: txRecord.amount },
-          }
+    for (const h of held) {
+      if (h.orderId !== null && blockedOrders.has(h.orderId)) {
+        skippedPendingReturn++;
+        continue;
+      }
+      try {
+        await prisma.$transaction(async (tx) => {
+          const updated = await tx.seller.update({
+            where: { id: h.sellerId },
+            data: {
+              walletBalance: { increment: h.amount },
+              heldBalance: { decrement: h.amount },
+            },
+            select: { walletBalance: true },
+          });
+          const afterBal = Number(updated.walletBalance);
+          const beforeBal = Math.round((afterBal - Number(h.amount)) * 100) / 100;
+          // المفتاح الفريد: لو سبقنا أحد، يفشل هذا السطر وتُلغى المعاملة كلها
+          await tx.walletTransaction.create({
+            data: {
+              sellerId: h.sellerId,
+              orderId: h.orderId,
+              idempotencyKey: releaseKey(h.id),
+              type: WalletTransactionType.RELEASE_HOLD,
+              amount: h.amount,
+              balanceBefore: beforeBal,
+              balanceAfter: afterBal,
+              description: releaseDescription(h.id),
+            },
+          });
         });
-
-        await tx.walletTransaction.create({
-          data: {
-            sellerId: seller.id,
-            type: WalletTransactionType.RELEASE_HOLD,
-            amount: txRecord.amount,
-            balanceBefore: beforeBal,
-            balanceAfter: afterBal,
-            description: `تحرير أرباح محجوزة (مرجع حركة رقم ${txRecord.id})`
-          }
-        });
-      });
-      releasedCount++;
+        releasedCount++;
+      } catch (e) {
+        if ((e as { code?: string })?.code === "P2002") continue; // حُرّر للتو من عملية أخرى
+        throw e;
+      }
     }
 
-    return NextResponse.json({ success: true, releasedCount });
+    return NextResponse.json({ success: true, releasedCount, skippedPendingReturn });
   } catch (error) {
+    console.error("release-holds failed", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
   }
 }
