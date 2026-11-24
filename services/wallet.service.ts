@@ -1,3 +1,4 @@
+import { computeClawback } from "@/lib/return-clawback";
 import { prisma } from "@/lib/prisma";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
@@ -189,6 +190,137 @@ export const WalletService = {
     return { commissionAmount };
   },
 
+  // ═══ عكس أرباح التاجر عند إكمال إرجاع العميل (ذرّي مع الإرجاع) ═══
+  async clawbackReturn(
+    tx: any,
+    input: {
+      returnId: number;
+      isFull: boolean;
+      order: {
+        id: number;
+        orderNumber: string;
+        sellerId: number | null;
+        commission: number | null;
+        sellerPayout: number | null;
+        refundedCommission: number;
+      };
+      items: { orderItemId: number; qty: number; orderItemQty: number; unitPrice: number }[];
+    }
+  ) {
+    const { order } = input;
+    // لا نخصم أرباحاً لم تُمنح أصلاً (طلبات قبل تسجيل الصافي)
+    if (!order.sellerId || order.commission === null || order.sellerPayout === null) {
+      return { skipped: "no-earning-record" as const };
+    }
+    const key = `return:${input.returnId}`;
+    const dup = await tx.walletTransaction.findUnique({ where: { idempotencyKey: key } });
+    if (dup) return { skipped: "duplicate" as const };
+
+    const lines: any[] =
+      (await tx.flashSaleOrderLine?.findMany({
+        where: { orderItemId: { in: input.items.map((i) => i.orderItemId) }, reversedAt: null },
+        select: { id: true, orderItemId: true, quantity: true, platformSubsidy: true },
+      })) ?? [];
+    const lineByItem = new Map<number, any>(lines.map((l) => [l.orderItemId, l]));
+    const calcItems = input.items.map((i) => {
+      const l = lineByItem.get(i.orderItemId);
+      const share = l
+        ? Math.round(((Number(l.platformSubsidy) * Math.min(i.qty, l.quantity)) / l.quantity) * 100) / 100
+        : 0;
+      return { unitPrice: i.unitPrice, qty: i.qty, subsidyShare: share };
+    });
+
+    const prevAgg = await tx.walletTransaction.aggregate({
+      where: { orderId: order.id, type: "REFUND_DEDUCTION" },
+      _sum: { amount: true },
+    });
+    const calc = computeClawback({
+      commission: order.commission,
+      sellerPayout: order.sellerPayout,
+      refundedCommission: order.refundedCommission,
+      prevNet: Number(prevAgg?._sum?.amount ?? 0),
+      isFull: input.isFull,
+      items: calcItems,
+    });
+    if (calc.netBack <= 0 && calc.commissionBack <= 0) return { skipped: "zero" as const };
+
+    // الرصيد قد يصير سالباً (دين يُسدَّد من التحريرات القادمة)
+    const updated = await tx.seller.update({
+      where: { id: order.sellerId },
+      data: {
+        walletBalance: { decrement: calc.netBack },
+        totalRevenue: { decrement: Math.round((calc.netBack + calc.commissionBack) * 100) / 100 },
+        totalCommission: { decrement: calc.commissionBack },
+      },
+      select: { walletBalance: true, userId: true },
+    });
+    const afterBal = Number(updated.walletBalance);
+    await tx.walletTransaction.create({
+      data: {
+        sellerId: order.sellerId,
+        orderId: order.id,
+        idempotencyKey: key,
+        type: "REFUND_DEDUCTION",
+        amount: calc.netBack,
+        balanceBefore: Math.round((afterBal + calc.netBack) * 100) / 100,
+        balanceAfter: afterBal,
+        description: `استرداد أرباح إرجاع من الطلب #${order.orderNumber} (إرجاع رقم ${input.returnId})`,
+      },
+    });
+    await tx.order.update({
+      where: { id: order.id },
+      data: { refundedCommission: { increment: calc.commissionBack } },
+    });
+
+    // المنصة: تُلغى العمولة وتسترد الدعم الذي دفعته
+    const platformDelta = Math.round((calc.commissionBack - calc.subsidyBack) * 100) / 100;
+    const pw = await tx.wallet.upsert({
+      where: { ownerType_ownerId: { ownerType: "PLATFORM", ownerId: PLATFORM_ID } },
+      create: { ownerType: "PLATFORM", ownerId: PLATFORM_ID, balance: -platformDelta },
+      update: { balance: { decrement: platformDelta } },
+    });
+    await tx.walletTransactionUnified.create({
+      data: {
+        walletId: pw.id,
+        amount: -platformDelta,
+        type: "COMMISSION",
+        description: `عكس عمولة إرجاع من الطلب #${order.orderNumber}`,
+      },
+    });
+
+    // بنود العرض المرجعة بالكامل تُعلَّم معكوسة (تخرج من تقرير الدعم)
+    const fullIds = input.items
+      .filter((i) => i.qty >= i.orderItemQty)
+      .map((i) => lineByItem.get(i.orderItemId)?.id)
+      .filter((x): x is number => typeof x === "number");
+    if (fullIds.length > 0) {
+      await tx.flashSaleOrderLine.updateMany({
+        where: { id: { in: fullIds } },
+        data: { reversedAt: new Date() },
+      });
+    }
+
+    try {
+      const { NotificationService } = await import("./notification.service");
+      await NotificationService.create(
+        {
+          userId: updated.userId,
+          type: "RETURN_COMPLETED",
+          title: "خصم أرباح بسبب إرجاع",
+          message: `أُرجعت قطع من الطلب #${order.orderNumber}، فخُصم ${calc.netBack.toFixed(2)} د.م من أرباحك (وأُلغيت عمولتها). ${afterBal < 0 ? "رصيدك سالب الآن وسيُسدَّد من أرباحك القادمة." : ""}`,
+          link: "/seller/wallet",
+          category: "WALLET",
+          severity: afterBal < 0 ? "WARNING" : "INFO",
+          metadata: { orderId: order.id, returnId: input.returnId, netBack: calc.netBack },
+        },
+        tx
+      );
+    } catch (e) {
+      console.error("return clawback notification failed", e);
+    }
+
+    return { skipped: false as const, ...calc };
+  },
   // ═══ توزيع أرباح السائق والمستودع ═══
   async processDeliveryFinancials(tx: any, order: any, driverId: number) {
     // جلب حالة الكاش قبل التحديث (لكي نعرف إن كان صفر ثم صار موجباً)
