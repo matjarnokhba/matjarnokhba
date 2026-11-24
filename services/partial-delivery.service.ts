@@ -1,3 +1,4 @@
+import { FlashDealService } from "./flash-deal.service";
 import { prisma } from "@/lib/prisma";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 import { updateDriverBlockStatus } from "./wallet.service";
@@ -355,9 +356,18 @@ export const PartialDeliveryService = {
             flashLines.map((l: any) => [l.orderItemId, l])
           );
           const settledFlashIds: number[] = [];
+          const reversedFlashIds: number[] = [];
           for (const d of itemData) {
             const fl = flashByItem.get(d.item.orderItemId);
-            if (!fl || d.acceptedQty <= 0) continue;
+            if (!fl) continue;
+            const refusedQty = d.item.quantity - d.acceptedQty;
+            if (refusedQty > 0) {
+              await FlashDealService.releaseQuota(tx, fl.flashSaleItemId, refusedQty);
+            }
+            if (d.acceptedQty <= 0) {
+              reversedFlashIds.push(fl.id);
+              continue;
+            }
             const part =
               Math.round(
                 ((Number(fl.platformSubsidy) * d.acceptedQty) / fl.quantity) * 100
@@ -367,6 +377,12 @@ export const PartialDeliveryService = {
               (subsidyBySeller.get(fl.sellerId) ?? 0) + part
             );
             settledFlashIds.push(fl.id);
+          }
+          if (reversedFlashIds.length > 0) {
+            await (tx as any).flashSaleOrderLine.updateMany({
+              where: { id: { in: reversedFlashIds } },
+              data: { reversedAt: new Date() },
+            });
           }
           if (settledFlashIds.length > 0) {
             await (tx as any).flashSaleOrderLine.updateMany({

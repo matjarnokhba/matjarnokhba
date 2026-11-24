@@ -1,3 +1,4 @@
+import { FlashDealService } from "./flash-deal.service";
 import { PoolService } from "./pool.service";
 
 // ═══════════════════════════════════════════
@@ -275,6 +276,11 @@ export const InventoryService = {
         referenceId: BigInt(referenceId),
       },
     });
+
+    // العروض المحدودة: إلغاء/رفض الطلب يعيد حصة العرض ويعكس سجل التسوية
+    if (referenceType === "ORDER") {
+      await FlashDealService.releaseForOrderVariant(tx, referenceId, variantId);
+    }
 
     return { inventoryId: inv.id, returned: quantity, idempotent: false };
   },

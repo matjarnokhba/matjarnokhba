@@ -88,6 +88,25 @@ export const FlashDealService = {
     const n = await tx.$executeRaw`UPDATE "FlashSaleItem" SET "soldCount" = "soldCount" + ${qty} WHERE "id" = ${itemId} AND ("quantityLimit" IS NULL OR "soldCount" + ${qty} <= "quantityLimit")`;
     return n === 1;
   },
+
+  /** يعيد كمية إلى حصة العرض (إلغاء/رفض/مرتجع قبل التسليم). لا ينزل عن صفر. */
+  async releaseQuota(tx: any, itemId: number, qty: number): Promise<void> {
+    if (!(qty > 0)) return;
+    await tx.$executeRaw`UPDATE "FlashSaleItem" SET "soldCount" = GREATEST("soldCount" - ${qty}, 0) WHERE "id" = ${itemId}`;
+  },
+
+  /** عند إلغاء/رفض الطلب: يعيد حصة بنود العرض غير المسوّاة لهذا المتغير ويعلّم سجلها معكوساً. */
+  async releaseForOrderVariant(tx: any, orderId: number, variantId: number): Promise<void> {
+    const lines: any[] =
+      (await tx.flashSaleOrderLine?.findMany({
+        where: { reversedAt: null, settledAt: null, orderItem: { orderId, variantId } },
+        select: { id: true, flashSaleItemId: true, quantity: true },
+      })) ?? [];
+    for (const l of lines) {
+      await FlashDealService.releaseQuota(tx, l.flashSaleItemId, l.quantity);
+      await tx.flashSaleOrderLine.update({ where: { id: l.id }, data: { reversedAt: new Date() } });
+    }
+  },
 };
 
 const isList = (x: any) =>
