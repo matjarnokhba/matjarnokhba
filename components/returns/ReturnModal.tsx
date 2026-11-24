@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useUploadThing } from "@/lib/uploadthing";
+import { isSellerFault, type ReasonType } from "@/lib/return-policy";
 import { X, Loader2, Package, AlertCircle, Wallet, Ticket, Building2 } from "lucide-react";
 
 type ReturnableItem = {
@@ -28,6 +30,12 @@ export default function ReturnModal({
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [reason, setReason] = useState("");
   const [refundMethod, setRefundMethod] = useState<"WALLET" | "COUPON" | "BANK">("WALLET");
+  const [reasonType, setReasonType] = useState<ReasonType>("CHANGED_MIND");
+  const [evidence, setEvidence] = useState<{ url: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const { startUpload } = useUploadThing("returnEvidenceUploader", {
+    onUploadError: (err) => setError(err.message || "فشل رفع الملف"),
+  });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -65,6 +73,32 @@ export default function ReturnModal({
   }
 
   // ═══ إرسال ═══
+  async function handleEvidence(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    if (files.some((f) => !f.type.startsWith("image/") && !f.type.startsWith("video/"))) {
+      setError("يُقبل صور أو فيديو فقط");
+      return;
+    }
+    if (evidence.length + files.length > 6) {
+      setError("الحد الأقصى 6 ملفات");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    try {
+      const res = await startUpload(files);
+      if (res) {
+        setEvidence((prev) => [...prev, ...res.map((r) => ({ url: r.url, name: r.name }))]);
+      }
+    } catch {
+      setError("فشل رفع الملف");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleSubmit() {
     setError("");
 
@@ -77,6 +111,14 @@ export default function ReturnModal({
 
     if (selectedItems.length === 0) {
       setError("اختر منتجاً واحداً على الأقل");
+      return;
+    }
+    if (isSellerFault(reasonType) && evidence.length === 0) {
+      setError("أرفق صورة أو فيديو يثبت المشكلة");
+      return;
+    }
+    if (uploading) {
+      setError("انتظر اكتمال رفع الملفات");
       return;
     }
     if (reason.trim().length < 5) {
@@ -93,6 +135,8 @@ export default function ReturnModal({
           orderId,
           reason: reason.trim(),
           refundMethod,
+          reasonType,
+          evidenceUrls: evidence.map((x) => x.url),
           items: selectedItems,
         }),
       });
@@ -146,7 +190,64 @@ export default function ReturnModal({
               {/* تنبيه رسوم الإرجاع */}
               <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-start gap-2">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>يرجى العلم أنه سيتم خصم <strong>15 درهماً</strong> كرسوم إرجاع من المبلغ الإجمالي المسترد.</p>
+                <p>الإرجاع مجاني إن وصلك المنتج معيباً أو خاطئاً أو ناقصاً (مع إرفاق دليل). وعند تغيير الرأي: مجاني ببطاقة الإرجاع المجاني إن وُجدت، وإلا تُخصم <strong>15 درهماً</strong> من المبلغ المسترد.</p>
+              </div>
+
+              {/* نوع الإرجاع */}
+              <div className="mb-4">
+                <label className="mb-2 block text-xs font-bold text-gray-700">
+                  ما سبب الإرجاع؟ <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reasonType}
+                  onChange={(e) => setReasonType(e.target.value as ReasonType)}
+                  disabled={submitting}
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+                >
+                  <option value="CHANGED_MIND">غيّرت رأيي</option>
+                  <option value="DEFECTIVE">وصلني مكسوراً أو معيباً</option>
+                  <option value="WRONG_ITEM">وصلني منتج غير الذي طلبته</option>
+                  <option value="MISSING_ITEM">ينقصني جزء أو قطعة</option>
+                  <option value="LOST">ضاع جزء من طلبي</option>
+                </select>
+                <p className="mt-1 text-[10px] text-gray-500">
+                  شروط الإرجاع: خلال 7 أيام من التسليم، والمنتج غير مستعمل وغير مغسول وفي علبته الأصلية.
+                </p>
+                {isSellerFault(reasonType) && (
+                  <div className="mt-3 rounded-lg border border-dashed border-gray-300 p-3">
+                    <p className="mb-2 text-[11px] text-gray-600">
+                      أرفق صورة أو فيديو يوضح المشكلة قبل إرسال الطرد (إلزامي). بدون دليل لا يُقبل الإرجاع المجاني.
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      disabled={submitting || uploading}
+                      onChange={handleEvidence}
+                      className="text-xs"
+                    />
+                    {uploading && <p className="mt-1 text-[11px] text-gray-500">جاري الرفع...</p>}
+                    {evidence.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {evidence.map((ev, i) => (
+                          <span
+                            key={ev.url}
+                            className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px]"
+                          >
+                            <span className="max-w-[120px] truncate">{ev.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setEvidence((p) => p.filter((_, j) => j !== i))}
+                              className="text-gray-500 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* قائمة المنتجات */}
@@ -290,6 +391,7 @@ export default function ReturnModal({
           <button
             onClick={handleSubmit}
             disabled={
+              uploading ||
               submitting ||
               loading ||
               items.length === 0 ||
