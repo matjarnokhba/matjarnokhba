@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   PackagePlus,
   Settings,
+  Flame,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/returns-batches", label: "مرتجعات من المستودع", icon: PackageX, exact: false, permission: "VIEW_BATCHES" },
   { href: "/seller/reviews", label: "التقييمات", icon: Star, exact: false, permission: "VIEW_REVIEWS" },
   { href: "/seller/performance", label: "أدائي", icon: TrendingUp, exact: false, permission: "VIEW_PERFORMANCE" },
+  { href: "/seller/flash-offers", label: "عروضي المحدودة", icon: Flame, exact: false, ownerOnly: true },
   { href: "/seller/subscription", label: "اشتراك المحل", icon: BadgeCheck, exact: false, ownerOnly: true },
   { href: "/seller/wallet", label: "محفظتي", icon: Wallet, exact: false, permission: "VIEW_WALLET" },
   { href: "/seller/bank-accounts", label: "حساباتي البنكية", icon: Building2, exact: false, ownerOnly: true },
