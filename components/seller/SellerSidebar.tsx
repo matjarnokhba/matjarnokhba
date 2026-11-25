@@ -29,6 +29,7 @@ import {
   Settings,
   Flame,
   History,
+  Undo2,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -57,6 +58,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permissions: ["VIEW_PRODUCTS", "ADD_STOCK"] },
   { href: "/seller/stock-receipts", label: "طلبات المخزون", icon: PackagePlus, exact: false, permissions: ["ADD_STOCK", "APPROVE_STOCK", "VIEW_STOCK_HISTORY"] },
   { href: "/seller/stock-history", label: "سجل المخزون", icon: History, exact: false, permission: "VIEW_STOCK_HISTORY" },
+  { href: "/seller/pos-returns", label: "إرجاع بيع المحل", icon: Undo2, exact: false, permission: "RETURN_POS_SALE" },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false, permission: "VIEW_RETURNS" },
