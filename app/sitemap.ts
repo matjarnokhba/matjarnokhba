@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 const BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://matjarnokhba.com";
 
+// Refresh hourly instead of being frozen at build time
+export const revalidate = 3600;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // ═══ الصفحات الثابتة ═══
   const staticPages: MetadataRoute.Sitemap = [

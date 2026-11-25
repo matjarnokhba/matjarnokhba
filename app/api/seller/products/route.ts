@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from '@/services/session.service';
 
-async function requireSeller() {
+async function requireSeller(permission?: string) {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
@@ -13,7 +13,9 @@ async function requireSeller() {
   ) {
     return { error: "متجرك معطّل", status: 403 };
   }
-  return { user: current.user, seller: current.user.seller };
+  if (permission && !current.user.isSellerOwner && !current.user.staffPermissions.includes(permission)) {
+    return { error: "لا تملك صلاحية عرض المنتجات", status: 403 };
+  }  return { user: current.user, seller: current.user.seller };
 }
 
 function cartesian(lists: number[][]): number[][] {
@@ -60,7 +62,7 @@ const createSchema = z.object({
 // ═══════ GET — قائمة منتجات البائع ═══════
 export async function GET() {
   try {
-    const auth = await requireSeller();
+    const auth = await requireSeller("VIEW_PRODUCTS");
     if ("error" in auth) {
       return NextResponse.json(
         { success: false, message: auth.error },
