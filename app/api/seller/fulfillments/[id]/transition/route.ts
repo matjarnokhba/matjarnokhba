@@ -8,6 +8,9 @@ async function requireSellerOwnership(fulfillmentItemId: number) {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
   if (!current.user.seller) return { error: "ليس لديك متجر", status: 403 };
+  if (current.user.seller.status === "SUSPENDED" || current.user.seller.status === "CLOSED") {
+    return { error: "متجرك معطّل. تواصل مع الإدارة.", status: 403 };
+  }
 
   // M12 — فرض صلاحية MANAGE_FULFILLMENTS على الموظفين
   if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("MANAGE_FULFILLMENTS")) {
