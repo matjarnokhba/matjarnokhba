@@ -22,6 +22,10 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("reject"),
     adminNote: z.string().trim().max(500).optional(),
   }),
+  z.object({
+    action: z.literal("reject_fraud"),
+    adminNote: z.string().trim().min(5).max(500),
+  }),
   z.object({ action: z.literal("complete") }),
 ]);
 
@@ -111,6 +115,11 @@ export async function PATCH(
         parsed.data.adminNote || ""
       );
       return NextResponse.json({ success: true, message: "تم الرفض" });
+    }
+
+    if (parsed.data.action === "reject_fraud") {
+      await ReturnService.rejectAsFraud(returnId, auth.user.id, parsed.data.adminNote);
+      return NextResponse.json({ success: true, message: "تم الرفض وإيقاف حساب العميل" });
     }
 
     if (parsed.data.action === "complete") {

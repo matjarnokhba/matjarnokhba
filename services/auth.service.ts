@@ -108,6 +108,9 @@ const emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     if (!user || user.deletedAt) {
       throw new Error("البريد الإلكتروني أو كلمة المرور غير صحيحة");
     }
+    if (user.suspendedAt) {
+      throw new Error("تم إيقاف هذا الحساب. تواصل مع الدعم.");
+    }
 
     // M12 — إلزام التحقق من البريد قبل الدخول
     // استثناء: من سجّل عبر Google (googleId != null) فهو موثق تلقائيًا

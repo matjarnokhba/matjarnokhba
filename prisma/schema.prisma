@@ -392,6 +392,8 @@ model User {
   name                       String
   phone                      String?
   identityId                 Int?
+  suspendedAt                DateTime?
+  suspendReason              String?
   role                       UserRole  @default(CUSTOMER)
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt

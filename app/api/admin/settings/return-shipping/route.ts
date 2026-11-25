@@ -6,9 +6,11 @@ import { DEFAULT_RETURN_FEE } from "@/lib/return-policy";
 
 const KEY = "RETURN_SHIPPING_FEE_DEFAULT";
 const AUTO_KEY = "RETURN_AUTO_APPROVE_ENABLED";
+const STRIKE_KEY = "SELLER_STRIKE_LIMIT";
 const schema = z.object({
   defaultFee: z.number().min(0).max(1000),
   autoApprove: z.boolean().optional(),
+  strikeLimit: z.number().int().min(0).max(20).optional(),
 });
 
 async function requireAdminUser() {
@@ -22,13 +24,15 @@ export async function GET() {
     if (!(await requireAdminUser())) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
-    const rows = await prisma.systemPolicy.findMany({ where: { key: { in: [KEY, AUTO_KEY] } } });
+    const rows = await prisma.systemPolicy.findMany({ where: { key: { in: [KEY, AUTO_KEY, STRIKE_KEY] } } });
     const fee = rows.find((p) => p.key === KEY)?.value;
     const auto = rows.find((p) => p.key === AUTO_KEY)?.value;
+    const strike = rows.find((p) => p.key === STRIKE_KEY)?.value;
     return NextResponse.json({
       success: true,
       defaultFee: typeof fee === "number" ? fee : DEFAULT_RETURN_FEE,
       autoApprove: auto !== false,
+      strikeLimit: typeof strike === "number" ? strike : 3,
     });
   } catch {
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
@@ -56,6 +60,13 @@ export async function POST(request: Request) {
           where: { key: AUTO_KEY },
           create: { key: AUTO_KEY, value: parsed.data.autoApprove, updatedById: current.user.id },
           update: { value: parsed.data.autoApprove, updatedById: current.user.id },
+        });
+      }
+      if (typeof parsed.data.strikeLimit === "number") {
+        await tx.systemPolicy.upsert({
+          where: { key: STRIKE_KEY },
+          create: { key: STRIKE_KEY, value: parsed.data.strikeLimit, updatedById: current.user.id },
+          update: { value: parsed.data.strikeLimit, updatedById: current.user.id },
         });
       }
     });

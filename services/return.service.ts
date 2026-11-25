@@ -1,3 +1,4 @@
+import { AccountEnforcementService } from "@/services/account-enforcement.service";
 import { IdentityService } from "@/services/identity.service";
 import { decideReturnShipping, isSellerFault, resolveReturnShippingFee, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
@@ -317,6 +318,24 @@ export const ReturnService = {
     });
   },
 
+  // ═══════ رفض مع إيقاف حساب العميل (تلاعب مثبت بالدليل) ═══════
+  async rejectAsFraud(returnId: number, adminId: number, adminNote: string) {
+    const note = (adminNote ?? "").trim();
+    if (note.length < 5) throw new Error("اكتب سبب الإيقاف (5 أحرف على الأقل)");
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "ReturnRequest" WHERE id = ${returnId} FOR UPDATE`;
+      const ret = await tx.returnRequest.findUnique({ where: { id: returnId } });
+      if (!ret) throw new Error("طلب الإرجاع غير موجود");
+      if (ret.status !== "PENDING") throw new Error("لا يمكن الرفض إلا للطلبات PENDING");
+      await tx.returnRequest.update({
+        where: { id: returnId },
+        data: { status: "REJECTED", processedAt: new Date(), processedById: adminId, adminNote: note },
+      });
+      await AccountEnforcementService.suspendCustomer(tx, { userId: ret.userId, reason: note });
+      return { success: true };
+    }, { timeout: 30000 });
+  },
+
   // ═══════ إكمال الإرجاع (Admin) — الجزء الأهم ═══════
   async complete(returnId: number, adminId: number) {
     return prisma.$transaction(async (tx) => {
@@ -452,6 +471,9 @@ export const ReturnService = {
           where: { id: returnId },
           data: { shippingPayer: pol.payer, shippingFee: pol.fee, freeCardId: cardId },
         });
+        if (pol.payer === "SELLER") {
+          await AccountEnforcementService.checkSellerStrikes(tx, ret.order.sellerId, ret.reasonType);
+        }
         customerRefundAmount = Math.max(0, totalOrderRefund - pol.customerPays);
         if (pol.customerPays > 0) feeNote = `(بعد خصم ${pol.customerPays} د.م رسوم إرجاع)`;
       }
