@@ -70,6 +70,7 @@ export const SessionService = {
             phone: true,
             role: true,
             deletedAt: true,
+            suspendedAt: true,
             emailVerified: true,
             seller: { select: SELLER_SELECT },
 
@@ -90,6 +91,7 @@ export const SessionService = {
     if (session.revokedAt) return null;
     if (session.expiresAt < new Date()) return null;
     if (session.user.deletedAt) return null;
+    if (session.user.suspendedAt) return null;
 
     const { staffOf, ...userBase } = session.user;
     const isSellerOwner = !!userBase.seller;

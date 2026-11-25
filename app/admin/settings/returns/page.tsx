@@ -6,6 +6,7 @@ import { Loader2, Save, Truck } from "lucide-react";
 export default function ReturnSettingsPage() {
   const [fee, setFee] = useState("20");
   const [autoApprove, setAutoApprove] = useState(true);
+  const [strikeLimit, setStrikeLimit] = useState("3");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -17,6 +18,7 @@ export default function ReturnSettingsPage() {
         if (d.success) {
           setFee(String(d.defaultFee));
           setAutoApprove(d.autoApprove !== false);
+          setStrikeLimit(String(d.strikeLimit ?? 3));
         }
       })
       .catch(() => setMsg("فشل التحميل"))
@@ -31,7 +33,7 @@ export default function ReturnSettingsPage() {
       const res = await fetch("/api/admin/settings/return-shipping", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaultFee: Number(fee), autoApprove }),
+        body: JSON.stringify({ defaultFee: Number(fee), autoApprove, strikeLimit: Number(strikeLimit) }),
       });
       const d = await res.json();
       setMsg(res.ok && d.success ? "تم الحفظ بنجاح!" : d.message || "فشل الحفظ");
@@ -92,6 +94,24 @@ export default function ReturnSettingsPage() {
             </span>
           </span>
         </label>
+
+        <div>
+          <label className="mb-1 block text-sm font-bold text-gray-700">
+            إيقاف التاجر بعد كم خطأ متكرر من نفس النوع (خلال 90 يوماً)
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="20"
+            step="1"
+            value={strikeLimit}
+            onChange={(e) => setStrikeLimit(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+          />
+          <p className="mt-1 text-xs text-gray-600">
+            الافتراضي 3. اكتب 0 لتعطيل الإيقاف التلقائي. يمكنك رفع الإيقاف من صفحة التجار.
+          </p>
+        </div>
 
         <button
           type="submit"

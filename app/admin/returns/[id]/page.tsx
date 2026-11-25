@@ -91,6 +91,7 @@ export default function AdminReturnDetailPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [adminNote, setAdminNote] = useState("");
   const [reasonOverride, setReasonOverride] = useState("");
+  const [fraudMode, setFraudMode] = useState(false);
   const [feeOverride, setFeeOverride] = useState("");
 
   async function loadData() {
@@ -117,11 +118,11 @@ export default function AdminReturnDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnId]);
 
-  async function handleAction(action: "approve" | "reject" | "complete") {
+  async function handleAction(action: "approve" | "reject" | "reject_fraud" | "complete") {
     setActionLoading(true);
     try {
       const body: any = { action };
-      if (action === "reject") body.adminNote = adminNote.trim() || undefined;
+      if (action === "reject" || action === "reject_fraud") body.adminNote = adminNote.trim() || undefined;
       if (action === "approve" && reasonOverride && reasonOverride !== ret?.reasonType) body.reasonType = reasonOverride;
       if (action === "approve" && Number(feeOverride) > 0) body.shippingFee = Number(feeOverride);
 
@@ -412,6 +413,13 @@ export default function AdminReturnDetailPage() {
         {ret.status === "PENDING" && (
           <div className="flex flex-wrap gap-2">
             <button
+              onClick={() => { setFraudMode(true); setShowRejectModal(true); }}
+              disabled={actionLoading}
+              className="flex items-center gap-2 rounded-lg border border-red-300 bg-white px-5 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+            >
+              🚫 رفض وإيقاف الحساب (تلاعب)
+            </button>
+            <button
               onClick={() => handleAction("approve")}
               disabled={actionLoading}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
@@ -424,7 +432,7 @@ export default function AdminReturnDetailPage() {
               موافقة
             </button>
             <button
-              onClick={() => setShowRejectModal(true)}
+              onClick={() => { setFraudMode(false); setShowRejectModal(true); }}
               disabled={actionLoading}
               className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
             >
@@ -475,6 +483,11 @@ export default function AdminReturnDetailPage() {
             <p className="mt-2 text-center text-sm text-gray-600">
               اكتب سبب الرفض (اختياري) ليظهر للعميل.
             </p>
+            {fraudMode && (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                تحذير: سيُرفض الإرجاع ويُوقف حساب العميل وتُنهى جلساته. اكتب السبب والدليل (إلزامي).
+              </p>
+            )}
             <textarea
               value={adminNote}
               onChange={(e) => setAdminNote(e.target.value)}
@@ -486,7 +499,7 @@ export default function AdminReturnDetailPage() {
             />
             <div className="mt-4 flex gap-2">
               <button
-                onClick={() => handleAction("reject")}
+                onClick={() => handleAction(fraudMode ? "reject_fraud" : "reject")}
                 disabled={actionLoading}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 py-2.5 text-sm font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
               >
