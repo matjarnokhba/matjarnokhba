@@ -8,6 +8,21 @@ export type SellerGuardResult =
     }
   | { ok: false; response: NextResponse };
 
+// تاجر موقوف أو مغلق: يُمنع من العمليات (السحب، البنوك، العروض...). PENDING يبقى مسموحاً لمرحلة التسجيل.
+export function isSellerDisabled(status: string | null | undefined): boolean {
+  return status === "SUSPENDED" || status === "CLOSED";
+}
+
+function disabledResponse(): SellerGuardResult {
+  return {
+    ok: false,
+    response: NextResponse.json(
+      { success: false, message: "متجرك معطّل. تواصل مع الإدارة." },
+      { status: 403 }
+    ),
+  };
+}
+
 export async function requireSeller(): Promise<SellerGuardResult> {
   const current = await SessionService.getCurrent();
   if (!current || !current.user.seller) {
@@ -33,6 +48,7 @@ export async function requireSellerOwner(): Promise<SellerGuardResult> {
       ),
     };
   }
+  if (isSellerDisabled(current.user.seller.status)) return disabledResponse();
   if (!current.user.isSellerOwner) {
     return {
       ok: false,
@@ -61,6 +77,7 @@ export async function requireStaffPermission(
       ),
     };
   }
+  if (isSellerDisabled(current.user.seller.status)) return disabledResponse();
   if (current.user.isSellerOwner) {
     return { ok: true, current };
   }
