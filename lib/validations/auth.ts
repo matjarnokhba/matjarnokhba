@@ -1,3 +1,4 @@
+import { normalizePhone } from "../identity";
 import { z } from "zod";
 
 // ═══════════════════════════════════════════
@@ -19,9 +20,9 @@ export const registerSchema = z.object({
     .max(100, "كلمة المرور طويلة جداً"),
   phone: z
     .string()
-    .min(8, "رقم الهاتف غير صالح")
-    .optional()
-    .or(z.literal("")),
+    .trim()
+    .min(1, "رقم الهاتف مطلوب")
+    .refine((v) => normalizePhone(v) !== null, "رقم الهاتف غير صالح (مثال: 0612345678)"),
   referralCode: z
     .string()
     .trim()

@@ -135,10 +135,11 @@ export default function RegisterPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              رقم الهاتف <span className="text-gray-400 text-xs">(اختياري)</span>
+              رقم الهاتف <span className="text-red-500 text-xs">*</span>
             </label>
             <input
               type="tel"
+              required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
