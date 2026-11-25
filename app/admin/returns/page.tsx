@@ -1,5 +1,6 @@
 "use client";
 
+import { reasonTypeLabel, deadlineBadge } from "@/lib/return-labels";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -16,6 +17,8 @@ type ReturnRequest = {
   id: number;
   status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
   reason: string;
+  reasonType?: string;
+  decisionDueAt?: string | null;
   adminNote: string | null;
   requestedAt: string;
   processedAt: string | null;
@@ -187,6 +190,26 @@ export default function AdminReturnsPage() {
                   <strong>السبب:</strong> {ret.reason}
                 </div>
 
+                {(ret.reasonType || (ret.status === "PENDING" && ret.decisionDueAt)) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                    {ret.reasonType && (
+                      <span className="rounded-full bg-orange-50 px-2 py-0.5 font-bold text-orange-700">
+                        {reasonTypeLabel(ret.reasonType)}
+                      </span>
+                    )}
+                    {ret.status === "PENDING" && deadlineBadge(ret.decisionDueAt) && (
+                      <span
+                        className={
+                          deadlineBadge(ret.decisionDueAt)!.overdue
+                            ? "rounded-full bg-red-100 px-2 py-0.5 font-bold text-red-700"
+                            : "rounded-full bg-gray-100 px-2 py-0.5 text-gray-600"
+                        }
+                      >
+                        {deadlineBadge(ret.decisionDueAt)!.label}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {/* زر */}
                 <div className="mt-3 flex items-center justify-end text-xs font-bold text-[#ff5c00]">
                   عرض التفاصيل

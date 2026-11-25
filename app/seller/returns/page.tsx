@@ -1,5 +1,6 @@
 "use client";
 
+import { reasonTypeLabel, payerLabelForSeller } from "@/lib/return-labels";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -35,6 +36,10 @@ type ReturnRow = {
   returnRequest: {
     id: number;
     reason: string;
+    reasonType?: string;
+    evidenceUrls?: string[];
+    shippingPayer?: string | null;
+    shippingFee?: string | number | null;
     order: { id: number; orderNumber: string };
     user: { id: number; name: string; phone: string | null };
     items: Array<{
@@ -235,7 +240,33 @@ export default function SellerReturnsPage() {
                     <div className="mt-2 text-[11px] text-gray-600">
                       سبب الإرجاع: {r.returnRequest.reason}
                     </div>
-                  </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                      {r.returnRequest.reasonType && (
+                        <span className="rounded-full bg-orange-50 px-2 py-0.5 font-bold text-orange-700">
+                          {reasonTypeLabel(r.returnRequest.reasonType)}
+                        </span>
+                      )}
+                      {r.returnRequest.shippingPayer && (
+                        <span className="text-gray-600">
+                          {payerLabelForSeller(r.returnRequest.shippingPayer, r.returnRequest.shippingFee)}
+                        </span>
+                      )}
+                    </div>
+                    {r.returnRequest.evidenceUrls && r.returnRequest.evidenceUrls.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {r.returnRequest.evidenceUrls.map((u, i) => (
+                          <a
+                            key={u}
+                            href={u}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-[#ff5c00] hover:bg-orange-50"
+                          >
+                            📎 دليل العميل {i + 1}
+                          </a>
+                        ))}
+                      </div>
+                    )}                  </div>
                 </div>
 
                 {/* Items */}
