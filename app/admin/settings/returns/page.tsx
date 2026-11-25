@@ -97,7 +97,7 @@ export default function ReturnSettingsPage() {
 
         <div>
           <label className="mb-1 block text-sm font-bold text-gray-700">
-            إيقاف التاجر بعد كم خطأ متكرر من نفس النوع (خلال 90 يوماً)
+            تنبيه الأدمن بعد كم خطأ متكرر من نفس النوع (خلال 90 يوماً)
           </label>
           <input
             type="number"
@@ -109,7 +109,7 @@ export default function ReturnSettingsPage() {
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
           />
           <p className="mt-1 text-xs text-gray-600">
-            الافتراضي 3. اكتب 0 لتعطيل الإيقاف التلقائي. يمكنك رفع الإيقاف من صفحة التجار.
+            الافتراضي 3. اكتب 0 لتعطيل التنبيه. لا يوجد إيقاف تلقائي للتجار: أنت تقرر الإيقاف أو السماح من صفحة التجار.
           </p>
         </div>
 
