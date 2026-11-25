@@ -1,5 +1,6 @@
 "use client";
 
+import { payerLabelForCustomer } from "@/lib/return-labels";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -77,6 +78,8 @@ type ReturnRequest = {
   id: number;
   status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
   reason: string;
+  shippingPayer?: string | null;
+  shippingFee?: string | number | null;
   adminNote: string | null;
   requestedAt: string;
   items: {
@@ -674,7 +677,11 @@ export default function OrderDetailPage() {
                     <div className="mt-2 text-[11px] text-gray-600">
                       <strong>السبب:</strong> {ret.reason}
                     </div>
-                    <div className="mt-2 space-y-1">
+                    {ret.shippingPayer && (
+                      <div className="mt-1 text-[11px] text-gray-600">
+                        {payerLabelForCustomer(ret.shippingPayer, ret.shippingFee)}
+                      </div>
+                    )}                    <div className="mt-2 space-y-1">
                       {ret.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between text-[10px] text-gray-500">
                           <span className="truncate">
