@@ -28,6 +28,7 @@ import {
   PackagePlus,
   Settings,
   Flame,
+  History,
 } from "lucide-react";
 
 type SellerSidebarProps = {
@@ -55,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/seller/scanner", label: "نقطة البيع (POS)", icon: ScanLine, exact: false, permission: "SELL_ON_POS" },
   { href: "/seller/products", label: "منتجاتي", icon: Package, exact: false, permissions: ["VIEW_PRODUCTS", "ADD_STOCK"] },
   { href: "/seller/stock-receipts", label: "طلبات المخزون", icon: PackagePlus, exact: false, permissions: ["ADD_STOCK", "APPROVE_STOCK", "VIEW_STOCK_HISTORY"] },
+  { href: "/seller/stock-history", label: "سجل المخزون", icon: History, exact: false, permission: "VIEW_STOCK_HISTORY" },
   { href: "/seller/qr", label: "QR المتجر", icon: QrCode, exact: false, permission: "VIEW_QR" },
   { href: "/seller/orders", label: "طلباتي", icon: ShoppingCart, exact: false, permission: "VIEW_ORDERS" },
   { href: "/seller/returns", label: "المرتجعات", icon: RotateCcw, exact: false, permission: "VIEW_RETURNS" },
