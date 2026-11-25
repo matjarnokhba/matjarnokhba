@@ -141,6 +141,73 @@ export const InventoryService = {
 
     return { inventoryId: inv.id, added: quantity, idempotent: false };
   },
+  // ═══════ إخراج سلعة من مخزون العيوب: إتلاف أو إصلاح وإعادة للبيع ═══════
+  async resolveDefective(
+    tx: any,
+    variantId: number,
+    quantity: number,
+    action: "WRITE_OFF" | "RESTOCK",
+    opts: { performedById: number; reason: string }
+  ) {
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("الكمية يجب أن تكون موجبة");
+    if (action !== "WRITE_OFF" && action !== "RESTOCK") throw new Error("إجراء غير صالح");
+    const reason = (opts.reason ?? "").trim();
+    if (reason.length < 3) throw new Error("اكتب سبباً واضحاً");
+
+    const inv = await this.lockInventory(tx, variantId);
+    const beforeDef = inv.defectiveQuantity ?? 0;
+    if (quantity > beforeDef) throw new Error("الكمية أكبر من المعيب المتوفر (" + beforeDef + ")");
+
+    const afterDef = beforeDef - quantity;
+    const beforeQty = inv.quantity;
+    const afterQty = action === "RESTOCK" ? beforeQty + quantity : beforeQty;
+
+    const data: { defectiveQuantity: number; quantity?: number } = { defectiveQuantity: afterDef };
+    if (action === "RESTOCK") data.quantity = afterQty;
+    await tx.inventory.update({ where: { id: inv.id }, data });
+
+    if (action === "RESTOCK") {
+      await PoolService.syncInventoryToPool(tx, variantId, quantity);
+    }
+
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "STOCK_OUT",
+        stockBucket: "DEFECTIVE",
+        beforeQuantity: beforeDef,
+        afterQuantity: afterDef,
+        quantityChange: -quantity,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason: (action === "WRITE_OFF" ? "إتلاف سلعة معيبة - " : "إخراج من المعيب بعد الإصلاح - ") + reason,
+        referenceType: "MANUAL",
+        performedById: opts.performedById,
+      },
+    });
+
+    if (action === "RESTOCK") {
+      await tx.inventoryMovement.create({
+        data: {
+          inventoryId: inv.id,
+          type: "STOCK_IN",
+          stockBucket: "SELLABLE",
+          beforeQuantity: beforeQty,
+          afterQuantity: afterQty,
+          quantityChange: quantity,
+          beforeReserved: inv.reservedQuantity,
+          afterReserved: inv.reservedQuantity,
+          reservedChange: 0,
+          reason: "إعادة للبيع بعد الإصلاح - " + reason,
+          referenceType: "MANUAL",
+          performedById: opts.performedById,
+        },
+      });
+    }
+
+    return { inventoryId: inv.id, action, quantity, defectiveAfter: afterDef, sellableAfter: afterQty };
+  },
   // ═══════ قفل المخزون (SELECT ... FOR UPDATE) ═══════
   async lockInventory(tx: any, variantId: number): Promise<LockedInventory> {
     const rows: any[] = await tx.$queryRaw`
