@@ -1,3 +1,5 @@
+import { IdentityService } from "@/services/identity.service";
+import { decidePhoneUpdate } from "@/lib/phone-policy";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -60,11 +62,21 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const phoneDecision = decidePhoneUpdate({
+      current: current.user.phone,
+      submitted: parsed.data.phone ?? "",
+    });
+    if (phoneDecision.action === "reject") {
+      return NextResponse.json(
+        { success: false, message: phoneDecision.message },
+        { status: 400 }
+      );
+    }
     const updated = await prisma.user.update({
       where: { id: current.user.id },
       data: {
         name: parsed.data.name,
-        phone: parsed.data.phone?.trim() || null,
+        ...(phoneDecision.action === "set" ? { phone: phoneDecision.phone } : {}),
       },
       select: {
         id: true,
@@ -75,8 +87,22 @@ export async function PATCH(request: Request) {
       },
     });
 
+    if (phoneDecision.action === "set") {
+      try {
+        await IdentityService.attachUser(prisma, current.user.id);
+      } catch (err) {
+        console.error("Identity attach failed:", err);
+      }
+    }
+
     return NextResponse.json({ success: true, user: updated });
   } catch (error) {
+    if ((error as { code?: string })?.code === "P2002") {
+      return NextResponse.json(
+        { success: false, message: "هذا الرقم مرتبط بحساب آخر. تواصل مع الدعم." },
+        { status: 400 }
+      );
+    }
     console.error("Profile PATCH error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },

@@ -1,3 +1,6 @@
+import { IdentityService } from "@/services/identity.service";
+import { normalizePhone } from "@/lib/identity";
+import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { SessionService } from "@/services/session.service";
 import { OrderService } from "@/services/order.service";
@@ -73,6 +76,31 @@ export async function POST(request: Request) {
       );
     }
 
+    // ═══ الهاتف = الهوية: حساب بلا هاتف (مثل Google) يأخذ هاتف الطلب بعد التحقق منه ═══
+    if (!current.user.phone) {
+      const normalizedPhone = normalizePhone(addr.phone);
+      if (!normalizedPhone) {
+        return NextResponse.json(
+          { success: false, message: "رقم الهاتف غير صالح (مثال: 0612345678)" },
+          { status: 400 }
+        );
+      }
+      try {
+        await prisma.user.update({
+          where: { id: current.user.id },
+          data: { phone: normalizedPhone },
+        });
+        await IdentityService.attachUser(prisma, current.user.id);
+      } catch (err) {
+        if ((err as { code?: string })?.code === "P2002") {
+          return NextResponse.json(
+            { success: false, message: "هذا الرقم مرتبط بحساب آخر. سجّل الدخول بحسابك الأول أو تواصل مع الدعم." },
+            { status: 400 }
+          );
+        }
+        console.error("Phone attach on order failed:", err);
+      }
+    }
     // ═══ 2. Idempotency ═══
     const idempotencyKey =
       request.headers.get("Idempotency-Key") || body.idempotencyKey;
