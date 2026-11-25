@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireStaffPermission } from "@/lib/seller-guards";
+import { buildWalletSummary, RETURN_SHIPPING_PREFIX, REJECTED_WITHDRAWAL_PREFIX } from "@/lib/wallet-summary";
 
 export async function GET() {
   try {
@@ -32,9 +33,34 @@ export async function GET() {
       take: 20,
     });
 
+    type TxType = "REFUND_DEDUCTION" | "MANUAL_ADJUSTMENT" | "SUBSCRIPTION_PAYMENT" | "WITHDRAWAL";
+    const sumOf = async (type: TxType, prefix?: string) => {
+      const a = await prisma.walletTransaction.aggregate({
+        where: { sellerId, type, ...(prefix ? { description: { startsWith: prefix } } : {}) },
+        _sum: { amount: true },
+      });
+      return Number(a._sum.amount ?? 0);
+    };
+    const [refundDeductionSum, returnShippingSum, subscriptionSum, withdrawalSum, rejectedWithdrawalSum] = await Promise.all([
+      sumOf("REFUND_DEDUCTION"),
+      sumOf("MANUAL_ADJUSTMENT", RETURN_SHIPPING_PREFIX),
+      sumOf("SUBSCRIPTION_PAYMENT"),
+      sumOf("WITHDRAWAL"),
+      sumOf("MANUAL_ADJUSTMENT", REJECTED_WITHDRAWAL_PREFIX),
+    ]);
+    const summary = buildWalletSummary({
+      totalRevenue: Number(seller?.totalRevenue ?? 0),
+      totalCommission: Number(seller?.totalCommission ?? 0),
+      refundDeductionSum,
+      returnShippingSum,
+      subscriptionSum,
+      withdrawalSum,
+      rejectedWithdrawalSum,
+    });
     return NextResponse.json({
       success: true,
       seller,
+      summary,
       transactions,
       withdrawals,
       isSellerOwner: current.user.isSellerOwner,

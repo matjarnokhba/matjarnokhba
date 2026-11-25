@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
+import { displayAmount, type WalletSummary } from "@/lib/wallet-summary";
 import {
   Wallet,
   ArrowDownToLine,
@@ -41,6 +42,7 @@ export default function SellerWalletPage() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(true);
+  const [summary, setSummary] = useState<WalletSummary | null>(null);
 
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState("");
@@ -62,9 +64,12 @@ export default function SellerWalletPage() {
           totalRevenue: Number(json.seller.totalRevenue),
           totalCommission: Number(json.seller.totalCommission),
         });
-        setTransactions(json.transactions);
+        setTransactions(
+          (json.transactions as Transaction[]).map((x) => ({ ...x, amount: displayAmount(x.type, x.amount) }))
+        );
         setWithdrawals(json.withdrawals);
         setIsOwner(json.isSellerOwner === true);
+        setSummary(json.summary ?? null);
       }
     } catch (err) {
       console.error(err);
@@ -178,6 +183,35 @@ export default function SellerWalletPage() {
         </div>
       </div>
 
+      {summary && (
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-sm font-black text-gray-900">تفصيل الأرباح الصافية</h2>
+          <div className="space-y-2 text-sm">
+            {[
+              { label: "إجمالي المبيعات (بعد المرتجعات)", value: summary.grossSales, strong: false },
+              { label: "عمولة المنصة", value: -summary.commission, strong: false },
+              { label: "صافي الأرباح", value: summary.netEarnings, strong: true },
+              { label: "كلفة شحن المرتجعات", value: -summary.returnShipping, strong: false },
+              { label: "اشتراك المتجر", value: -summary.subscriptions, strong: false },
+              { label: "الصافي بعد التكاليف", value: summary.netAfterCosts, strong: true },
+            ].map((r) => (
+              <div
+                key={r.label}
+                className={"flex items-center justify-between " + (r.strong ? "border-t border-gray-100 pt-2 font-black" : "text-gray-700")}
+              >
+                <span>{r.label}</span>
+                <span dir="ltr" className={r.value < 0 ? "text-red-600" : r.strong ? "text-green-600" : ""}>
+                  {r.value.toFixed(2)} د.م
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-[11px] leading-5 text-gray-500">
+            المبالغ المستردة للعملاء بسبب المرتجعات: {summary.refundsDeducted.toFixed(2)} د.م (محسومة أصلاً من المبيعات والعمولة أعلاه)
+            {" • "}المسحوب فعلياً: {summary.withdrawn.toFixed(2)} د.م
+          </div>
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-2xl bg-white p-5 shadow-sm">
