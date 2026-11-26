@@ -95,6 +95,18 @@ export const ourFileRouter = {
     })
     .onUploadComplete(async ({ metadata, file }) => {
       return { uploadedBy: metadata.userId, sellerId: metadata.sellerId, url: file.url, name: file.name };
-    }),} satisfies FileRouter;
+    }),// ═══ صورة البطاقة الوطنية لاسترداد المبلغ عبر وكالة (اختيارية، للزبون المسجّل) ═══
+  returnCinUploader: f({
+    image: { maxFileSize: "4MB", maxFileCount: 1 },
+  })
+    .middleware(async () => {
+      const current = await SessionService.getCurrent();
+      if (!current) throw new UploadThingError("يجب تسجيل الدخول");
+      return { userId: current.user.id };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      return { uploadedBy: metadata.userId, url: file.url, name: file.name };
+    }),
+} satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;
