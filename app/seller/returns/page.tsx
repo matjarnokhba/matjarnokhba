@@ -8,11 +8,8 @@ import {
   RotateCcw,
   Package,
   Search,
-  ChevronLeft,
   User,
-  Phone,
   CheckCircle2,
-  Truck,
   AlertTriangle,
   X,
 } from "lucide-react";

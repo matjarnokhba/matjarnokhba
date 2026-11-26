@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Banknote, CheckCircle2, AlertCircle, Building2 } from "lucide-react";
+import { Loader2, AlertCircle, Building2 } from "lucide-react";
 import QRCode from "qrcode";
 
 export default function WarehouseHandoverPage() {

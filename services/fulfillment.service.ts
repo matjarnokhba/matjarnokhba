@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { AuditService } from "@/services/audit.service";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
 
 const DEFAULT_PREP_DEADLINE_MINUTES = 60;

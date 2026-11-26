@@ -7,8 +7,6 @@ import {
   AlertTriangle,
   Sparkles,
   Clock,
-  CheckCircle2,
-  XCircle,
   Store,
 } from "lucide-react";
 

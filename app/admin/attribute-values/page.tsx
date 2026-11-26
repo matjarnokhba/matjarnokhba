@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Check, X, Loader2, ArrowRight, Palette } from "lucide-react";
+import { Check, X, Loader2, Palette } from "lucide-react";
 
 type ValueItem = {
   id: number;

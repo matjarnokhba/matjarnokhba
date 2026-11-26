@@ -7,7 +7,6 @@ import {
   Truck,
   MapPin,
   User,
-  Package,
   ChevronLeft,
   Search,
   AlertCircle,

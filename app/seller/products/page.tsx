@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Plus, Package, Loader2, Edit3, Eye, AlertTriangle, QrCode,
-  Tag, Settings2, ShoppingBag, PackagePlus,
+  Plus,
+  Package,
+  Loader2,
+  Edit3,
+  Eye,
+  AlertTriangle,
+  QrCode,
+  ShoppingBag,
+  PackagePlus,
 } from "lucide-react";
 import OfferToWholesaleModal from "@/components/seller/OfferToWholesaleModal";
 

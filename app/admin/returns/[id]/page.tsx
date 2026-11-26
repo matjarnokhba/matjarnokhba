@@ -11,7 +11,6 @@ import {
   Mail,
   CheckCircle2,
   XCircle,
-  RotateCcw,
   AlertTriangle,
 } from "lucide-react";
 

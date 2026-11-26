@@ -14,7 +14,6 @@ import {
   X,
   Check,
   ExternalLink,
-  Star,
 } from "lucide-react";
 
 type Notification = {

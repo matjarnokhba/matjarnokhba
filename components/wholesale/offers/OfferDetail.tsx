@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  Tag,
   Package,
   ShieldCheck,
   ShieldX,

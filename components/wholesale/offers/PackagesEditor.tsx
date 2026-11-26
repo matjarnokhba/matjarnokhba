@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, AlertCircle, Boxes, X } from "lucide-react";
+import { Plus, Trash2, AlertCircle, Boxes } from "lucide-react";
 
 type OfferVariant = { id: number; attributes: Array<{ name: string; value: string }> };
 type PackageItem = { variantId: number; quantity: number };

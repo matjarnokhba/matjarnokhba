@@ -5,11 +5,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Package,
-  Building2,
   Calendar,
-  FileText,
-  Receipt,
-  Info,
   AlertCircle,
   RotateCcw,
 } from "lucide-react";

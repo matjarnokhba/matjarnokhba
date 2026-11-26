@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   ArrowRightLeft,
-  Loader2,
   AlertCircle,
   Package,
   Warehouse,

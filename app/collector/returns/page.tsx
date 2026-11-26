@@ -5,12 +5,9 @@ import Link from "next/link";
 import {
   Loader2,
   RotateCcw,
-  Package,
   Search,
   ChevronLeft,
   User,
-  Clock,
-  CheckCircle2,
 } from "lucide-react";
 
 export default function CollectorReturnsPage() {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, ShieldAlert, BadgeCheck, CreditCard } from "lucide-react";
+import { Loader2, CheckCircle2, ShieldAlert, CreditCard } from "lucide-react";
 
 export default function SellerSubscriptionPage() {
   const [status, setStatus] = useState<any>(null);

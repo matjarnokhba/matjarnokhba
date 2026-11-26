@@ -8,8 +8,6 @@ import {
   ShieldAlert,
   CheckCircle2,
   Clock,
-  User,
-  Phone,
   RefreshCw,
   ArrowLeft,
   X,

@@ -11,7 +11,6 @@ import {
   Trash2,
   Image as ImageIcon,
   Barcode,
-  Package,
   AlertCircle,
   Loader2,
 } from "lucide-react";

@@ -6,7 +6,6 @@ import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 import {
   Scan,
   X,
-  Loader2,
   CheckCircle2,
   AlertCircle,
   Package,

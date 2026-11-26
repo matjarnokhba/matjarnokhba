@@ -9,7 +9,6 @@ import {
   QrCode,
   CheckCircle2,
   AlertCircle,
-  Clock,
   Truck,
   RefreshCw,
 } from "lucide-react";

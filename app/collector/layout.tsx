@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { SessionService } from "@/services/session.service";
-import { prisma } from "@/lib/prisma";
 import CollectorSidebar from "@/components/collector/CollectorSidebar";
 
 export default async function CollectorLayout({

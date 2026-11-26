@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X, AlertCircle, RotateCcw } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 import { RETURN_STEPS, getReturnStepIndex } from "./types";
 

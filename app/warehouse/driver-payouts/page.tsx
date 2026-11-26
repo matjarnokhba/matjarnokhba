@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Banknote, CheckCircle2, QrCode, X, AlertTriangle } from "lucide-react";
+import { Loader2, Banknote, CheckCircle2, X, AlertTriangle } from "lucide-react";
 import QRCode from "qrcode";
 
 type DriverWallet = {

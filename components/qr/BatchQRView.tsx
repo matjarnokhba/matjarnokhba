@@ -5,11 +5,9 @@ import Link from "next/link";
 import {
   ArrowRight,
   Loader2,
-  Package,
   User,
   Check,
   CheckCircle2,
-  AlertCircle,
   Warehouse,
   Store,
 } from "lucide-react";

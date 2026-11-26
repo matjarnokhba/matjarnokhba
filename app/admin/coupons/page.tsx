@@ -7,7 +7,6 @@ import {
   Loader2,
   Trash2,
   Calendar,
-  Percent,
   X,
 } from "lucide-react";
 

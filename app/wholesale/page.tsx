@@ -4,8 +4,6 @@ import {
   Building2,
   Plus,
   ArrowLeft,
-  CheckCircle2,
-  Clock,
   AlertCircle,
   Factory,
   Globe2,

@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import {
-  ALL_STAFF_PERMISSIONS,
   DEFAULT_STAFF_PERMISSIONS,
   isValidStaffPermission,
 } from "@/lib/staff-permissions";

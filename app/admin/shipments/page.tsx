@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
-  MapPin,
 } from "lucide-react";
 
 type Shipment = {

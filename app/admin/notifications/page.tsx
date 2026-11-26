@@ -11,7 +11,6 @@ import {
   ShoppingCart,
   Settings,
   AlertTriangle,
-  CheckCircle2,
   Info,
   X,
   Check,
