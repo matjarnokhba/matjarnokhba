@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useUploadThing } from "@/lib/uploadthing";
 import { isSellerFault, type ReasonType } from "@/lib/return-policy";
-import { X, Loader2, Package, AlertCircle, Wallet, Ticket, Building2 } from "lucide-react";
+import { X, Loader2, Package, AlertCircle, Wallet, Ticket, Building2, Banknote } from "lucide-react";
 
 type ReturnableItem = {
   orderItemId: number;
@@ -62,7 +62,14 @@ export default function ReturnModal({
   const [items, setItems] = useState<ReturnableItem[]>([]);
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [reason, setReason] = useState("");
-  const [refundMethod, setRefundMethod] = useState<"WALLET" | "COUPON" | "BANK">("WALLET");
+  const [refundMethod, setRefundMethod] = useState<"WALLET" | "COUPON" | "BANK" | "CASH_PLUS" | "WAFACASH">("WALLET");
+  const [holderName, setHolderName] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [rib, setRib] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [cinUrl, setCinUrl] = useState("");
+  const [cinUploading, setCinUploading] = useState(false);
+  const isAgency = refundMethod === "CASH_PLUS" || refundMethod === "WAFACASH";
   const [reasonType, setReasonType] = useState<ReasonType>("CHANGED_MIND");
   const [evidence, setEvidence] = useState<{ url: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -79,6 +86,9 @@ export default function ReturnModal({
   }, []);
   const { startUpload } = useUploadThing("returnEvidenceUploader", {
     onUploadError: (err) => setError(err.message || "فشل رفع الملف"),
+  });
+  const { startUpload: startCinUpload } = useUploadThing("returnCinUploader", {
+    onUploadError: (err) => setError(err.message || "فشل رفع الصورة"),
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -143,6 +153,26 @@ export default function ReturnModal({
     }
   }
 
+  async function handleCin(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("يُقبل صورة فقط");
+      return;
+    }
+    setError("");
+    setCinUploading(true);
+    try {
+      const res = await startCinUpload([file]);
+      if (res?.[0]) setCinUrl(res[0].url);
+    } catch {
+      setError("فشل رفع الصورة");
+    } finally {
+      setCinUploading(false);
+    }
+  }
+
   async function handleSubmit() {
     setError("");
 
@@ -170,6 +200,38 @@ export default function ReturnModal({
       return;
     }
 
+    if (cinUploading) {
+      setError("انتظر اكتمال رفع الصورة");
+      return;
+    }
+    if (refundMethod === "BANK") {
+      const ribDigits = rib
+        .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[\s\-.]/g, "");
+      if (holderName.trim().length < 3) {
+        setError("أدخل الاسم الكامل لصاحب الحساب");
+        return;
+      }
+      if (bankName.trim().length < 2) {
+        setError("أدخل اسم البنك");
+        return;
+      }
+      if (!/^\d{24}$/.test(ribDigits)) {
+        setError("رقم RIB يجب أن يتكون من 24 رقماً");
+        return;
+      }
+    }
+    if (isAgency && fullName.trim().length < 3) {
+      setError("أدخل الاسم الكامل كما في بطاقتك الوطنية");
+      return;
+    }
+    const payout =
+      refundMethod === "BANK"
+        ? { holderName: holderName.trim(), bankName: bankName.trim(), rib: rib.trim() }
+        : isAgency
+          ? { fullName: fullName.trim(), cinImageUrl: cinUrl || undefined }
+          : undefined;
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/returns", {
@@ -179,6 +241,7 @@ export default function ReturnModal({
           orderId,
           reason: reason.trim(),
           refundMethod,
+          payout,
           reasonType,
           evidenceUrls: evidence.map((x) => x.url),
           items: selectedItems,
@@ -420,10 +483,97 @@ export default function ReturnModal({
                     <input type="radio" name="refundMethod" value="BANK" checked={refundMethod === "BANK"} onChange={() => setRefundMethod("BANK")} className="hidden" />
                     <Building2 className={`h-5 w-5 ${refundMethod === "BANK" ? "text-[#ff5c00]" : "text-gray-400"}`} />
                     <div className="flex-1">
-                      <div className="text-sm font-bold">تحويل بنكي (وافاكاش / بنك)</div>
+                      <div className="text-sm font-bold">تحويل بنكي</div>
                       <div className="text-[10px] text-gray-500">تتحمل رسوم التحويل البنكي</div>
                     </div>
                   </label>
+
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${refundMethod === "CASH_PLUS" ? "border-[#ff5c00] bg-[#fff4ed]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name="refundMethod" value="CASH_PLUS" checked={refundMethod === "CASH_PLUS"} onChange={() => setRefundMethod("CASH_PLUS")} className="hidden" />
+                    <Banknote className={`h-5 w-5 ${refundMethod === "CASH_PLUS" ? "text-[#ff5c00]" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">Cash Plus</div>
+                      <div className="text-[10px] text-gray-500">استلام المبلغ نقداً من أقرب وكالة</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${refundMethod === "WAFACASH" ? "border-[#ff5c00] bg-[#fff4ed]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name="refundMethod" value="WAFACASH" checked={refundMethod === "WAFACASH"} onChange={() => setRefundMethod("WAFACASH")} className="hidden" />
+                    <Banknote className={`h-5 w-5 ${refundMethod === "WAFACASH" ? "text-[#ff5c00]" : "text-gray-400"}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">Wafacash</div>
+                      <div className="text-[10px] text-gray-500">استلام المبلغ نقداً من أقرب وكالة</div>
+                    </div>
+                  </label>
+
+                  {refundMethod === "BANK" && (
+                    <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <input
+                        value={holderName}
+                        onChange={(e) => setHolderName(e.target.value)}
+                        maxLength={100}
+                        disabled={submitting}
+                        placeholder="الاسم الكامل لصاحب الحساب"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+                      />
+                      <input
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        maxLength={60}
+                        disabled={submitting}
+                        placeholder="اسم البنك"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+                      />
+                      <input
+                        value={rib}
+                        onChange={(e) => setRib(e.target.value)}
+                        maxLength={40}
+                        inputMode="numeric"
+                        dir="ltr"
+                        disabled={submitting}
+                        placeholder="RIB (24 رقماً)"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+                      />
+                    </div>
+                  )}
+
+                  {isAgency && (
+                    <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <input
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        maxLength={100}
+                        disabled={submitting}
+                        placeholder="الاسم الكامل (كما في البطاقة الوطنية)"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5c00]"
+                      />
+                      <div>
+                        <div className="mb-1 text-[11px] font-bold text-gray-700">
+                          صورة البطاقة الوطنية (اختيارية)
+                        </div>
+                        {cinUrl ? (
+                          <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                            <span>تم رفع الصورة</span>
+                            <button type="button" onClick={() => setCinUrl("")} className="font-bold text-red-600">
+                              إزالة
+                            </button>
+                          </div>
+                        ) : (
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCin}
+                            disabled={cinUploading || submitting}
+                            className="block w-full text-xs text-gray-600"
+                          />
+                        )}
+                        {cinUploading && <div className="mt-1 text-[10px] text-gray-500">جارٍ الرفع...</div>}
+                        <div className="mt-1 text-[10px] text-gray-500">
+                          تُستعمل فقط لتسهيل استلامك للمبلغ، ولا يطّلع عليها إلا فريق الإدارة.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
