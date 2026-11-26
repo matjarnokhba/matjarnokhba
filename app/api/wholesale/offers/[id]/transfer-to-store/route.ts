@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
 
 const schema = z.object({
@@ -249,14 +250,14 @@ export async function POST(
             });
           }
 
-          const inc = await tx.inventory.updateMany({
-            where: { variantId: pv.id },
-            data: { quantity: { increment: t.quantity } },
-          });
-          if (inc.count === 0) {
+          const existingInv = await tx.inventory.findUnique({ where: { variantId: pv.id }, select: { id: true } });
+          if (existingInv) {
+            await InventoryService.transferDelta(tx, pv.id, t.quantity, current.user.id, "نقل من مخزون الجملة إلى المتجر");
+          } else {
             await tx.inventory.create({
               data: { variantId: pv.id, quantity: t.quantity, reservedQuantity: 0, lowStockThreshold: 5 },
             });
+            await InventoryService.recordOpening(tx, [{ variantId: pv.id, quantity: t.quantity }], current.user.id, "نقل من مخزون الجملة إلى المتجر (رصيد جديد)");
           }
 
           const dec = await tx.inventoryBalance.updateMany({

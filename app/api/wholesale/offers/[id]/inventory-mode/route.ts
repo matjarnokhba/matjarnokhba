@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 const postSchema = z.object({
   mode: z.enum(["SHARED", "SPLIT"]),
@@ -202,10 +203,10 @@ export async function POST(
           if (pvs.length > 0) {
             const firstInv = pvs[0].inventory;
             if (firstInv) {
-              await tx.inventory.update({ where: { id: firstInv.id }, data: { quantity: newTotal } });
+              await InventoryService.transferSet(tx, pvs[0].id, newTotal, current.user.id, "تحويل المخزون إلى وضع مشترك: دمج كل الخيارات");
               for (let i = 1; i < pvs.length; i++) {
                 if (pvs[i].inventory) {
-                  await tx.inventory.update({ where: { id: pvs[i].inventory!.id }, data: { quantity: 0 } });
+                  await InventoryService.transferSet(tx, pvs[i].id, 0, current.user.id, "تحويل المخزون إلى وضع مشترك: تصفير الخيار المدمج");
                 }
               }
             }
@@ -259,9 +260,9 @@ export async function POST(
           pvsByMv.get(pv.masterVariantId)!.push(pv);
         }
         
-        const zeroInventoryIds: number[] = [];
+        const zeroVariantIds: number[] = [];
         const poolUpdates: Array<{ id: number; quantity: number }> = [];
-        const invUpdates: Array<{ id: number; quantity: number }> = [];
+        const invUpdates: Array<{ variantId: number; quantity: number }> = [];
         
         for (const poolVar of pool.variants) {
           const mvId = poolVar.masterVariantId;
@@ -284,9 +285,9 @@ export async function POST(
           poolUpdates.push({ id: poolVar.id, quantity: wholesaleQty });
           
           if (pvs.length > 0 && pvs[0].inventory) {
-            invUpdates.push({ id: pvs[0].inventory.id, quantity: clampedRetail });
+            invUpdates.push({ variantId: pvs[0].id, quantity: clampedRetail });
             for (let i = 1; i < pvs.length; i++) {
-              if (pvs[i].inventory) zeroInventoryIds.push(pvs[i].inventory!.id);
+              if (pvs[i].inventory) zeroVariantIds.push(pvs[i].id);
             }
           }
         }
@@ -297,17 +298,11 @@ export async function POST(
           )
         );
         
-        await Promise.all(
-          invUpdates.map((u) =>
-            tx.inventory.update({ where: { id: u.id }, data: { quantity: u.quantity } })
-          )
-        );
-        
-        if (zeroInventoryIds.length > 0) {
-          await tx.inventory.updateMany({
-            where: { id: { in: zeroInventoryIds } },
-            data: { quantity: 0 },
-          });
+        for (const u of invUpdates) {
+          await InventoryService.transferSet(tx, u.variantId, u.quantity, current.user.id, "تحويل المخزون إلى وضع منفصل: حصة المتجر");
+        }
+        for (const zeroVid of zeroVariantIds) {
+          await InventoryService.transferSet(tx, zeroVid, 0, current.user.id, "تحويل المخزون إلى وضع منفصل: تصفير الخيار المدمج");
         }
         
         await tx.product.updateMany({
