@@ -1878,6 +1878,7 @@ model FulfillmentItem {
   preparedAt            DateTime?
   preparedById          Int?
   readyAt               DateTime?
+  readyPhotoUrls         String[]          @default([])
   assignedCollectorId   Int?
   assignedAt            DateTime?
   assignedById          Int?
