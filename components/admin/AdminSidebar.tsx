@@ -62,6 +62,7 @@ const NAV_ITEMS = [
   { href: "/admin/settings/shipping", label: "إعدادات المتجر", icon: Settings, exact: false },
   { href: "/admin/wallet", label: "محفظة المنصة", icon: Wallet, exact: false },
   { href: "/admin/withdrawals", label: "طلبات السحب", icon: Wallet, exact: false },
+    { href: "/admin/refund-payouts", label: "استرداد مبالغ الزبائن", icon: Wallet, exact: false },
   { href: "/admin/reviews", label: "المراجعات", icon: Star, exact: false },
   { href: "/admin/returns", label: "الإرجاع", icon: RotateCcw, exact: false },
   { href: "/admin/settings/returns", label: "إعدادات الإرجاع", icon: RotateCcw, exact: false },

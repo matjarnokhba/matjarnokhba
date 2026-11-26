@@ -324,6 +324,8 @@ export const ReturnService = {
         },
       });
 
+      await tx.returnRefundPayout.deleteMany({ where: { returnId } });
+
       await tx.notification.create({
         data: {
           userId: ret.userId,
@@ -351,6 +353,7 @@ export const ReturnService = {
         where: { id: returnId },
         data: { status: "REJECTED", processedAt: new Date(), processedById: adminId, adminNote: note },
       });
+      await tx.returnRefundPayout.deleteMany({ where: { returnId } });
       await AccountEnforcementService.suspendCustomer(tx, { userId: ret.userId, reason: note });
       return { success: true };
     }, { timeout: 30000 });
