@@ -9,7 +9,6 @@ import {
   ExternalLink,
   Building2,
   Calendar,
-  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";

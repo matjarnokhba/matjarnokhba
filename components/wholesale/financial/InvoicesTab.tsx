@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Receipt, ArrowLeft, ChevronRight } from "lucide-react";
+import { Receipt, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Empty } from "@/components/ui/Empty";

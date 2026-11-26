@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
-  CheckCircle2,
   Package,
   Building2,
   AlertCircle,
@@ -15,7 +14,6 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
-import { Badge } from "@/components/ui/Badge";
 import { Empty } from "@/components/ui/Empty";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Spinner } from "@/components/ui/Spinner";

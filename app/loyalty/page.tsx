@@ -13,11 +13,8 @@ import {
   History,
   Lock,
   CheckCircle2,
-  Star,
   Package,
-  Truck,
   Check,
-  ChevronLeft,
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import Header from "@/components/layout/Header";

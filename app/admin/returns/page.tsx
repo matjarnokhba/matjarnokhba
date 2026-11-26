@@ -6,10 +6,6 @@ import Link from "next/link";
 import {
   Loader2,
   RotateCcw,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Package,
   ChevronLeft,
 } from "lucide-react";
 

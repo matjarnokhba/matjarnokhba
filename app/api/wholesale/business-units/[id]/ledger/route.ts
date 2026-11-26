@@ -5,7 +5,6 @@ import {
   fail,
   numericParam,
 } from "@/lib/api";
-import { prisma } from "@/lib/prisma";
 import { getBusinessUnitContext } from "@/lib/wholesale/context";
 import { FinancialLedgerService } from "@/services/financial-ledger.service";
 

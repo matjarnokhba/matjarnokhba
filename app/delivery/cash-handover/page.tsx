@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
-import { Scan, X, Loader2, AlertCircle, CheckCircle2, Wallet } from "lucide-react";
+import { Scan, X, AlertCircle, CheckCircle2, Wallet } from "lucide-react";
 import Link from "next/link";
 
 export default function DeliveryCashHandoverPage() {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
-import { Scan, X, Loader2, CheckCircle2, Banknote } from "lucide-react";
+import { Scan, X, CheckCircle2, Banknote } from "lucide-react";
 
 export default function AdminHandoverPage() {
   const [scanning, setScanning] = useState(false);

@@ -14,7 +14,6 @@ import {
   Truck,
   User,
   Phone,
-  MapPin,
   X,
 } from "lucide-react";
 

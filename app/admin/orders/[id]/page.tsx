@@ -9,7 +9,6 @@ import {
   Package,
   Store,
   Truck,
-  QrCode,
   ScanLine,
   Boxes,
   Gift,

@@ -8,7 +8,6 @@ import {
   XCircle,
   Clock,
   AlertCircle,
-  Phone,
 } from "lucide-react";
 
 type DayStatus = {

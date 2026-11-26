@@ -2,8 +2,16 @@
 
 import { useEffect, useState } from "react";
 import {
-  Loader2, X, Tag, AlertCircle, Store, CheckCircle2, Zap,
-  Layers, Split, Boxes, Package, Info,
+  Loader2,
+  X,
+  Tag,
+  AlertCircle,
+  CheckCircle2,
+  Zap,
+  Layers,
+  Split,
+  Package,
+  Info,
 } from "lucide-react";
 
 type DisplayAttribute = { name: string; value: string; order: number };

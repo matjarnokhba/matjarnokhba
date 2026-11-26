@@ -16,7 +16,6 @@ import {
   AlertCircle,
   TrendingUp,
   TrendingDown,
-  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -29,7 +28,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { Dialog } from "@/components/ui/Dialog";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/lib/hooks/useToast";
-import { formatMoney, BU_TYPE_LABEL } from "@/components/wholesale/offers/types";
+import { BU_TYPE_LABEL } from "@/components/wholesale/offers/types";
 import {
   CONTACT_TYPE_LABEL,
   CONTACT_TYPE_VARIANT,

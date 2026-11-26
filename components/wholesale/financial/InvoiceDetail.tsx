@@ -4,11 +4,8 @@ import Link from "next/link";
 import {
   ArrowRight,
   Receipt,
-  Building2,
-  Calendar,
   CreditCard,
   FileText,
-  Info,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";

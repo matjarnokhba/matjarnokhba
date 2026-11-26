@@ -18,9 +18,7 @@ import {
   UserCheck,
   Trash2,
   AlertTriangle,
-  Check,
   X,
-  Building2,
 } from "lucide-react";
 
 type ShipmentItem = {

@@ -5,10 +5,7 @@ import Link from "next/link";
 import {
   Loader2,
   ArrowRight,
-  QrCode,
   Store,
-  MapPin,
-  CheckCircle2,
   Truck,
 } from "lucide-react";
 import QRCode from "qrcode";

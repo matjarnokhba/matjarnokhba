@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from "@/services/session.service";
 import { requireStaffPermission } from "@/lib/seller-guards";
 
 export async function GET(

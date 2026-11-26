@@ -17,7 +17,6 @@ import {
   Undo2,
   CheckSquare,
   Square,
-  Truck,
   Lock,
   ChevronLeft,
 } from "lucide-react";

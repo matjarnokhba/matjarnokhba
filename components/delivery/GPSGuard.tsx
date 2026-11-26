@@ -8,9 +8,6 @@ import {
   PlayCircle,
   PauseCircle,
   CheckCircle2,
-  MapPin,
-  Smartphone,
-  Settings,
 } from "lucide-react";
 import { useGeolocation } from "@/lib/hooks/useGeolocation";
 import { useDeliveryShift } from "@/lib/hooks/useDeliveryShift";

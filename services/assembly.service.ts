@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 
 const RECEIVED_STATUSES = [
   "RECEIVED",

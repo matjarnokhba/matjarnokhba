@@ -8,7 +8,6 @@ import {
   Truck,
   CheckCircle2,
   Package,
-  XCircle,
   AlertTriangle,
   Store,
   RefreshCw,

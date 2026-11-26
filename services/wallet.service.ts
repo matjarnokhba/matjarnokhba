@@ -1,5 +1,4 @@
 import { computeClawback } from "@/lib/return-clawback";
-import { prisma } from "@/lib/prisma";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
 const DRIVER_FEE = 13;

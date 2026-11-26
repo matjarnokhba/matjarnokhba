@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, ArrowRight, ArrowLeft, AlertCircle, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, Save, ArrowRight, ArrowLeft, AlertCircle, CheckCircle2 } from "lucide-react";
 import WizardStepper from "./WizardStepper";
 import StepCategory from "./StepCategory";
 import StepBasicInfo from "./StepBasicInfo";

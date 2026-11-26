@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   XCircle,
   ShieldCheck,
-  ShieldX,
   AlertTriangle,
   Factory,
   Globe2,

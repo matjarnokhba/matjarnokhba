@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Loader2,
@@ -13,8 +13,6 @@ import {
   AlertTriangle,
   X,
   Send,
-  User,
-  Phone,
 } from "lucide-react";
 
 const CURRENCY = "د.م";

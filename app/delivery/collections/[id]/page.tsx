@@ -12,7 +12,6 @@ import {
   Truck,
   AlertCircle,
   CheckCircle2,
-  Clock,
   X,
 } from "lucide-react";
 

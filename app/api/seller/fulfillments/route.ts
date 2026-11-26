@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
-import { PermissionService, PERMISSIONS } from "@/services/permission.service";
 
 async function requireSeller() {
   const current = await SessionService.getCurrent();

@@ -9,9 +9,6 @@ import {
   User,
   Phone,
   Search,
-  CheckCircle2,
-  Clock,
-  Truck,
   ChevronLeft,
 } from "lucide-react";
 

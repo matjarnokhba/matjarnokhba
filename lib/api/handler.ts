@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SessionService } from "@/services/session.service";
 import { IdempotencyService } from "@/lib/idempotency";
-import { isWholesaleError, toHttpResponse } from "@/lib/wholesale/errors";
+import { toHttpResponse } from "@/lib/wholesale/errors";
 
 // ═══ Response builders ═══
 export function ok(data: Record<string, any> = {}, status = 200): NextResponse {

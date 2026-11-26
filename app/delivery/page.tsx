@@ -10,7 +10,6 @@ import {
   MapPin,
   Phone,
   ChevronLeft,
-  AlertTriangle,
   Banknote,
   Ban,
 } from "lucide-react";

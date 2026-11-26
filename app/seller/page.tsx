@@ -6,7 +6,6 @@ import {
   Package,
   ShoppingCart,
   Wallet,
-  Clock,
   AlertTriangle,
   ArrowUpRight,
   ArrowDownRight,
@@ -24,7 +23,6 @@ import {
   TrendingUp,
   ListChecks,
   Sparkles,
-  Building2,
 } from "lucide-react";
 
 const CURRENCY = "د.م";

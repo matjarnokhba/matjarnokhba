@@ -9,9 +9,6 @@ import {
   ChevronLeft,
   Store,
   User,
-  AlertCircle,
-  CheckCircle2,
-  Truck,
 } from "lucide-react";
 
 type ReturnRow = {

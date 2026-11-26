@@ -6,7 +6,6 @@ import {
   Map as MapIcon,
   Users,
   Store,
-  Navigation,
   AlertCircle,
   RefreshCw,
   Wifi,
