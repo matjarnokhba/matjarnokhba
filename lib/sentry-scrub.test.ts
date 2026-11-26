@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scrubEvent } from "./sentry-scrub";
+import { scrubEvent, isNoise } from "./sentry-scrub";
 
 describe("scrubEvent", () => {
   it("removes cookies, body and sensitive headers", () => {
@@ -22,5 +22,18 @@ describe("scrubEvent", () => {
 
   it("is safe on empty events", () => {
     expect(scrubEvent({})).toEqual({});
+  });
+});
+
+describe("isNoise", () => {
+  it("flags node experimental and deprecation warnings", () => {
+    expect(isNoise({ message: "(node:8) ExperimentalWarning: vm.USE_MAIN_CONTEXT_DEFAULT_LOADER is an experimental feature" })).toBe(true);
+    expect(isNoise({ logentry: { message: "(node:4) DeprecationWarning: something" } })).toBe(true);
+    expect(isNoise({ exception: { values: [{ value: "ExperimentalWarning: x" }] } })).toBe(true);
+  });
+  it("keeps real errors", () => {
+    expect(isNoise({ message: "Store sale return error: boom" })).toBe(false);
+    expect(isNoise({ exception: { values: [{ value: "TypeError: x is undefined" }] } })).toBe(false);
+    expect(isNoise({})).toBe(false);
   });
 });

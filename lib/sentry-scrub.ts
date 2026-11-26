@@ -24,3 +24,21 @@ export function scrubEvent<T extends Ev>(event: T): T {
   }
   return event;
 }
+
+// تحذيرات Node المتكررة ليست أخطاء حقيقية وتستهلك الحصة المجانية
+const NOISE = [/ExperimentalWarning/i, /DeprecationWarning/i];
+
+type NoiseEv = {
+  message?: string;
+  logentry?: { message?: string };
+  exception?: { values?: { value?: string }[] };
+};
+
+export function isNoise(event: NoiseEv): boolean {
+  const texts: (string | undefined)[] = [
+    event.message,
+    event.logentry?.message,
+    ...(event.exception?.values ?? []).map((v) => v.value),
+  ];
+  return texts.some((t) => typeof t === "string" && NOISE.some((r) => r.test(t)));
+}

@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { scrubEvent } from "./lib/sentry-scrub";
+import { isNoise, scrubEvent } from "./lib/sentry-scrub";
 
 // يعمل فقط عند وضع SENTRY_DSN. بدونه لا يُرسل شيء.
 const dsn = process.env.SENTRY_DSN;
@@ -11,6 +11,6 @@ if (dsn) {
     tracesSampleRate: 0,
     // أخطاؤنا تُلتقط في try/catch ثم تُسجَّل بـ console.error؛ نلتقطها منها
     integrations: [Sentry.captureConsoleIntegration({ levels: ["error"] })],
-    beforeSend: (event) => scrubEvent(event),
+    beforeSend: (event) => (isNoise(event) ? null : scrubEvent(event)),
   });
 }
