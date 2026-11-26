@@ -107,6 +107,21 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       return { uploadedBy: metadata.userId, url: file.url, name: file.name };
     }),
+// ═══ إثبات تحويل مبلغ الإرجاع للزبون (للإدارة فقط) ═══
+  payoutProofUploader: f({
+    image: { maxFileSize: "8MB", maxFileCount: 1 },
+    pdf: { maxFileSize: "8MB", maxFileCount: 1 },
+  })
+    .middleware(async () => {
+      const current = await SessionService.getCurrent();
+      if (!current || (current.user.role !== "ADMIN" && current.user.role !== "SUPER_ADMIN")) {
+        throw new UploadThingError("غير مصرح — للإدارة فقط");
+      }
+      return { userId: current.user.id };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      return { uploadedBy: metadata.userId, url: file.url, name: file.name };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;
