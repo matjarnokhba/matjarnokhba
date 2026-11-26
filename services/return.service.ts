@@ -693,7 +693,13 @@ export const ReturnService = {
       include: {
         user: { select: { id: true, name: true, email: true } },
         order: true,
-        items: { include: { orderItem: true } },
+        items: {
+          include: {
+            orderItem: {
+              include: { fulfillmentItems: { select: { id: true, readyPhotoUrls: true } } },
+            },
+          },
+        },
       },
     });
   },
