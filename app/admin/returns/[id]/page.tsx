@@ -307,6 +307,27 @@ export default function AdminReturnDetailPage() {
             </p>
           )
         )}
+        {(() => {
+          const prepPhotos = ret.items.flatMap(
+            (it) =>
+              (it.orderItem as { fulfillmentItems?: { readyPhotoUrls?: string[] }[] }).fulfillmentItems?.flatMap(
+                (f) => f.readyPhotoUrls ?? []
+              ) ?? []
+          );
+          const uniquePhotos = Array.from(new Set(prepPhotos));
+          return uniquePhotos.length > 0 ? (
+            <div className="mt-3">
+              <div className="mb-1 text-xs font-bold text-gray-700">صور تجهيز التاجر قبل التسليم:</div>
+              <div className="flex flex-wrap gap-2">
+                {uniquePhotos.map((u) => (
+                  <a key={u} href={u} target="_blank" rel="noreferrer">
+                    <img src={u} alt="تجهيز التاجر" className="h-24 w-24 rounded-lg object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
         {ret.status === "PENDING" && (
           <div className="mt-3">
             <label className="mb-1 block text-xs font-bold text-gray-700">
