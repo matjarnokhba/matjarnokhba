@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useUploadThing } from "@/lib/uploadthing";
 import {
   ArrowRight,
   Loader2,
@@ -124,6 +125,11 @@ export default function SellerFulfillmentDetailPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [actionModal, setActionModal] = useState<ActionModal>(null);
   const [note, setNote] = useState("");
+  const [photos, setPhotos] = useState<{ url: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const { startUpload } = useUploadThing("prepPhotoUploader", {
+    onUploadError: (err) => setError(err.message || "فشل رفع الصورة"),
+  });
 
   async function load() {
     setLoading(true);
@@ -149,6 +155,32 @@ export default function SellerFulfillmentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fulfillmentId]);
 
+  async function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    if (files.some((f) => !f.type.startsWith("image/"))) {
+      setError("تُقبل الصور فقط");
+      return;
+    }
+    if (photos.length + files.length > 5) {
+      setError("الحد الأقصى 5 صور");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    try {
+      const res = await startUpload(files);
+      if (res) {
+        setPhotos((prev) => [...prev, ...res.map((r) => ({ url: r.url, name: r.name }))]);
+      }
+    } catch {
+      setError("فشل رفع الصورة");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function executeTransition(
     toStatus: "PREPARING" | "READY_FOR_COLLECTION",
     noteText?: string
@@ -165,6 +197,7 @@ export default function SellerFulfillmentDetailPage() {
           body: JSON.stringify({
             toStatus,
             note: noteText || undefined,
+            photoUrls: toStatus === "READY_FOR_COLLECTION" ? photos.map((p) => p.url) : undefined,
           }),
         }
       );
@@ -177,7 +210,7 @@ export default function SellerFulfillmentDetailPage() {
 
       setSuccessMsg("تم تحديث الحالة بنجاح");
       setActionModal(null);
-      setNote("");
+      setNote(""); setPhotos([]);
       await load();
 
       setTimeout(() => setSuccessMsg(""), 3000);
@@ -508,7 +541,7 @@ export default function SellerFulfillmentDetailPage() {
               <button
                 onClick={() => {
                   setActionModal(null);
-                  setNote("");
+                  setNote(""); setPhotos([]);
                 }}
                 className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
               >
@@ -530,6 +563,43 @@ export default function SellerFulfillmentDetailPage() {
               className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-[#ff5c00] focus:bg-white"
             />
 
+            {actionModal === "mark_ready" && (
+              <div className="mt-3">
+                <p className="mb-2 text-[11px] text-gray-600">
+                  📷 صوّر الطرد بعد تغليفه وقبل تسليمه (يحميك من ادعاءات التلف أو النقص). حتى 5 صور.
+                </p>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-[#ff5c00] px-4 py-2 text-xs font-bold text-white hover:bg-[#e64a00]">
+                  أضف صور الطرد
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={submitting || uploading}
+                    onChange={handlePhotos}
+                    className="hidden"
+                  />
+                </label>
+                {uploading && <p className="mt-1 text-[11px] text-gray-500">جاري الرفع...</p>}
+                {photos.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {photos.map((p, i) => (
+                      <div key={p.url} className="relative h-16 w-16 overflow-hidden rounded-lg border border-gray-200">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.url} alt={p.name} className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                          className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center bg-black/60 text-[11px] text-white"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() =>
@@ -540,7 +610,7 @@ export default function SellerFulfillmentDetailPage() {
                     note.trim() || undefined
                   )
                 }
-                disabled={submitting}
+                disabled={submitting || uploading}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white disabled:opacity-50 ${
                   actionModal === "start_preparing"
                     ? "bg-blue-500 hover:bg-blue-600"
@@ -557,7 +627,7 @@ export default function SellerFulfillmentDetailPage() {
               <button
                 onClick={() => {
                   setActionModal(null);
-                  setNote("");
+                  setNote(""); setPhotos([]);
                 }}
                 disabled={submitting}
                 className="flex-1 rounded-lg border border-gray-200 py-3 text-sm font-bold text-gray-700"
