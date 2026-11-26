@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { InventoryService } from "@/services/inventory.service";
+import { WalletService } from "@/services/wallet.service";
 import { LoyaltyService } from "@/services/loyalty.service";
 import { ReferralService } from "@/services/referral.service";
 import { AssemblyService } from "@/services/assembly.service";
@@ -209,6 +210,17 @@ export async function PATCH(
             where: { id: productId },
             data: { sold: { increment: qty } },
           });
+        }
+
+        // ═══ أرباح البائع: نفس مسار تسليم السائق (محمية من التكرار بمفتاح held:order:<id>) ═══
+        if (order.sellerId) {
+          await WalletService.addHeldEarning(
+            tx,
+            order.sellerId,
+            orderId,
+            Number(order.total),
+            Number(order.subtotal)
+          );
         }
 
         try {
