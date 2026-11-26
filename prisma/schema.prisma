@@ -1047,7 +1047,7 @@ model ReturnRequest {
   userId        Int
   status        ReturnStatus @default(PENDING)
   reason        String
-  refundMethod  String? // WALLET, COUPON, BANK
+  refundMethod  String? // WALLET, COUPON, BANK, CASH_PLUS, WAFACASH
   adminNote     String?
   requestedAt   DateTime     @default(now())
   processedAt   DateTime?
@@ -1066,6 +1066,7 @@ model ReturnRequest {
   user     User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   items    ReturnItem[]
   shipment ReturnShipment?
+  payout   ReturnRefundPayout?
 
   @@index([orderId])
   @@index([userId])
@@ -4335,4 +4336,46 @@ model FreeReturnCard {
   countedOrders Order[]
 
   @@index([identityId, usedAt])
+}
+
+// ═══ استرداد مبلغ الإرجاع للزبون (تحويل بنكي / Cash Plus / Wafacash) ═══
+enum RefundPayoutMethod {
+  BANK
+  CASH_PLUS
+  WAFACASH
+}
+
+enum RefundPayoutStatus {
+  PROCESSING
+  SENT
+  COMPLETED
+}
+
+model ReturnRefundPayout {
+  id       Int                @id @default(autoincrement())
+  returnId Int                @unique
+  userId   Int
+  method   RefundPayoutMethod
+  status   RefundPayoutStatus @default(PROCESSING)
+  amount   Decimal?           @db.Decimal(10, 2)
+
+  bankName         String?
+  holderNameEnc    Bytes
+  holderNameMasked String
+  ribEnc           Bytes?
+  ribMasked        String?
+  cinImageUrl      String?
+
+  reference   String?
+  proofUrl    String?
+  adminNote   String?
+  sentAt      DateTime?
+  sentById    Int?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }

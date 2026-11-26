@@ -3,6 +3,8 @@ import { IdentityService } from "@/services/identity.service";
 import { decideReturnShipping, isSellerFault, resolveReturnShippingFee, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
 import { prisma } from "@/lib/prisma";
+import { encrypt } from "@/lib/encryption";
+import { validatePayoutDetails, maskName, maskRib, type PayoutInput } from "@/lib/refund-payout";
 import { InventoryService } from "@/services/inventory.service";
 import { LoyaltyService } from "@/services/loyalty.service";
 
@@ -54,7 +56,7 @@ function calcRawRefund(
 // ═══════════════════════════════════════════
 export const ReturnService = {
   // ═══════ إنشاء طلب إرجاع (العميل) ═══════
-  async create(userId: number, data: CreateReturnInput) {
+  async create(userId: number, data: Omit<CreateReturnInput, "refundMethod"> & { refundMethod?: string; payout?: PayoutInput }) {
     if (!data.items || data.items.length === 0) {
       throw new Error("يجب اختيار منتج واحد على الأقل");
     }
@@ -66,6 +68,7 @@ export const ReturnService = {
     if (!REASON_TYPES.includes(reasonType)) {
       throw new Error("نوع سبب الإرجاع غير صالح");
     }
+    const payoutDetails = validatePayoutDetails(String(data.refundMethod ?? "WALLET"), data.payout);
     const evidenceUrls = (data.evidenceUrls ?? [])
       .filter((u) => typeof u === "string" && /^https:\/\//.test(u))
       .slice(0, 10);
@@ -147,6 +150,23 @@ export const ReturnService = {
           decisionDueAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
         },
       });
+
+      // 5.1 بيانات استرداد المبلغ (مشفّرة) — فقط للتحويل البنكي / Cash Plus / Wafacash
+      if (payoutDetails) {
+        await tx.returnRefundPayout.create({
+          data: {
+            returnId: returnRequest.id,
+            userId,
+            method: payoutDetails.method,
+            bankName: payoutDetails.bankName ?? null,
+            holderNameEnc: encrypt(payoutDetails.holderName),
+            holderNameMasked: maskName(payoutDetails.holderName),
+            ribEnc: payoutDetails.rib ? encrypt(payoutDetails.rib) : null,
+            ribMasked: payoutDetails.rib ? maskRib(payoutDetails.rib) : null,
+            cinImageUrl: payoutDetails.cinImageUrl ?? null,
+          },
+        });
+      }
 
       // 6. إنشاء ReturnItems
       for (const item of data.items) {
@@ -505,13 +525,23 @@ export const ReturnService = {
               severity: "INFO",
             }
           });
-        } else if (ret.refundMethod === "BANK") {
+        } else if (ret.refundMethod === "BANK" || ret.refundMethod === "CASH_PLUS" || ret.refundMethod === "WAFACASH") {
+          const payoutRes = await tx.returnRefundPayout.updateMany({
+            where: { returnId: ret.id },
+            data: { amount: customerRefundAmount },
+          });
+          const payoutLabel =
+            ret.refundMethod === "BANK"
+              ? "التحويل البنكي"
+              : ret.refundMethod === "CASH_PLUS"
+                ? "الاسترداد عبر Cash Plus"
+                : "الاسترداد عبر Wafacash";
           await tx.notification.create({
             data: {
               userId: ret.userId,
               type: "RETURN_COMPLETED",
-              title: "تحويل بنكي قيد المعالجة",
-              message: `تمت الموافقة على إرجاع طلبك. سيتم تحويل ${customerRefundAmount.toFixed(2)} د.م إلى حسابك البنكي قريباً ${feeNote}.`,
+              title: `${payoutLabel} قيد المعالجة`,
+              message: payoutRes.count > 0 ? `تمت الموافقة على إرجاع طلبك. سيتم إرسال ${customerRefundAmount.toFixed(2)} د.م عبر ${payoutLabel} قريباً ${feeNote}.` : `تمت الموافقة على إرجاع طلبك. سنتواصل معك للحصول على بيانات استرداد مبلغ ${customerRefundAmount.toFixed(2)} د.م ${feeNote}.`,
               link: "/orders/" + ret.orderId,
               category: "ORDER",
               severity: "INFO",

@@ -6,7 +6,16 @@ import { ReturnService } from "@/services/return.service";
 const createSchema = z.object({
   orderId: z.number().int().positive(),
   reason: z.string().trim().min(5, "سبب الإرجاع يجب أن يكون 5 أحرف على الأقل").max(500),
-  refundMethod: z.enum(["WALLET", "COUPON", "BANK"]).default("WALLET"),
+  refundMethod: z.enum(["WALLET", "COUPON", "BANK", "CASH_PLUS", "WAFACASH"]).default("WALLET"),
+  payout: z
+    .object({
+      holderName: z.string().trim().max(100).optional(),
+      bankName: z.string().trim().max(60).optional(),
+      rib: z.string().trim().max(40).optional(),
+      fullName: z.string().trim().max(100).optional(),
+      cinImageUrl: z.string().trim().url().max(500).optional(),
+    })
+    .optional(),
   reasonType: z.enum(["DEFECTIVE", "WRONG_ITEM", "MISSING_ITEM", "LOST", "CHANGED_MIND"]).default("CHANGED_MIND"),
   evidenceUrls: z.array(z.string().url()).max(10).default([]),
   items: z
