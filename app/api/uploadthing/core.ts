@@ -77,6 +77,24 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       return { uploadedBy: metadata.userId, url: file.url, name: file.name };
     }),
-} satisfies FileRouter;
+  // ═══ صور التجهيز قبل التسليم للمجمّع (البائع وموظفوه المخوّلون) ═══
+  prepPhotoUploader: f({
+    image: { maxFileSize: "8MB", maxFileCount: 5 },
+  })
+    .middleware(async () => {
+      const current = await SessionService.getCurrent();
+      if (!current) throw new UploadThingError("غير مصرح");
+      const seller = current.user.seller;
+      if (!seller || seller.status === "SUSPENDED" || seller.status === "CLOSED") {
+        throw new UploadThingError("غير مصرح — للتجار فقط");
+      }
+      if (!current.user.isSellerOwner && !current.user.staffPermissions.includes("MANAGE_FULFILLMENTS")) {
+        throw new UploadThingError("لا تملك صلاحية إدارة التجهيزات");
+      }
+      return { userId: current.user.id, sellerId: seller.id };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      return { uploadedBy: metadata.userId, sellerId: metadata.sellerId, url: file.url, name: file.name };
+    }),} satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;

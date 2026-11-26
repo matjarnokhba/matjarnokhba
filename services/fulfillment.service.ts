@@ -29,6 +29,7 @@ type TransitionInput = {
   toStatus: FulfillmentStatus;
   changedById: number;
   note?: string;
+  readyPhotoUrls?: string[];
 };
 
 export const FulfillmentService = {
@@ -245,6 +246,9 @@ export const FulfillmentService = {
         break;
       case "READY_FOR_COLLECTION":
         updates.readyAt = now;
+        if (input.readyPhotoUrls && input.readyPhotoUrls.length > 0) {
+          updates.readyPhotoUrls = input.readyPhotoUrls;
+        }
         break;
       case "COLLECTED":
         updates.collectedAt = now;
