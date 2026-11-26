@@ -208,6 +208,46 @@ export const InventoryService = {
 
     return { inventoryId: inv.id, action, quantity, defectiveAfter: afterDef, sellableAfter: afterQty };
   },
+  // ═══════ رصيد افتتاحي عند إنشاء المنتج: حركة لكل خيار كميته أكبر من صفر ═══════
+  async recordOpening(
+    tx: any,
+    rows: { variantId: number; quantity: number }[],
+    performedById: number,
+    reason: string
+  ) {
+    const withQty = rows.filter((r) => Number.isInteger(r.quantity) && r.quantity > 0);
+    if (withQty.length === 0) return { recorded: 0 };
+
+    const invs: { id: number; variantId: number; quantity: number; reservedQuantity: number }[] =
+      await tx.inventory.findMany({
+        where: { variantId: { in: withQty.map((r) => r.variantId) } },
+        select: { id: true, variantId: true, quantity: true, reservedQuantity: true },
+      });
+    const byVariant = new Map(invs.map((i) => [i.variantId, i]));
+
+    let recorded = 0;
+    for (const r of withQty) {
+      const inv = byVariant.get(r.variantId);
+      if (!inv) continue;
+      await tx.inventoryMovement.create({
+        data: {
+          inventoryId: inv.id,
+          type: "OPENING",
+          beforeQuantity: 0,
+          afterQuantity: r.quantity,
+          quantityChange: r.quantity,
+          beforeReserved: 0,
+          afterReserved: inv.reservedQuantity,
+          reservedChange: 0,
+          reason,
+          referenceType: "MANUAL",
+          performedById,
+        },
+      });
+      recorded++;
+    }
+    return { recorded };
+  },
   // ═══════ قفل المخزون (SELECT ... FOR UPDATE) ═══════
   async lockInventory(tx: any, variantId: number): Promise<LockedInventory> {
     const rows: any[] = await tx.$queryRaw`

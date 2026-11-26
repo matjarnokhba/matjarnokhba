@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 async function requireAdmin() {
   const current = await SessionService.getCurrent();
@@ -374,10 +375,7 @@ export async function PATCH(
                 `لا يمكن تخفيض مخزون المتغير #${vIdx + 1} إلى ${vPatch.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة لطلبات حالية.`
               );
             }
-            await tx.inventory.updateMany({
-              where: { variantId: vPatch.id },
-              data: { quantity: vPatch.stock },
-            });
+            await InventoryService.adjust(tx, vPatch.id, vPatch.stock, auth.user.id, "تعديل الكمية من صفحة تعديل المنتج (أدمن)");
           }
         }
       }
@@ -410,10 +408,7 @@ export async function PATCH(
               `لا يمكن تخفيض المخزون إلى ${data.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة.`
             );
           }
-          await tx.inventory.updateMany({
-            where: { variantId: defaultVariant.id },
-            data: { quantity: data.stock },
-          });
+          await InventoryService.adjust(tx, defaultVariant.id, data.stock, auth.user.id, "تعديل الكمية من صفحة تعديل المنتج (أدمن)");
         }
       }
 
