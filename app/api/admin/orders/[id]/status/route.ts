@@ -11,7 +11,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NEW: ["PROCESSING", "CANCELLED"],
   PROCESSING: ["SHIPPED", "CANCELLED"],
   SHIPPED: ["DELIVERED"],
-  DELIVERED: ["RETURNED"],
+  DELIVERED: [], // الإرجاع يتم عبر مسار المرتجعات فقط
   CANCELLED: [],
   RETURNED: [],
 };
@@ -72,6 +72,13 @@ export async function PATCH(
     }
 
     const oldStatus = order.status;
+
+    if (newStatus === "RETURNED") {
+      return NextResponse.json(
+        { success: false, message: "الإرجاع يتم عبر مسار المرتجعات فقط (يُرجع المخزون ويعكس أرباح البائع)" },
+        { status: 400 }
+      );
+    }
 
     const allowed = ALLOWED_TRANSITIONS[oldStatus] || [];
     if (!allowed.includes(newStatus)) {
