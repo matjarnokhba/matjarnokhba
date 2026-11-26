@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 function cartesian(lists: number[][]): number[][] {
   if (lists.length === 0) return [[]];
@@ -344,6 +345,12 @@ export async function POST(request: Request) {
             lowStockThreshold: 5,
           })),
         });
+        await InventoryService.recordOpening(
+          tx,
+          createdVariants.map((v, i) => ({ variantId: v.id, quantity: comboData[i].stock })),
+          current.user.id,
+          "رصيد افتتاحي عند إنشاء المنتج"
+        );
 
         // ═══ ربط الـvariants بقيم الخيارات ═══
         const links: Array<{ variantId: number; optionValueId: number }> = [];

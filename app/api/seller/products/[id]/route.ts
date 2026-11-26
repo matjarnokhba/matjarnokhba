@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from '@/services/session.service';
+import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 const FIELD_NAMES: Record<string, string> = {
   name: "الاسم",
@@ -503,53 +504,10 @@ export async function PATCH(
           })
         );
 
-        const stockGroups = new Map<number, number[]>();
+        // كل تعديل كمية يمر عبر InventoryService: قفل الصف + تحقق الحجز + مزامنة المجمّع + سجل حركة
         for (const su of stockUpdates) {
-          if (!stockGroups.has(su.stock)) stockGroups.set(su.stock, []);
-          stockGroups.get(su.stock)!.push(su.variantId);
-        }
-        await Promise.all(
-          Array.from(stockGroups.entries()).map(([stock, ids]) =>
-            tx.inventory.updateMany({
-              where: { variantId: { in: ids } },
-              data: { quantity: stock },
-            })
-          )
-        );
-        // M12.2: sync pool for SHARED mode
-        const deltaByPoolMv = new Map<string, number>();
-        for (const su of stockUpdates) {
-          const pvInfo = pvMap.get(su.variantId);
-          const pool = pvInfo?.product?.pool;
-          if (!pvInfo?.masterVariantId || !pool || pool.mode !== "SHARED") continue;
-          const delta = su.stock - su.oldQty;
-          if (delta === 0) continue;
-          const key = `${pool.id}:${pvInfo.masterVariantId}`;
-          deltaByPoolMv.set(key, (deltaByPoolMv.get(key) || 0) + delta);
-        }
-
-        for (const [key, delta] of deltaByPoolMv) {
-          const [poolIdStr, mvIdStr] = key.split(":");
-          const poolId = parseInt(poolIdStr, 10);
-          const mvId = parseInt(mvIdStr, 10);
-          if (delta < 0) {
-            const r = await tx.inventoryPoolVariant.updateMany({
-              where: {
-                poolId,
-                masterVariantId: mvId,
-                quantity: { gte: -delta },
-              },
-              data: { quantity: { increment: delta } },
-            });
-            if (r.count === 0) {
-              throw new Error("لا يمكن تقليل المخزون المشترك — الكمية أقل من المتاح في الجملة");
-            }
-          } else {
-            await tx.inventoryPoolVariant.updateMany({
-              where: { poolId, masterVariantId: mvId },
-              data: { quantity: { increment: delta } },
-            });
-          }
+          if (su.stock === su.oldQty) continue;
+          await InventoryService.adjust(tx, su.variantId, su.stock, auth.user.id, "تعديل الكمية من صفحة تعديل المنتج (بائع)");
         }
       }
 
@@ -579,10 +537,7 @@ export async function PATCH(
               `لا يمكن تخفيض المخزون إلى ${data.stock}. هناك ${inv.reservedQuantity} قطعة محجوزة.`
             );
           }
-          await tx.inventory.updateMany({
-            where: { variantId: defaultVariant.id },
-            data: { quantity: data.stock },
-          });
+          await InventoryService.adjust(tx, defaultVariant.id, data.stock, auth.user.id, "تعديل الكمية من صفحة تعديل المنتج (بائع)");
         }
       }
 

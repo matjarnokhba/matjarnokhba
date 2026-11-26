@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SessionService } from '@/services/session.service';
+import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 
 async function requireSeller(permission?: string) {
   const current = await SessionService.getCurrent();
@@ -374,6 +375,12 @@ export async function POST(request: Request) {
             lowStockThreshold: 5,
           })),
         });
+        await InventoryService.recordOpening(
+          tx,
+          createdVariants.map((v, i) => ({ variantId: v.id, quantity: comboData[i].stock })),
+          auth.user.id,
+          "رصيد افتتاحي عند إنشاء المنتج"
+        );
 
         // ═══ ربط الـvariants بقيم الخيارات ═══
         const links: Array<{ variantId: number; optionValueId: number }> = [];
