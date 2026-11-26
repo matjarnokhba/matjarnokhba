@@ -348,10 +348,11 @@ async function main() {
     });
 
     await safe("variant", variantId, async (id) => {
-      await prisma.inventoryMovement.deleteMany({
-        where: { inventory: { variantId: id } },
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.allow_movement_delete', 'on', true)`;
+        await tx.inventoryMovement.deleteMany({ where: { inventory: { variantId: id } } });
+        await tx.inventory.deleteMany({ where: { variantId: id } });
       });
-      await prisma.inventory.deleteMany({ where: { variantId: id } });
       await prisma.productVariant.delete({ where: { id } });
     });
 
