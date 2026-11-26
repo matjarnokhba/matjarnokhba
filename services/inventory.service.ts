@@ -248,6 +248,53 @@ export const InventoryService = {
     }
     return { recorded };
   },
+  // ═══════ تحويل بين المجمّع والمتجر: قفل + حركة بدون مزامنة المجمّع (المسار يحدّث المجمّع بنفسه) ═══════
+  async transferSet(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    variantId: number,
+    newQuantity: number,
+    performedById: number,
+    reason: string
+  ) {
+    if (!Number.isInteger(newQuantity) || newQuantity < 0) throw new Error("الكمية غير صالحة");
+    const inv = await this.lockInventory(tx, variantId);
+    const change = newQuantity - inv.quantity;
+    if (change === 0) return { inventoryId: inv.id, changed: 0 };
+
+    await tx.inventory.update({
+      where: { id: inv.id },
+      data: { quantity: newQuantity },
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        inventoryId: inv.id,
+        type: "ADJUSTMENT",
+        beforeQuantity: inv.quantity,
+        afterQuantity: newQuantity,
+        quantityChange: change,
+        beforeReserved: inv.reservedQuantity,
+        afterReserved: inv.reservedQuantity,
+        reservedChange: 0,
+        reason,
+        referenceType: "TRANSFER",
+        performedById,
+      },
+    });
+    return { inventoryId: inv.id, changed: change };
+  },
+
+  async transferDelta(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    variantId: number,
+    delta: number,
+    performedById: number,
+    reason: string
+  ) {
+    const inv = await this.lockInventory(tx, variantId);
+    return this.transferSet(tx, variantId, inv.quantity + delta, performedById, reason);
+  },
   // ═══════ قفل المخزون (SELECT ... FOR UPDATE) ═══════
   async lockInventory(tx: any, variantId: number): Promise<LockedInventory> {
     const rows: any[] = await tx.$queryRaw`

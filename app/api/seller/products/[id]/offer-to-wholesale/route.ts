@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { InventoryService } from "@/services/inventory.service";
 import { logWholesaleAction } from "@/lib/wholesale/audit";
 import { WholesaleOfferService } from "@/services/wholesale-offer.service";
 import {
@@ -332,10 +333,10 @@ export async function POST(
         if (inventoryMode === "SHARED") {
           const merged = poolVar.quantity + m.originalQty;
           await tx.inventoryPoolVariant.update({ where: { id: poolVar.id }, data: { quantity: merged } });
-          await tx.inventory.updateMany({ where: { variantId: m.retailVariantId }, data: { quantity: merged } });
+          await InventoryService.transferSet(tx, m.retailVariantId, merged, current.user.id, "عرض للجملة (مخزون مشترك): دمج مخزون المتجر في المجمّع");
         } else {
           const wholesaleQty = m.originalQty - m.retailQty;
-          await tx.inventory.updateMany({ where: { variantId: m.retailVariantId }, data: { quantity: m.retailQty } });
+          await InventoryService.transferSet(tx, m.retailVariantId, m.retailQty, current.user.id, "عرض للجملة (مخزون منفصل): الكمية المتبقية للمتجر");
           await tx.inventoryPoolVariant.update({ where: { id: poolVar.id }, data: { quantity: { increment: wholesaleQty } } });
         }
       }
