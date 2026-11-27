@@ -8,8 +8,10 @@ import AuditTab from "@/components/admin/logistics/AuditTab";
 import MovementsTab from "@/components/admin/logistics/MovementsTab";
 import TransfersTab from "@/components/admin/logistics/TransfersTab";
 import PlatformsTab from "@/components/admin/logistics/PlatformsTab";
+import ProvidersTab from "@/components/admin/logistics/ProvidersTab";
+import ExternalShipmentsTab from "@/components/admin/logistics/ExternalShipmentsTab";
 
-type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "audit" | "movements";
+type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "providers" | "external" | "audit" | "movements";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "warehouses", label: "المستودعات" },
@@ -17,6 +19,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "staff", label: "الموظفون" },
   { key: "transfers", label: "التحويلات" },
   { key: "platforms", label: "المنصات" },
+  { key: "providers", label: "شركات التوصيل" },
+  { key: "external", label: "الشحنات الخارجية" },
   { key: "audit", label: "سجل التدقيق" },
   { key: "movements", label: "حركة الطرود" },
 ];
@@ -59,6 +63,8 @@ export default function LogisticsPage() {
       {tab === "audit" && <AuditTab />}
       {tab === "transfers" && <TransfersTab />}
       {tab === "platforms" && <PlatformsTab />}
+      {tab === "providers" && <ProvidersTab />}
+      {tab === "external" && <ExternalShipmentsTab />}
       {tab === "movements" && <MovementsTab />}
     </div>
   );

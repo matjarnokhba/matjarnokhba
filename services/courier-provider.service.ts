@@ -105,9 +105,9 @@ async function runTest(actor: Actor, id: number, action: "test_connection" | "te
 }
 
 export const CourierProviderService = {
-  async list(actor: Actor) {
+  async list(actor: Actor, opts?: Opts) {
     needPlatform(actor);
-    const rows = await prisma.shippingProvider.findMany({
+    const rows = await ((opts?.tx ?? prisma) as any).shippingProvider.findMany({
       orderBy: { id: "asc" },
       take: 200,
       select: { ...SELECT, _count: { select: { companies: true, statusMappings: true } } },
