@@ -28,6 +28,11 @@ export async function POST(request: Request) {
       );
     }
 
+    if (handover.warehouseRefId == null) {
+      return NextResponse.json({ success: false, message: "هذا التسليم غير مرتبط بمستودع، تعذّر الاستلام" }, { status: 409 });
+    }
+    const warehouseId = handover.warehouseRefId;
+
     const amount = Number(handover.amount);
 
     await prisma.$transaction(async (tx) => {
@@ -38,7 +43,7 @@ export async function POST(request: Request) {
 
       // 1. خصم من محفظة المستودع (من cashOwedToPlatform)
       const whWallet = await tx.wallet.findUnique({
-        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: handover.warehouseRefId ?? 1 } },
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
       });
       if (!whWallet) throw new Error("محفظة المستودع غير موجودة");
 

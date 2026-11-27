@@ -35,6 +35,11 @@ export async function POST(request: Request) {
       );
     }
 
+    if (handover.warehouseRefId == null) {
+      return NextResponse.json({ success: false, message: "هذا التسليم غير مرتبط بمستودع، تواصل مع الإدارة" }, { status: 409 });
+    }
+    const warehouseId = handover.warehouseRefId;
+
     const actualAmount = Number(handover.amount);
     const shortfall = Number(handover.shortfall);
 
@@ -129,7 +134,7 @@ export async function POST(request: Request) {
       }
 
       // 6. محفظة المستودع: إضافة الأموال الموزعة
-      const whId = handover.warehouseRefId ?? 1;
+      const whId = warehouseId;
       const warehouseWallet = await tx.wallet.upsert({
         where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: whId } },
         create: {
