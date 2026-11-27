@@ -8,6 +8,7 @@ const ENTITY_LABEL: Record<string, string> = {
   Warehouse: "مستودع",
   LogisticsCompany: "شركة",
   LogisticsMembership: "عضوية",
+  WarehouseTransfer: "نقل",
 };
 
 export default function AuditTab() {
@@ -37,6 +38,7 @@ export default function AuditTab() {
           <option value="Warehouse">المستودعات</option>
           <option value="LogisticsCompany">الشركات</option>
           <option value="LogisticsMembership">العضويات</option>
+          <option value="WarehouseTransfer">النقل</option>
         </select>
       </div>
       {err && <p className="rounded-lg bg-red-50 p-2 text-sm font-bold text-red-600">{err}</p>}

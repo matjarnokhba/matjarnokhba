@@ -1915,6 +1915,7 @@ model FulfillmentItem {
   collectionBatchItems CollectionBatchItem[]
   warehouseRefId Int? @default(1)
   warehouse Warehouse? @relation(fields: [warehouseRefId], references: [id], onDelete: SetNull)
+  transferItems WarehouseTransferItem[]
   @@index([warehouseRefId])
 
   @@index([sellerId])
@@ -4477,6 +4478,8 @@ model Warehouse {
   company          LogisticsCompany      @relation(fields: [companyId], references: [id], onDelete: Restrict)
   memberships      LogisticsMembership[]
   fulfillmentItems FulfillmentItem[]
+  transfersOut WarehouseTransfer[] @relation("TransferFrom")
+  transfersIn WarehouseTransfer[] @relation("TransferTo")
   shipments        Shipment[]            @relation("ShipmentOriginWarehouse")
 
   @@index([companyId])
@@ -4527,4 +4530,114 @@ model ParcelMovement {
   @@index([toWarehouseId, createdAt])
   @@index([fromWarehouseId, createdAt])
   @@index([createdAt])
+}
+
+// ============================================
+// INTER-WAREHOUSE TRANSFERS (records are permanent: DELETE blocked by DB triggers)
+// ============================================
+
+enum WarehouseTransferStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PREPARED
+  DISPATCHED
+  RECEIVED
+  RECEIVED_WITH_DISCREPANCY
+  CLOSED
+  CANCELLED
+}
+
+enum TransferItemOutcome {
+  PENDING
+  RECEIVED
+  PARTIAL
+  DAMAGED
+  MISSING
+}
+
+enum TransferDiscrepancyType {
+  MISSING
+  DAMAGED
+  QUANTITY_MISMATCH
+}
+
+model WarehouseTransfer {
+  id               Int                     @id @default(autoincrement())
+  transferNumber   String                  @unique
+  fromWarehouseId  Int
+  toWarehouseId    Int
+  status           WarehouseTransferStatus @default(DRAFT)
+  reason           String
+  notes            String?
+  requiresApproval Boolean                 @default(false)
+  createdById      Int
+  preparedById     Int?
+  preparedAt       DateTime?
+  approvedById     Int?
+  approvedAt       DateTime?
+  dispatchedById   Int?
+  dispatchedAt     DateTime?
+  driverUserId     Int?
+  receivedById     Int?
+  receivedAt       DateTime?
+  receiptProofUrl  String?
+  receiptNote      String?
+  closedById       Int?
+  closedAt         DateTime?
+  cancelledById    Int?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  fromWarehouse Warehouse                @relation("TransferFrom", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+  toWarehouse   Warehouse                @relation("TransferTo", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  items         WarehouseTransferItem[]
+  discrepancies TransferDiscrepancy[]
+
+  @@index([status])
+  @@index([fromWarehouseId, status])
+  @@index([toWarehouseId, status])
+  @@index([createdAt])
+}
+
+model WarehouseTransferItem {
+  id                Int                 @id @default(autoincrement())
+  transferId        Int
+  fulfillmentItemId Int
+  expectedQuantity  Int
+  receivedQuantity  Int?
+  outcome           TransferItemOutcome @default(PENDING)
+  note              String?
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  transfer        WarehouseTransfer @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  fulfillmentItem FulfillmentItem   @relation(fields: [fulfillmentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([transferId, fulfillmentItemId])
+  @@index([transferId])
+  @@index([fulfillmentItemId])
+}
+
+model TransferDiscrepancy {
+  id                Int                     @id @default(autoincrement())
+  transferId        Int
+  fulfillmentItemId Int?
+  type              TransferDiscrepancyType
+  expectedQty       Int
+  actualQty         Int
+  note              String?
+  proofUrl          String?
+  reportedById      Int
+  createdAt         DateTime                @default(now())
+  resolvedAt        DateTime?
+  resolvedById      Int?
+  resolutionNote    String?
+
+  transfer WarehouseTransfer @relation(fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@index([transferId])
+  @@index([resolvedAt])
 }

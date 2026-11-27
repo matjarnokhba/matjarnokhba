@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const j = (v: unknown) => (v === undefined || v === null ? undefined : JSON.parse(JSON.stringify(v)));
 
-export const LOGISTICS_AUDIT_ENTITIES = ["Warehouse", "LogisticsCompany", "LogisticsMembership"] as const;
+export const LOGISTICS_AUDIT_ENTITIES = ["Warehouse", "LogisticsCompany", "LogisticsMembership", "WarehouseTransfer"] as const;
 
 /** سجل تدقيق لوجستي (إضافة فقط — لا تعديل ولا حذف من التطبيق). يعمل داخل المعاملة نفسها. */
 export async function logLogisticsAudit(
