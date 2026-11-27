@@ -6,13 +6,17 @@ import CompaniesTab from "@/components/admin/logistics/CompaniesTab";
 import MembershipsTab from "@/components/admin/logistics/MembershipsTab";
 import AuditTab from "@/components/admin/logistics/AuditTab";
 import MovementsTab from "@/components/admin/logistics/MovementsTab";
+import TransfersTab from "@/components/admin/logistics/TransfersTab";
+import PlatformsTab from "@/components/admin/logistics/PlatformsTab";
 
-type Tab = "warehouses" | "companies" | "staff" | "audit" | "movements";
+type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "audit" | "movements";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "warehouses", label: "المستودعات" },
   { key: "companies", label: "الشركات" },
   { key: "staff", label: "الموظفون" },
+  { key: "transfers", label: "التحويلات" },
+  { key: "platforms", label: "المنصات" },
   { key: "audit", label: "سجل التدقيق" },
   { key: "movements", label: "حركة الطرود" },
 ];
@@ -53,6 +57,8 @@ export default function LogisticsPage() {
       {tab === "companies" && <CompaniesTab />}
       {tab === "staff" && <MembershipsTab key={String(staffWarehouse)} initialWarehouseId={staffWarehouse} />}
       {tab === "audit" && <AuditTab />}
+      {tab === "transfers" && <TransfersTab />}
+      {tab === "platforms" && <PlatformsTab />}
       {tab === "movements" && <MovementsTab />}
     </div>
   );
