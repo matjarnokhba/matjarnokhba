@@ -56,6 +56,7 @@ export type ExternalShipmentPayload = {
   recipient: { name: string; phone: string; city: string; district: string | null; address: string; lat?: number; lng?: number };
   parcels: number;
   notes?: string;
+  orderNumbers?: string[];
 };
 
 export type CreateShipmentData = { externalId: string | null; trackingNumber: string | null; manual?: boolean; raw?: unknown };

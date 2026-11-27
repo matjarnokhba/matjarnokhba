@@ -62,6 +62,9 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   LOGISTICS_PROVIDER_SET_MAPPINGS: "تعديل ربط الحالات",
   LOGISTICS_PROVIDER_APPLY_DEFAULT_MAPPINGS: "تطبيق ربط الحالات الافتراضي",
   LOGISTICS_PROVIDER_COMPANY_LINK: "ربط شركة بمزوّد توصيل",
+  LOGISTICS_EXTERNAL_DISPATCH: "إرسال شحنة لشركة توصيل خارجية",
+  LOGISTICS_EXTERNAL_EVENT: "إدخال حالة شحنة خارجية يدوياً",
+  LOGISTICS_EXTERNAL_TRACKING: "إدخال تتبع شحنة خارجية",
 };
 
 export function statusTone(s: string): Tone {
