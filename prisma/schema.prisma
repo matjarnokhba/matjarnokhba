@@ -2505,6 +2505,7 @@ model CashHandover {
 
   @@index([driverId])
   @@index([status])
+  warehouseRefId Int? @default(1)
 }
 
 // ═══ ربط شركات التوصيل (للمستقبل) ═══
@@ -2532,6 +2533,7 @@ model DriverPayout {
 
   @@index([driverId])
   @@index([status])
+  warehouseRefId Int? @default(1)
 }
 
 model AdminCashHandover {
@@ -2543,6 +2545,7 @@ model AdminCashHandover {
   handoverToken String    @unique
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
+  warehouseRefId Int? @default(1)
 }
 
 // ═══ غيابات السائقين (المرض أو الطوارئ) ═══
@@ -2597,6 +2600,7 @@ model RefusedHandoverBatch {
 
   @@index([driverId])
   @@index([status])
+  warehouseRefId Int? @default(1)
 }
 
 model RefusedHandoverItem {
@@ -2632,6 +2636,7 @@ model SellerReturnBatch {
 
   @@index([sellerId])
   @@index([status])
+  warehouseRefId Int? @default(1)
 }
 
 model SellerReturnItem {

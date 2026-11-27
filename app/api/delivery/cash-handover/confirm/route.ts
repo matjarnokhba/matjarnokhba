@@ -129,11 +129,12 @@ export async function POST(request: Request) {
       }
 
       // 6. محفظة المستودع: إضافة الأموال الموزعة
+      const whId = handover.warehouseRefId ?? 1;
       const warehouseWallet = await tx.wallet.upsert({
-        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: 1 } },
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: whId } },
         create: {
           ownerType: "WAREHOUSE",
-          ownerId: 1,
+          ownerId: whId,
           cashInHand: actualAmount,
           cashOwedToPlatform: totalPlatformAmount,
           cashOwedToDrivers: totalDriversAmount,

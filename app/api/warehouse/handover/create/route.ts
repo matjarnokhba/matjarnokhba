@@ -1,3 +1,4 @@
+import { ActorWarehouse } from "@/services/actor-warehouse.service";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "crypto";
@@ -18,8 +19,9 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
     // التحقق من أن المبلغ أقل أو يساوي الكاش الموجود في حوزة المستودع
+    const actorWarehouseId = await ActorWarehouse.forUser(current.user.id);
     const warehouseWallet = await prisma.wallet.findUnique({
-      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: 1 } }
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: actorWarehouseId } }
     });
 
     const cashInHand = warehouseWallet ? Number(warehouseWallet.cashInHand) : 0;
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
     await prisma.adminCashHandover.create({
       data: {
         warehouseId: current.user.id,
+        warehouseRefId: actorWarehouseId,
         amount: parsed.data.amount,
         handoverToken,
         status: "PENDING",

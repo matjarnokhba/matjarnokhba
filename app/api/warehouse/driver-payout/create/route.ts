@@ -1,3 +1,4 @@
+import { ActorWarehouse } from "@/services/actor-warehouse.service";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "crypto";
@@ -38,10 +39,12 @@ export async function POST(request: Request) {
 
     const payoutToken = crypto.randomUUID();
 
+    const actorWarehouseId = await ActorWarehouse.forUser(current.user.id);
     const payout = await prisma.driverPayout.create({
       data: {
         driverId: parsed.data.driverId,
         warehouseId: current.user.id,
+        warehouseRefId: actorWarehouseId,
         amount: parsed.data.amount,
         method: parsed.data.method,
         payoutToken,

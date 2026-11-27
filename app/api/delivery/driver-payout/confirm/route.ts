@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
       // 2. خصم من محفظة المستودع (من cashOwedToDrivers و cashInHand)
       const warehouseWallet = await tx.wallet.findUnique({
-        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: 1 } },
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: payout.warehouseRefId ?? 1 } },
       });
       if (!warehouseWallet) throw new Error("محفظة المستودع غير موجودة");
 
