@@ -1829,8 +1829,8 @@ model Shipment {
   deliveryZoneId      Int?
   deliveryZone        Zone?                @relation("ShipmentDeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   assemblyItems       AssemblyItem[]
-  originWarehouseId Int? @default(1)
-  companyId Int? @default(1)
+  originWarehouseId Int?
+  companyId Int?
   originWarehouse Warehouse? @relation("ShipmentOriginWarehouse", fields: [originWarehouseId], references: [id], onDelete: SetNull)
   logisticsCompany LogisticsCompany? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   @@index([originWarehouseId])
@@ -1843,7 +1843,7 @@ model Shipment {
   @@index([createdAt])
   @@index([status, deliveryPersonId])
   @@index([deliveryZoneId])
-  platformId             Int?                   @default(1)
+  platformId Int?
   platform               ClientPlatform?        @relation(fields: [platformId], references: [id], onDelete: SetNull)
 
   @@index([platformId])
