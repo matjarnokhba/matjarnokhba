@@ -1825,8 +1825,8 @@ model Shipment {
   deliveryZoneId      Int?
   deliveryZone        Zone?                @relation("ShipmentDeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   assemblyItems       AssemblyItem[]
-  originWarehouseId Int?
-  companyId Int?
+  originWarehouseId Int? @default(1)
+  companyId Int? @default(1)
   originWarehouse Warehouse? @relation("ShipmentOriginWarehouse", fields: [originWarehouseId], references: [id], onDelete: SetNull)
   logisticsCompany LogisticsCompany? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   @@index([originWarehouseId])
@@ -1913,7 +1913,7 @@ model FulfillmentItem {
   warehouseReceipts    WarehouseReceipt[]
   shipmentItems        ShipmentItem[]
   collectionBatchItems CollectionBatchItem[]
-  warehouseRefId Int?
+  warehouseRefId Int? @default(1)
   warehouse Warehouse? @relation(fields: [warehouseRefId], references: [id], onDelete: SetNull)
   @@index([warehouseRefId])
 
@@ -4506,4 +4506,25 @@ model LogisticsMembership {
   @@index([companyId])
   @@index([warehouseId])
   @@index([scope])
+}
+
+// Append-only movement log (written by DB triggers on FulfillmentStatusHistory / Shipment; UPDATE/DELETE blocked)
+model ParcelMovement {
+  id              Int      @id @default(autoincrement())
+  entityType      String // FULFILLMENT_ITEM | SHIPMENT | TRANSFER
+  entityId        Int
+  action          String // STATUS_CHANGE | CREATED | ...
+  fromStatus      String?
+  toStatus        String?
+  fromWarehouseId Int?
+  toWarehouseId   Int?
+  actorId         Int?
+  reason          String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([toWarehouseId, createdAt])
+  @@index([fromWarehouseId, createdAt])
+  @@index([createdAt])
 }
