@@ -29,6 +29,7 @@ const SELECT = {
   status: true,
   authScheme: true,
   baseUrl: true,
+  config: true,
   capabilities: true,
   credentialsKeys: true,
   webhookToken: true,
@@ -63,7 +64,7 @@ async function runTest(actor: Actor, id: number, action: "test_connection" | "te
   if (p.credentialsEnc) credentials = openJson<Record<string, string>>("credentials", "provider:" + id, p.credentialsEnc);
   const adapter = getAdapter(p.integrationType);
   const ctx = {
-    provider: { id: p.id, code: p.code, integrationType: p.integrationType, baseUrl: p.baseUrl, authScheme: p.authScheme, capabilities: p.capabilities, config: null },
+    provider: { id: p.id, code: p.code, integrationType: p.integrationType, baseUrl: p.baseUrl, authScheme: p.authScheme, capabilities: p.capabilities, config: p.config },
     credentials,
   };
   const payload = buildTestPayload();
@@ -200,6 +201,7 @@ export const CourierProviderService = {
           if (to === "ACTIVE") {
             if (!["TESTING", "DISABLED"].includes(p.status)) throw new LogisticsError("انقل الشركة إلى مرحلة الاختبار أولاً", 409);
             if (p.capabilities.length === 0) throw new LogisticsError("حدّد إمكانيات الشركة أولاً", 409);
+            if (p.integrationType === "API" && !p.config) throw new LogisticsError("اضبط إعدادات اتصال الـAPI أولاً", 409);
             if (!p.connectionTestOk || !p.shipmentTestOk) throw new LogisticsError("نفّذ اختبار الاتصال واختبار الشحنة بنجاح قبل التفعيل", 409);
           }
           await tx.shippingProvider.update({
@@ -229,6 +231,12 @@ export const CourierProviderService = {
           }
           await logLogisticsAudit(tx, { userId: actor.id, action: "LOGISTICS_PROVIDER_SET_MAPPINGS", entityType: "ShippingProvider", entityId: id, after: { count: seen.size } });
           return { mappings: await tx.providerStatusMapping.findMany({ where: { providerId: id }, orderBy: { externalStatus: "asc" } }) };
+        }
+        case "set_config": {
+          if (p.integrationType !== "API") throw new LogisticsError("إعدادات HTTP للربط عبر API فقط", 409);
+          await tx.shippingProvider.update({ where: { id }, data: { config: a.config as any, ...RESET_TESTS, ...demote } });
+          await logLogisticsAudit(tx, { userId: actor.id, action: "LOGISTICS_PROVIDER_SET_CONFIG", entityType: "ShippingProvider", entityId: id, after: { sections: Object.keys(a.config) } });
+          return { provider: await fetchPublic(tx, id) };
         }
         case "apply_default_mappings": {
           const rows = Object.entries(DEFAULT_STATUS_MAP).map(([k, v]) => ({

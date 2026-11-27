@@ -80,7 +80,7 @@ async function claimAndSubmit(actorId: number | null, esId: number, opts?: Opts)
   const es = await db.externalShipment.findUnique({ where: { id: esId }, select: { ...ESEL, payload: true } });
   const provider = await db.shippingProvider.findUnique({
     where: { id: es.providerId },
-    select: { id: true, code: true, integrationType: true, status: true, baseUrl: true, authScheme: true, capabilities: true, credentialsEnc: true },
+    select: { id: true, code: true, integrationType: true, status: true, baseUrl: true, authScheme: true, capabilities: true, credentialsEnc: true, config: true },
   });
   const t0 = Date.now();
   let res: AdapterResult<CreateShipmentData>;
@@ -91,7 +91,7 @@ async function claimAndSubmit(actorId: number | null, esId: number, opts?: Opts)
       const credentials = provider.credentialsEnc ? openJson<Record<string, string>>("credentials", "provider:" + provider.id, provider.credentialsEnc) : {};
       res = await getAdapter(provider.integrationType).createShipment(
         {
-          provider: { id: provider.id, code: provider.code, integrationType: provider.integrationType, baseUrl: provider.baseUrl, authScheme: provider.authScheme, capabilities: provider.capabilities, config: null },
+          provider: { id: provider.id, code: provider.code, integrationType: provider.integrationType, baseUrl: provider.baseUrl, authScheme: provider.authScheme, capabilities: provider.capabilities, config: provider.config },
           credentials,
           idempotencyKey: es.idempotencyKey,
         },

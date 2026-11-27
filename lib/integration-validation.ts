@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { CAPABILITIES } from "@/lib/courier-adapter";
 import { CANONICAL_STATUSES } from "@/lib/integration-status";
+import { isSafeUrlSyntax } from "@/lib/integration-ssrf";
+import { httpConfigSchema } from "@/lib/integration-config";
 
-const httpsUrl = z.string().trim().url("رابط غير صحيح").max(300).refine((u) => u.startsWith("https://"), "الرابط يجب أن يبدأ بـ https://");
+const httpsUrl = z.string().trim().url("رابط غير صحيح").max(300).refine((u) => u.startsWith("https://"), "الرابط يجب أن يبدأ بـ https://").refine((u) => isSafeUrlSyntax(u), "عنوان غير مسموح (داخلي أو IP مباشر أو يحتوي بيانات دخول)");
 const capabilities = z.array(z.enum(CAPABILITIES)).max(CAPABILITIES.length);
 const authScheme = z.enum(["NONE", "BEARER", "API_KEY_HEADER", "BASIC", "QUERY_KEY"]);
 
@@ -43,6 +45,7 @@ export const providerActionSchema = z.discriminatedUnion("action", [
       .min(1)
       .max(100),
   }),
+  z.object({ action: z.literal("set_config"), config: httpConfigSchema }),
   z.object({ action: z.literal("apply_default_mappings") }),
 ]);
 
