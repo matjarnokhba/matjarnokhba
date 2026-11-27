@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { warehouseWhere } from "@/lib/logistics-query-scope";
 import { ShipmentQRService } from "@/services/shipment-qr.service";
 import { getColorHex } from "@/lib/address-colors";
 
@@ -11,7 +13,7 @@ async function requireWarehouse() {
   if (!allowed.includes(current.user.role)) {
     return { error: "غير مصرح", status: 403 };
   }
-  return { user: current.user };
+  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
 }
 
 export async function GET(
@@ -38,7 +40,7 @@ export async function GET(
 
     // ═══ Shipment + items + order data ═══
     const shipment = await prisma.shipment.findUnique({
-      where: { id: shipmentId },
+      where: { id: shipmentId, ...(warehouseWhere(auth.scope, "originWarehouseId") as object) },
       include: {
         items: {
           include: {
