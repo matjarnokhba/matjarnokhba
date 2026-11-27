@@ -35,6 +35,11 @@ export async function POST(request: Request) {
       );
     }
 
+    if (payout.warehouseRefId == null) {
+      return NextResponse.json({ success: false, message: "هذه الدفعة غير مرتبطة بمستودع، تواصل مع الإدارة" }, { status: 409 });
+    }
+    const warehouseId = payout.warehouseRefId;
+
     await prisma.$transaction(async (tx) => {
       await tx.driverPayout.update({
         where: { id: payout.id },
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
 
       // 2. خصم من محفظة المستودع (من cashOwedToDrivers و cashInHand)
       const warehouseWallet = await tx.wallet.findUnique({
-        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: payout.warehouseRefId ?? 1 } },
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
       });
       if (!warehouseWallet) throw new Error("محفظة المستودع غير موجودة");
 
