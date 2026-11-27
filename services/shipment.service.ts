@@ -1,3 +1,4 @@
+import { checkShipmentItems } from "@/lib/shipment-guard";
 import { prisma } from "@/lib/prisma";
 import { AuditService } from "@/services/audit.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
@@ -163,6 +164,9 @@ export const ShipmentService = {
     }
 
     totalCOD = Math.round(totalCOD * 100) / 100;
+
+    const guardRes = await checkShipmentItems(prisma, items.map((i) => i.id));
+    if (!guardRes.ok) throw new Error(guardRes.message);
 
     const uniqueOrders = new Set(items.map((i) => i.orderItem.orderId));
 

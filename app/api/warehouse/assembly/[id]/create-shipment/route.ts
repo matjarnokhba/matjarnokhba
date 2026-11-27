@@ -1,3 +1,4 @@
+import { checkShipmentItems } from "@/lib/shipment-guard";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -202,6 +203,11 @@ export async function POST(
     );
 
     const isPartial = waitingItems.length > 0;
+
+    const guardRes = await checkShipmentItems(prisma, shippableItems.map((ai: any) => ai.fulfillmentItem.id));
+    if (!guardRes.ok) {
+      return NextResponse.json({ success: false, message: guardRes.message }, { status: 409 });
+    }
 
     // ═══ الطلبات الفريدة داخل الشحنة ═══
     const uniqueOrderIds = Array.from(

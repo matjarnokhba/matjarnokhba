@@ -1,3 +1,4 @@
+import { resolveShipmentWarehouseId } from "@/lib/warehouse-resolve";
 import { FlashDealService } from "./flash-deal.service";
 import { prisma } from "@/lib/prisma";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
@@ -10,7 +11,6 @@ type ItemDecision = {
 };
 
 const PLATFORM_ID = 1;
-const WAREHOUSE_ID = 1;
 
 export const PartialDeliveryService = {
   async processPartialDelivery(
@@ -298,16 +298,17 @@ export const PartialDeliveryService = {
           );
 
           if (warehouseProfit > 0) {
+            const whId = await resolveShipmentWarehouseId(tx, shipment.id);
             const whWallet = await tx.wallet.upsert({
               where: {
                 ownerType_ownerId: {
                   ownerType: "WAREHOUSE",
-                  ownerId: WAREHOUSE_ID,
+                  ownerId: whId,
                 },
               },
               create: {
                 ownerType: "WAREHOUSE",
-                ownerId: WAREHOUSE_ID,
+                ownerId: whId,
                 balance: warehouseProfit,
               },
               update: { balance: { increment: warehouseProfit } },
