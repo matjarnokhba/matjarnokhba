@@ -181,7 +181,7 @@ export const ShipmentService = {
       async (tx) => {
         const shipmentNumber = await this.generateShipmentNumber(tx);
 
-        const assign = await ShipmentAssignmentService.resolve(tx, { userId: input.createdById, warehouseId: input.warehouseId });
+        const assign = await ShipmentAssignmentService.resolve(tx, { userId: input.createdById, warehouseId: input.warehouseId, fulfillmentItemIds: items.map((i) => i.id) });
 
         const newShipment = await tx.shipment.create({
           data: {

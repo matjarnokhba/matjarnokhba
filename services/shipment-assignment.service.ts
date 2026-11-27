@@ -18,7 +18,7 @@ export const ShipmentAssignmentService = {
    * ثم يتحقق resolveAccess من أن المنصة والشركة والربط كلها نشطة.
    * يُستدعى داخل معاملة الإنشاء. scope اختياري (للاختبار).
    */
-  async resolve(tx: any, input: { userId: number; warehouseId?: number | null; scope?: ResolvedScope }): Promise<ShipmentAssignment> {
+  async resolve(tx: any, input: { userId: number; warehouseId?: number | null; scope?: ResolvedScope; fulfillmentItemIds?: number[] }): Promise<ShipmentAssignment> {
     let scope = input.scope;
     if (!scope) {
       const u = await tx.user.findUnique({ where: { id: input.userId }, select: { role: true } });
@@ -47,6 +47,13 @@ export const ShipmentAssignmentService = {
 
     const access = await LogisticsTenancyService.resolveAccess(p.id, w.companyId, { tx });
     if (!access.allowed) throw new LogisticsError(assignmentDeniedMessage(access.reason), 409);
+
+    const ids = input.fulfillmentItemIds ?? [];
+    if (ids.length > 0) {
+      const rows = await tx.fulfillmentItem.findMany({ where: { id: { in: ids } }, select: { id: true, warehouseRefId: true } });
+      const elsewhere = rows.filter((r: any) => r.warehouseRefId != null && r.warehouseRefId !== w.id);
+      if (elsewhere.length > 0) throw new LogisticsError("بعض المنتجات موجودة في مستودع آخر غير المستودع المحدد للشحنة", 409);
+    }
 
     return { originWarehouseId: w.id, companyId: w.companyId, platformId: p.id };
   },
