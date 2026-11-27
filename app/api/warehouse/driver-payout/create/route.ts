@@ -4,6 +4,8 @@ import { z } from "zod";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { driverWhere } from "@/lib/warehouse-route-scope";
 
 const schema = z.object({
   driverId: z.number().int().positive(),
@@ -22,7 +24,13 @@ export async function POST(request: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, message: "بيانات غير صحيحة" }, { status: 400 });
 
-    const driverWallet = await prisma.wallet.findUnique({
+    const scopedDriver = await prisma.deliveryPerson.findFirst({
+      where: { id: parsed.data.driverId, ...(await driverWhere(await LogisticsScopeService.forUser(current.user.id, current.user.role))) },
+      select: { id: true },
+    });
+    if (!scopedDriver) {
+      return NextResponse.json({ success: false, message: "السائق غير موجود" }, { status: 404 });
+    }const driverWallet = await prisma.wallet.findUnique({
       where: { ownerType_ownerId: { ownerType: "DRIVER", ownerId: parsed.data.driverId } }
     });
 
