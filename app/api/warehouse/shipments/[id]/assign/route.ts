@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { LogisticsScopeService } from "@/services/logistics-scope.service";
 import { warehouseWhere } from "@/lib/logistics-query-scope";
+import { driverWhere } from "@/lib/warehouse-route-scope";
 import { AuditService } from "@/services/audit.service";
 
 async function requireWarehouse() {
@@ -87,7 +88,7 @@ export async function POST(
     }
 
     const person = await prisma.deliveryPerson.findUnique({
-      where: { id: deliveryPersonId },
+      where: { id: deliveryPersonId, ...(await driverWhere(auth.scope)) },
       include: { user: { select: { id: true, name: true } } },
     });
 

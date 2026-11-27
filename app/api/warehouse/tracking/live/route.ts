@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { driverWhere } from "@/lib/warehouse-route-scope";
 
 async function requireWarehouse() {
   const current = await SessionService.getCurrent();
@@ -9,7 +11,7 @@ async function requireWarehouse() {
   if (!allowed.includes(current.user.role)) {
     return { error: "غير مصرح", status: 403 };
   }
-  return { user: current.user };
+  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
 }
 
 const ONLINE_THRESHOLD_MS = 90_000; // 90s
@@ -40,7 +42,7 @@ export async function GET() {
     }
 
     const staff = await prisma.deliveryPerson.findMany({
-      where: { deletedAt: null, status: "ACTIVE" },
+      where: { deletedAt: null, status: "ACTIVE", ...(await driverWhere(auth.scope)) },
       select: {
         id: true,
         userId: true,
