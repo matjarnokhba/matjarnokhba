@@ -27,6 +27,16 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   LOGISTICS_MEMBERSHIP_APPOINT: "تعيين عضو",
   LOGISTICS_MEMBERSHIP_UPDATE: "تعديل عضوية",
   LOGISTICS_MEMBERSHIP_REVOKE: "سحب عضوية",
+  LOGISTICS_TRANSFER_CREATE: "إنشاء نقل",
+  LOGISTICS_TRANSFER_ADD_ITEMS: "إضافة عناصر لنقل",
+  LOGISTICS_TRANSFER_REMOVE_ITEMS: "إزالة عناصر من نقل",
+  LOGISTICS_TRANSFER_PREPARE: "تجهيز نقل",
+  LOGISTICS_TRANSFER_APPROVE: "موافقة على نقل",
+  LOGISTICS_TRANSFER_DISPATCH: "إرسال نقل",
+  LOGISTICS_TRANSFER_RECEIVE: "استلام نقل",
+  LOGISTICS_TRANSFER_RESOLVE_DISCREPANCY: "حسم فرق نقل",
+  LOGISTICS_TRANSFER_CLOSE: "إغلاق نقل",
+  LOGISTICS_TRANSFER_CANCEL: "إلغاء نقل",
 };
 
 export function statusTone(s: string): Tone {
