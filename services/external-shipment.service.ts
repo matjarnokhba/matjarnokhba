@@ -43,6 +43,8 @@ const ESEL = {
   submittedAt: true,
   lastEventAt: true,
   finalAt: true,
+  closedAt: true,
+  closeOutcome: true,
   createdAt: true,
   updatedAt: true,
   provider: { select: { id: true, code: true, name: true } },

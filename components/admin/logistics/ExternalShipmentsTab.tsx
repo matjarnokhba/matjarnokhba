@@ -85,6 +85,38 @@ function DetailModal({ id, onClose, onChanged }: { id: number; onClose: () => vo
           <div className="text-gray-500" dir="ltr">{e.idempotencyKey}</div>
         </div>
 
+        {(e.status === "DELIVERED" || e.status === "RETURNED") && !e.closedAt && (
+          <div className="space-y-1 rounded-xl border border-orange-200 bg-orange-50 p-3">
+            <p className="text-xs text-orange-800">
+              أبلغت الشركة بـ{e.status === "DELIVERED" ? "التسليم" : "الإرجاع"}. اضغط للإغلاق مالياً: تُحدَّث الطلبات والشحنة وأرباح البائع، ويُسجَّل مبلغ الدفع عند الاستلام دَيناً على الشركة حتى تسدّده. لا يمكن التراجع.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              className={btnPrimary + " w-full"}
+              onClick={async () => {
+                if (!window.confirm("إغلاق مالي نهائي؟")) return;
+                setBusy(true);
+                setErr("");
+                setMsg("");
+                const r = await api("/api/logistics/external-shipments/" + id + "/close", "POST", {});
+                setBusy(false);
+                if (!r.ok) return setErr(r.message);
+                setMsg("تم الإغلاق المالي");
+                await load();
+                onChanged();
+              }}
+            >
+              إغلاق التسليم مالياً
+            </button>
+          </div>
+        )}
+        {e.closedAt && (
+          <p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">
+            أُغلقت مالياً: {e.closeOutcome === "DELIVERED" ? "تسليم" : "إرجاع"} — {fmt(e.closedAt)}
+          </p>
+        )}
+
         {canRetry && (
           <button type="button" disabled={busy} className={btnPrimary + " w-full"} onClick={() => act({ action: "retry" }, "أُعيدت المحاولة")}>
             إعادة محاولة الإرسال

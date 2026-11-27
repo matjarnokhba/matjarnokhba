@@ -12,14 +12,17 @@ type ItemDecision = {
 
 const PLATFORM_ID = 1;
 
+type Tx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
+
 export const PartialDeliveryService = {
   async processPartialDelivery(
     shipmentId: number,
     driverId: number,
-    decisions: ItemDecision[]
+    decisions: ItemDecision[],
+    opts?: { tx?: Tx; external?: { actorId: number } }
   ) {
-    return prisma.$transaction(
-      async (tx) => {
+    const ext = opts?.external;
+    const body = async (tx: Tx) => {
         const shipment = await tx.shipment.findUnique({
           where: { id: shipmentId },
           include: {
@@ -45,15 +48,16 @@ export const PartialDeliveryService = {
         });
 
         if (!shipment) throw new Error("الشحنة غير موجودة");
-        if (shipment.deliveryPersonId !== driverId)
-          throw new Error("هذه الشحنة ليست مُسندة إليك");
-        if (!["OUT_FOR_DELIVERY", "PICKED_UP"].includes(shipment.status)) {
+        if (ext ? shipment.deliveryPersonId !== null : shipment.deliveryPersonId !== driverId)
+          throw new Error(ext ? "الشحنة مسندة لسائق داخلي، لا يمكن إغلاقها كشحنة خارجية" : "هذه الشحنة ليست مُسندة إليك");
+        if (!(ext ? ["READY", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"] : ["OUT_FOR_DELIVERY", "PICKED_UP"]).includes(shipment.status)) {
           throw new Error(
             `لا يمكن تعديل الشحنة في حالتها الحالية: ${shipment.status}`
           );
         }
 
         // ═══ التحقق من القرارات ═══
+        const actorId = ext ? ext.actorId : driverId;
         const decisionMap = new Map<number, ItemDecision>();
         for (const d of decisions) {
           if (d.refusedQuantity < 0)
@@ -174,7 +178,7 @@ export const PartialDeliveryService = {
                 fulfillmentItemId: item.fulfillmentItemId,
                 fromStatus: "SHIPPED" as FulfillmentStatus,
                 toStatus: fiStatus,
-                changedById: driverId,
+                changedById: actorId,
                 note: data.isFullyRefused
                   ? `رفض كامل: ${d.reason || ""}`
                   : data.isFullyAccepted
@@ -219,7 +223,7 @@ export const PartialDeliveryService = {
               orderId: update.orderId,
               fromStatus: originalOrder.status,
               toStatus: update.status,
-              changedById: driverId,
+              changedById: actorId,
               note:
                 update.status === "RETURNED"
                   ? "رفض كامل من الزبون"
@@ -250,6 +254,7 @@ export const PartialDeliveryService = {
 
         // ═══ توزيع الأموال ═══
         if (!allOrdersReturned) {
+          if (!ext) {
           const driverFee = Number(shipment.driverFee);
 
           const existingWallet = await tx.wallet.findUnique({
@@ -321,6 +326,8 @@ export const PartialDeliveryService = {
                 description: `أرباح شحن شحنة #${shipment.shipmentNumber}`,
               },
             });
+          }
+
           }
 
           const policy = await tx.systemPolicy.findUnique({
@@ -492,16 +499,15 @@ export const PartialDeliveryService = {
           console.error("Assembly rebuild failed:", e);
         }
 
-        await updateDriverBlockStatus(tx, driverId);
+        if (!ext) await updateDriverBlockStatus(tx, driverId);
 
         return {
           totalCOD,
           allOrdersReturned,
           allOrdersDelivered,
         };
-      },
-      { timeout: 30000 }
-    );
+    };
+    return opts?.tx ? body(opts.tx) : prisma.$transaction(body, { timeout: 30000 });
   },
 
   async receiveRefusedItems(shipmentId: number, warehouseUserId: number) {
