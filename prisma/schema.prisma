@@ -4853,6 +4853,8 @@ model ExternalShipment {
   lastEventAt    DateTime?
   lastEventId    String?
   finalAt        DateTime?
+  closedAt       DateTime?
+  closeOutcome   String?
   createdById    Int?
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
@@ -4906,4 +4908,30 @@ model IntegrationLog {
 
   @@index([providerId, createdAt])
   @@index([externalShipmentId])
+}
+
+/// دَين COD على شركة توصيل خارجية: يُنشأ عند الإغلاق المالي للتسليم ويُسوّى لاحقاً من كشف الشركة.
+enum ExternalReceivableStatus {
+  OPEN
+  SETTLED
+}
+
+model ExternalCodReceivable {
+  id                 Int                      @id @default(autoincrement())
+  externalShipmentId Int                      @unique
+  shipmentId         Int
+  providerId         Int
+  companyId          Int?
+  warehouseId        Int?
+  amountDue          Decimal                  @db.Decimal(12, 2)
+  shippingCharged    Decimal                  @default(0) @db.Decimal(12, 2)
+  courierFee         Decimal?                 @db.Decimal(12, 2)
+  status             ExternalReceivableStatus @default(OPEN)
+  settlementId       Int?
+  settledAt          DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@index([providerId, status])
+  @@index([shipmentId])
 }
