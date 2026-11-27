@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { driverWhere } from "@/lib/warehouse-route-scope";
 
 async function requireWarehouse() {
   const current = await SessionService.getCurrent();
@@ -11,7 +13,7 @@ async function requireWarehouse() {
     return { error: "غير مصرح", status: 403 };
   }
 
-  return { user: current.user };
+  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
 }
 
 export async function GET() {
@@ -35,6 +37,7 @@ export async function GET() {
 
     const drivers = await prisma.deliveryPerson.findMany({
       where: {
+        ...(await driverWhere(auth.scope)),
         status: "ACTIVE",
         deletedAt: null,
         // استبعاد السائقين الذين في يوم راحتهم الأسبوعي (اليوم أو غداً)

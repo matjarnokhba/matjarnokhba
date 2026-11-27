@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { driverWhere } from "@/lib/warehouse-route-scope";
 
 export async function GET() {
   try {
@@ -10,7 +12,7 @@ export async function GET() {
     }
 
     const drivers = await prisma.deliveryPerson.findMany({
-      where: { status: "ACTIVE", deletedAt: null },
+      where: { status: "ACTIVE", deletedAt: null, ...(await driverWhere(await LogisticsScopeService.forUser(current.user.id, current.user.role))) },
       include: { user: { select: { name: true, phone: true } } }
     });
 
