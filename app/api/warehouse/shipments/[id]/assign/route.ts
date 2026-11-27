@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { hasAnyLogisticsAccess } from "@/lib/logistics-scope";
 import { warehouseWhere } from "@/lib/logistics-query-scope";
 import { driverWhere } from "@/lib/warehouse-route-scope";
 import { AuditService } from "@/services/audit.service";
@@ -11,12 +12,12 @@ async function requireWarehouse() {
   const current = await SessionService.getCurrent();
   if (!current) return { error: "غير مصرح", status: 401 };
 
-  const allowed = ["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"];
-  if (!allowed.includes(current.user.role)) {
+  const scope = await LogisticsScopeService.forUser(current.user.id, current.user.role);
+  if (!hasAnyLogisticsAccess(scope)) {
     return { error: "غير مصرح", status: 403 };
   }
 
-  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
+  return { user: current.user, scope };
 }
 
 const schema = z.object({

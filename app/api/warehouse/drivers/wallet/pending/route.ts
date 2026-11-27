@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
 import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { hasAnyLogisticsAccess } from "@/lib/logistics-scope";
 import { driverWhere } from "@/lib/warehouse-route-scope";
 
 export async function GET() {
   try {
     const current = await SessionService.getCurrent();
-    if (!current || !["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(current.user.role)) {
+    const gateScope = current ? await LogisticsScopeService.forUser(current.user.id, current.user.role) : null;
+    if (!current || !gateScope || !hasAnyLogisticsAccess(gateScope)) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
