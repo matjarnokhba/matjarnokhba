@@ -237,7 +237,7 @@ export async function POST(
       const encrypted = ShipmentQRService.encryptToken(rawToken);
       const preview = ShipmentQRService.preview(rawToken);
 
-      const assign = await ShipmentAssignmentService.resolve(tx, { userId: auth.user.id, warehouseId });
+      const assign = await ShipmentAssignmentService.resolve(tx, { userId: auth.user.id, warehouseId, fulfillmentItemIds: shippableItems.map((s) => s.fulfillmentItem.id) });
 
       const shipment = await tx.shipment.create({
         data: {
