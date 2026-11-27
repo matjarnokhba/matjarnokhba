@@ -37,6 +37,20 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   LOGISTICS_TRANSFER_RESOLVE_DISCREPANCY: "حسم فرق نقل",
   LOGISTICS_TRANSFER_CLOSE: "إغلاق نقل",
   LOGISTICS_TRANSFER_CANCEL: "إلغاء نقل",
+  LOGISTICS_PLATFORM_CREATE: "إنشاء منصة عميلة",
+  LOGISTICS_PLATFORM_UPDATE: "تعديل منصة",
+  LOGISTICS_PLATFORM_SUSPEND: "تعليق منصة",
+  LOGISTICS_PLATFORM_ACTIVATE: "تفعيل منصة",
+  LOGISTICS_PLATFORM_REVOKE: "إلغاء منصة",
+  LOGISTICS_PLATFORM_ROTATE_KEY: "تدوير مفتاح منصة",
+  LOGISTICS_LINK_CREATE: "ربط شركة بمنصة",
+  LOGISTICS_LINK_PAUSE: "إيقاف ربط",
+  LOGISTICS_LINK_RESUME: "استئناف ربط",
+  LOGISTICS_LINK_REVOKE: "إلغاء ربط",
+  LOGISTICS_LINK_REINSTATE: "إعادة تفعيل ربط",
+  LOGISTICS_COMPANY_BRAND_UPDATE: "تعديل هوية الشركة",
+  LOGISTICS_COMPANY_EXTERNAL_ACCESS: "تغيير السماح بالمنصات الخارجية",
+  LOGISTICS_DRIVER_ASSIGN_COMPANY: "إسناد سائق لشركة",
 };
 
 export function statusTone(s: string): Tone {

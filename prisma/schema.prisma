@@ -1703,6 +1703,10 @@ model DeliveryPerson {
   @@index([city])
   @@index([deletedAt])
   @@index([isOnline, lastLocationAt])
+  companyId              Int?                   @default(1)
+  company                LogisticsCompany?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
 }
 
 model DeliveryLocationPing {
@@ -1839,6 +1843,10 @@ model Shipment {
   @@index([createdAt])
   @@index([status, deliveryPersonId])
   @@index([deliveryZoneId])
+  platformId             Int?                   @default(1)
+  platform               ClientPlatform?        @relation(fields: [platformId], references: [id], onDelete: SetNull)
+
+  @@index([platformId])
 }
 
 model ShipmentItem {
@@ -4456,6 +4464,14 @@ model LogisticsCompany {
   @@index([status])
   @@index([kind])
   @@index([headUserId])
+  displayName            String?
+  logoUrl                String?
+  brandColor             String?
+  contactPhone           String?
+  contactEmail           String?
+  allowExternalPlatforms Boolean               @default(false)
+  platformLinks          CompanyPlatformLink[]
+  deliveryPersons        DeliveryPerson[]
 }
 
 model Warehouse {
@@ -4640,4 +4656,77 @@ model TransferDiscrepancy {
 
   @@index([transferId])
   @@index([resolvedAt])
+}
+
+// ============================================
+// CLIENT PLATFORMS + COMPANY LINKS (tenancy). Records are permanent: DELETE blocked by DB triggers.
+// ============================================
+
+enum ClientPlatformKind {
+  OWN
+  EXTERNAL
+}
+
+enum ClientPlatformStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum PlatformLinkStatus {
+  ACTIVE
+  PAUSED
+  REVOKED
+}
+
+model ClientPlatform {
+  id                Int                  @id @default(autoincrement())
+  code              String               @unique
+  name              String
+  kind              ClientPlatformKind   @default(EXTERNAL)
+  status            ClientPlatformStatus @default(ACTIVE)
+  statusReason      String?
+  statusChangedAt   DateTime?
+  statusChangedById Int?
+  contactEmail      String?
+  webhookUrl        String?
+  ownerUserId       Int?
+  notes             String?
+  apiKeyPrefix      String?              @unique
+  apiKeyHash        String?
+  apiKeyRotatedAt   DateTime?
+  createdById       Int?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  links     CompanyPlatformLink[]
+  shipments Shipment[]
+
+  @@index([status])
+  @@index([kind])
+}
+
+model CompanyPlatformLink {
+  id           Int                @id @default(autoincrement())
+  companyId    Int
+  platformId   Int
+  status       PlatformLinkStatus @default(ACTIVE)
+  settings     Json?
+  notes        String?
+  linkedById   Int?
+  pausedAt     DateTime?
+  pausedById   Int?
+  pauseReason  String?
+  revokedAt    DateTime?
+  revokedById  Int?
+  revokeReason String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  company  LogisticsCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  platform ClientPlatform   @relation(fields: [platformId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, platformId])
+  @@index([platformId, status])
+  @@index([companyId, status])
 }
