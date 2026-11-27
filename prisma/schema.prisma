@@ -4935,3 +4935,22 @@ model ExternalCodReceivable {
   @@index([providerId, status])
   @@index([shipmentId])
 }
+
+/// تسوية مالية مع شركة توصيل خارجية (غير قابلة للتعديل أو الحذف). الفهرس الفريد لـ (providerId, reference) جزئي في SQL.
+model ExternalCourierSettlement {
+  id              Int      @id @default(autoincrement())
+  providerId      Int
+  reference       String?
+  totalDue        Decimal  @db.Decimal(12, 2)
+  totalFees       Decimal  @db.Decimal(12, 2)
+  expectedNet     Decimal  @db.Decimal(12, 2)
+  received        Decimal  @db.Decimal(12, 2)
+  shortfall       Decimal  @db.Decimal(12, 2)
+  feeOverShipping Decimal  @default(0) @db.Decimal(12, 2)
+  linesCount      Int
+  notes           String?
+  createdById     Int
+  createdAt       DateTime @default(now())
+
+  @@index([providerId, createdAt])
+}
