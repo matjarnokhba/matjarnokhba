@@ -157,7 +157,7 @@ const DISTRICTS_BY_SLUG: Record<string, DistrictInput[]> = {
     { name: "المدينة القديمة", nameFr: "Médina" },
     { name: "حي السلام", nameFr: "Hay Salam" },
     { name: "كوبرني", nameFr: "Cohen" },
-    { name: "السانية", nameFr: "Sania" },
+    { name: "اقسمية", nameFr: "Sania" },
     { name: "توطان", nameFr: "Toutane" },
   ],
   oujda: [
