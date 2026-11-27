@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { warehouseWhere } from "@/lib/logistics-query-scope";
 
 async function requireWarehouse() {
   const current = await SessionService.getCurrent();
@@ -11,7 +13,7 @@ async function requireWarehouse() {
     return { error: "غير مصرح", status: 403 };
   }
 
-  return { user: current.user };
+  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
 }
 
 export async function GET(
@@ -37,7 +39,7 @@ export async function GET(
     }
 
     const shipment = await prisma.shipment.findUnique({
-      where: { id: shipmentId },
+      where: { id: shipmentId, ...(warehouseWhere(auth.scope, "originWarehouseId") as object) },
       include: {
         customer: {
           select: { id: true, name: true, email: true, phone: true },

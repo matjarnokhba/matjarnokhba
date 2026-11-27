@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
+import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { warehouseWhere } from "@/lib/logistics-query-scope";
 import { AuditService } from "@/services/audit.service";
 
 async function requireWarehouse() {
@@ -13,7 +15,7 @@ async function requireWarehouse() {
     return { error: "غير مصرح", status: 403 };
   }
 
-  return { user: current.user };
+  return { user: current.user, scope: await LogisticsScopeService.forUser(current.user.id, current.user.role) };
 }
 
 const schema = z.object({
@@ -57,7 +59,7 @@ export async function POST(
     const { deliveryPersonId } = parsed.data;
 
     const shipment = await prisma.shipment.findUnique({
-      where: { id: shipmentId },
+      where: { id: shipmentId, ...(warehouseWhere(auth.scope, "originWarehouseId") as object) },
       select: {
         id: true,
         shipmentNumber: true,
