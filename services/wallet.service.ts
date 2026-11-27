@@ -4,7 +4,7 @@ import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
 const DRIVER_FEE = 13;
 const PLATFORM_ID = 1;
-const WAREHOUSE_ID = 1;
+
 
 // ═══ دالة تحديث حظر السائق (فقط بعد 24 ساعة أو بضاعة معلقة) ═══
 export async function updateDriverBlockStatus(tx: any, driverId: number) {
@@ -389,16 +389,17 @@ export const WalletService = {
       orderNumber: string;
       sellerId: number | null;
       payer: "CUSTOMER" | "SELLER" | "PLATFORM" | "NONE";
+      warehouseId: number;
       fee: number;
     }
   ) {
-    const { returnId, orderNumber, fee } = input;
+    const { returnId, orderNumber, fee, warehouseId } = input;
     if (fee <= 0 || input.payer === "NONE") return { skipped: true as const };
 
     // المستودع يستلم كلفة النقل دائماً
     const warehouseWallet = await tx.wallet.upsert({
-      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
-      create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: fee },
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
+      create: { ownerType: "WAREHOUSE", ownerId: warehouseId, balance: fee },
       update: { balance: { increment: fee } },
     });
     await tx.walletTransactionUnified.create({
@@ -475,11 +476,11 @@ export const WalletService = {
     return { skipped: false as const, payer: "PLATFORM" as const };
   },
   // ═══ رسوم الإرجاع ═══
-  async processReturnFee(tx: any, returnId: number, orderNumber: string) {
+  async processReturnFee(tx: any, returnId: number, orderNumber: string, warehouseId: number) {
     const RETURN_FEE = 15;
     const warehouseWallet = await tx.wallet.upsert({
-      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
-      create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: RETURN_FEE },
+      where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: warehouseId } },
+      create: { ownerType: "WAREHOUSE", ownerId: warehouseId, balance: RETURN_FEE },
       update: { balance: { increment: RETURN_FEE } },
     });
     await tx.walletTransactionUnified.create({
