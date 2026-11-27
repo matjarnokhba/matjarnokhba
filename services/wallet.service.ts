@@ -1,3 +1,4 @@
+import { resolveOrderWarehouseId } from "@/lib/warehouse-resolve";
 import { computeClawback } from "@/lib/return-clawback";
 import { WalletTransactionType } from "@/app/generated/prisma/enums";
 
@@ -362,9 +363,10 @@ export const WalletService = {
       Number(order.shippingCost || 0) - DRIVER_FEE
     );
     if (warehouseProfit > 0) {
+      const whId = await resolveOrderWarehouseId(tx, order.id);
       const warehouseWallet = await tx.wallet.upsert({
-        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID } },
-        create: { ownerType: "WAREHOUSE", ownerId: WAREHOUSE_ID, balance: warehouseProfit },
+        where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: whId } },
+        create: { ownerType: "WAREHOUSE", ownerId: whId, balance: warehouseProfit },
         update: { balance: { increment: warehouseProfit } },
       });
       await tx.walletTransactionUnified.create({
