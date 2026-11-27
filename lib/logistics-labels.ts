@@ -51,6 +51,17 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   LOGISTICS_COMPANY_BRAND_UPDATE: "تعديل هوية الشركة",
   LOGISTICS_COMPANY_EXTERNAL_ACCESS: "تغيير السماح بالمنصات الخارجية",
   LOGISTICS_DRIVER_ASSIGN_COMPANY: "إسناد سائق لشركة",
+  LOGISTICS_PROVIDER_CREATE: "إنشاء شركة توصيل خارجية",
+  LOGISTICS_PROVIDER_UPDATE: "تعديل شركة توصيل خارجية",
+  LOGISTICS_PROVIDER_SET_CREDENTIALS: "حفظ بيانات اتصال الشركة",
+  LOGISTICS_PROVIDER_CLEAR_CREDENTIALS: "مسح بيانات اتصال الشركة",
+  LOGISTICS_PROVIDER_TEST_CONNECTION: "اختبار اتصال",
+  LOGISTICS_PROVIDER_TEST_SHIPMENT: "اختبار إرسال شحنة",
+  LOGISTICS_PROVIDER_STATUS: "تغيير حالة الربط",
+  LOGISTICS_PROVIDER_ROTATE_WEBHOOK: "تدوير سر الـWebhook",
+  LOGISTICS_PROVIDER_SET_MAPPINGS: "تعديل ربط الحالات",
+  LOGISTICS_PROVIDER_APPLY_DEFAULT_MAPPINGS: "تطبيق ربط الحالات الافتراضي",
+  LOGISTICS_PROVIDER_COMPANY_LINK: "ربط شركة بمزوّد توصيل",
 };
 
 export function statusTone(s: string): Tone {

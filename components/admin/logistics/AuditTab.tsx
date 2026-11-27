@@ -12,6 +12,7 @@ const ENTITY_LABEL: Record<string, string> = {
   ClientPlatform: "منصة عميلة",
   CompanyPlatformLink: "ربط منصة",
   DeliveryPerson: "سائق",
+  ShippingProvider: "مزوّد توصيل خارجي",
 };
 
 export default function AuditTab() {
@@ -45,6 +46,7 @@ export default function AuditTab() {
           <option value="ClientPlatform">المنصات العميلة</option>
           <option value="CompanyPlatformLink">ربط المنصات</option>
           <option value="DeliveryPerson">السائقون</option>
+          <option value="ShippingProvider">مزوّدو التوصيل</option>
         </select>
       </div>
       {err && <p className="rounded-lg bg-red-50 p-2 text-sm font-bold text-red-600">{err}</p>}

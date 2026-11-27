@@ -1847,6 +1847,7 @@ model Shipment {
   platform               ClientPlatform?        @relation(fields: [platformId], references: [id], onDelete: SetNull)
 
   @@index([platformId])
+  externalShipments ExternalShipment[]
 }
 
 model ShipmentItem {
@@ -2517,6 +2518,32 @@ model ShippingProvider {
   isActive  Boolean  @default(true)
   config    Json?
   createdAt DateTime @default(now())
+  code               String?                  @unique
+  integrationType    ProviderIntegrationType  @default(MANUAL)
+  status             ProviderStatus           @default(DRAFT)
+  authScheme         ProviderAuthScheme       @default(NONE)
+  baseUrl            String?
+  credentialsEnc     Bytes?
+  credentialsKeys    String[]                 @default([])
+  capabilities       String[]                 @default([])
+  webhookToken       String?                  @unique
+  webhookSecretEnc   Bytes?
+  connectionTestedAt DateTime?
+  connectionTestOk   Boolean                  @default(false)
+  shipmentTestedAt   DateTime?
+  shipmentTestOk     Boolean                  @default(false)
+  activatedAt        DateTime?
+  activatedById      Int?
+  notes              String?
+  createdById        Int?
+  updatedAt          DateTime                 @default(now()) @updatedAt
+  companies          LogisticsCompany[]
+  statusMappings     ProviderStatusMapping[]
+  externalShipments  ExternalShipment[]
+  integrationLogs    IntegrationLog[]
+
+  @@index([status])
+  @@index([integrationType])
 }
 
 // ═══ تسليم أجور السائقين (من المستودع للسائق) ═══
@@ -4477,6 +4504,7 @@ model LogisticsCompany {
   allowExternalPlatforms Boolean               @default(false)
   platformLinks          CompanyPlatformLink[]
   deliveryPersons        DeliveryPerson[]
+  provider               ShippingProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
 }
 
 model Warehouse {
@@ -4734,4 +4762,148 @@ model CompanyPlatformLink {
   @@unique([companyId, platformId])
   @@index([platformId, status])
   @@index([companyId, status])
+}
+
+// ============================================
+// COURIER INTEGRATION (external delivery companies)
+// Credentials are encrypted (AES-256-GCM, derived key); history tables are append-only.
+// ============================================
+
+enum ProviderIntegrationType {
+  API
+  CSV
+  MANUAL
+}
+
+enum ProviderStatus {
+  DRAFT
+  TESTING
+  ACTIVE
+  DISABLED
+}
+
+enum ProviderAuthScheme {
+  NONE
+  BEARER
+  API_KEY_HEADER
+  BASIC
+  QUERY_KEY
+}
+
+enum CanonicalShipmentStatus {
+  PENDING_DISPATCH
+  SUBMITTED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_ATTEMPT
+  RETURNING
+  RETURNED
+  CANCELLED
+  EXCEPTION
+}
+
+enum ExternalSubmitState {
+  NOT_SUBMITTED
+  SUBMITTING
+  SUBMITTED
+  FAILED
+  MANUAL
+}
+
+enum IntegrationDirection {
+  OUTBOUND
+  INBOUND
+}
+
+model ProviderStatusMapping {
+  id              Int                     @id @default(autoincrement())
+  providerId      Int
+  externalStatus  String
+  canonicalStatus CanonicalShipmentStatus
+  isFinal         Boolean                 @default(false)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  provider ShippingProvider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, externalStatus])
+  @@index([providerId])
+}
+
+model ExternalShipment {
+  id             Int                     @id @default(autoincrement())
+  shipmentId     Int
+  providerId     Int
+  companyId      Int?
+  idempotencyKey String                  @unique
+  active         Boolean                 @default(true)
+  externalId     String?
+  trackingNumber String?
+  status         CanonicalShipmentStatus @default(PENDING_DISPATCH)
+  rawStatus      String?
+  submitState    ExternalSubmitState     @default(NOT_SUBMITTED)
+  attempts       Int                     @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
+  payload        Json?
+  response       Json?
+  submittedAt    DateTime?
+  lastEventAt    DateTime?
+  lastEventId    String?
+  finalAt        DateTime?
+  createdById    Int?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  shipment Shipment                @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  provider ShippingProvider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  events   ExternalShipmentEvent[]
+
+  @@unique([providerId, externalId])
+  @@index([shipmentId])
+  @@index([providerId, status])
+  @@index([submitState, nextRetryAt])
+  @@index([trackingNumber])
+}
+
+model ExternalShipmentEvent {
+  id                 Int                      @id @default(autoincrement())
+  externalShipmentId Int
+  providerId         Int
+  eventId            String
+  rawStatus          String
+  canonicalStatus    CanonicalShipmentStatus?
+  occurredAt         DateTime
+  receivedAt         DateTime                 @default(now())
+  source             String
+  applied            Boolean
+  ignoredReason      String?
+  payload            Json?
+
+  externalShipment ExternalShipment @relation(fields: [externalShipmentId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, eventId])
+  @@index([externalShipmentId, occurredAt])
+}
+
+model IntegrationLog {
+  id                 Int                  @id @default(autoincrement())
+  providerId         Int
+  externalShipmentId Int?
+  direction          IntegrationDirection
+  operation          String
+  ok                 Boolean
+  httpStatus         Int?
+  durationMs         Int?
+  request            Json?
+  response           Json?
+  error              String?
+  createdAt          DateTime             @default(now())
+
+  provider ShippingProvider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([providerId, createdAt])
+  @@index([externalShipmentId])
 }
