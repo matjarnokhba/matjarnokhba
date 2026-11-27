@@ -335,7 +335,7 @@ export const LogisticsAdminService = {
   // ───────────── Audit ─────────────
   async listAudit(filters: { entityType?: string; entityId?: number }) {
     const where: Record<string, unknown> = {
-      entityType: filters.entityType ? filters.entityType : { in: ["Warehouse", "LogisticsCompany", "LogisticsMembership", "WarehouseTransfer", "ClientPlatform", "CompanyPlatformLink", "DeliveryPerson", "ShippingProvider"] },
+      entityType: filters.entityType ? filters.entityType : { in: ["Warehouse", "LogisticsCompany", "LogisticsMembership", "WarehouseTransfer", "ClientPlatform", "CompanyPlatformLink", "DeliveryPerson", "ShippingProvider", "ExternalShipment"] },
     };
     if (filters.entityId) where.entityId = filters.entityId;
     const rows = await prisma.operationAuditLog.findMany({ where: where as never, orderBy: { createdAt: "desc" }, take: 200 });
