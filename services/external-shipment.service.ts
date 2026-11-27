@@ -48,6 +48,20 @@ const ESEL = {
   provider: { select: { id: true, code: true, name: true } },
 } as const;
 
+const MIRROR_RANK: Record<string, number> = { READY: 0, ASSIGNED: 1, PICKED_UP: 2, IN_TRANSIT: 3, OUT_FOR_DELIVERY: 4 };
+const MIRROR_TARGET: Record<string, string> = { PICKED_UP: "PICKED_UP", IN_TRANSIT: "IN_TRANSIT", OUT_FOR_DELIVERY: "OUT_FOR_DELIVERY" };
+
+/**
+ * يرحّل مراحل النقل فقط (استلام، في الطريق، خرجت للتوصيل) إلى حالة الشحنة الداخلية، للأمام فقط
+ * وللشحنات بلا سائق داخلي. التسليم والإرجاع لا يُغلقان تلقائياً (يتطلبان تسوية مالية لاحقة).
+ */
+async function mirrorToShipment(tx: any, shipmentId: number, canonical: string): Promise<void> {
+  const target = MIRROR_TARGET[canonical];
+  if (!target) return;
+  const below = Object.keys(MIRROR_RANK).filter((s) => MIRROR_RANK[s] < MIRROR_RANK[target]);
+  await tx.shipment.updateMany({ where: { id: shipmentId, deliveryPersonId: null, status: { in: below } }, data: { status: target } });
+}
+
 export type RecordEventInput = {
   providerId: number;
   externalShipmentId?: number;
@@ -268,7 +282,7 @@ export const ExternalShipmentService = {
       const found = await resolveEs(tx, input);
       if (!found) return { outcome: "NOT_FOUND" };
       await tx.$queryRaw`SELECT "id" FROM "ExternalShipment" WHERE "id" = ${found.id} FOR UPDATE`;
-      const es = await tx.externalShipment.findUnique({ where: { id: found.id }, select: { id: true, providerId: true, status: true, lastEventAt: true, externalId: true } });
+      const es = await tx.externalShipment.findUnique({ where: { id: found.id }, select: { id: true, providerId: true, status: true, lastEventAt: true, externalId: true, shipmentId: true, active: true } });
       const eventId = input.eventId ?? deriveEventId({ providerId: input.providerId, externalId: es.externalId ?? String(es.id), rawStatus: input.rawStatus, occurredAt: input.occurredAt });
       const dup = await tx.externalShipmentEvent.findUnique({ where: { providerId_eventId: { providerId: input.providerId, eventId } }, select: { id: true } });
       if (dup) return { outcome: "DUPLICATE", externalShipmentId: es.id };
@@ -295,6 +309,7 @@ export const ExternalShipmentService = {
             data: { status: canonical as any, rawStatus: input.rawStatus, lastEventAt: input.occurredAt, lastEventId: eventId, ...(isFinalStatus(canonical) ? { finalAt: new Date() } : {}) },
           });
           applied = true;
+          if (es.active) await mirrorToShipment(tx, es.shipmentId, canonical as string);
         }
       }
       const created = await tx.externalShipmentEvent.createMany({
