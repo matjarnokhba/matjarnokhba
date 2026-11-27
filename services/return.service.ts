@@ -2,6 +2,7 @@ import { AccountEnforcementService } from "@/services/account-enforcement.servic
 import { IdentityService } from "@/services/identity.service";
 import { decideReturnShipping, isSellerFault, resolveReturnShippingFee, REASON_TYPES, type ReasonType } from "@/lib/return-policy";
 import { WalletService } from "@/services/wallet.service";
+import { ReturnWarehouseService } from "@/services/return-warehouse.service";
 import { prisma } from "@/lib/prisma";
 import { encrypt } from "@/lib/encryption";
 import { validatePayoutDetails, maskName, maskRib, type PayoutInput } from "@/lib/refund-payout";
@@ -483,7 +484,12 @@ export const ReturnService = {
           policyDefault: typeof feePolicy?.value === "number" ? feePolicy.value : null,
         });
         const pol = decideReturnShipping({ reasonType: ret.reasonType, hasCard: cardId !== null, fee: returnFee });
+        const returnWarehouseId = await ReturnWarehouseService.resolve(tx, {
+          orderId: ret.orderId,
+          orderItemIds: (await tx.returnItem.findMany({ where: { returnId }, select: { orderItemId: true } })).map((x) => x.orderItemId),
+        });
         await WalletService.settleReturnShipping(tx, {
+          warehouseId: returnWarehouseId,
           returnId,
           orderNumber: ret.order.orderNumber,
           sellerId: ret.order.sellerId,
