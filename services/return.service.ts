@@ -694,7 +694,10 @@ export const ReturnService = {
   async getByOrder(orderId: number, userId: number) {
     return prisma.returnRequest.findMany({
       where: { orderId, userId },
-      include: { items: { include: { orderItem: true } } },
+      include: {
+        items: { include: { orderItem: true } },
+        payout: { select: { method: true, status: true, amount: true, reference: true } },
+      },
       orderBy: { requestedAt: "desc" },
     });
   },
@@ -725,6 +728,7 @@ export const ReturnService = {
       where: { id: returnId },
       include: {
         user: { select: { id: true, name: true, email: true } },
+        payout: { select: { id: true, method: true, status: true, amount: true, bankName: true, holderNameMasked: true, ribMasked: true, reference: true } },
         order: true,
         items: {
           include: {
