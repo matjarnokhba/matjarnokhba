@@ -65,6 +65,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   LOGISTICS_EXTERNAL_DISPATCH: "إرسال شحنة لشركة توصيل خارجية",
   LOGISTICS_EXTERNAL_EVENT: "إدخال حالة شحنة خارجية يدوياً",
   LOGISTICS_EXTERNAL_TRACKING: "إدخال تتبع شحنة خارجية",
+  LOGISTICS_PROVIDER_SET_CONFIG: "ضبط إعدادات اتصال API",
 };
 
 export function statusTone(s: string): Tone {

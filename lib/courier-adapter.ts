@@ -1,3 +1,5 @@
+import { createHttpAdapter } from "@/lib/integration-http-adapter";
+
 export const CAPABILITIES = [
   "CREATE_SHIPMENT",
   "GET_SHIPMENT",
@@ -65,6 +67,7 @@ export interface CourierAdapter {
   readonly type: "MANUAL" | "CSV" | "API";
   testConnection(ctx: AdapterContext): Promise<AdapterResult>;
   createShipment(ctx: AdapterContext, payload: ExternalShipmentPayload): Promise<AdapterResult<CreateShipmentData>>;
+  getStatus?(ctx: AdapterContext, ref: { externalId: string | null; trackingNumber: string | null }): Promise<AdapterResult<TrackingData>>;
 }
 
 export function buildTestPayload(): ExternalShipmentPayload {
@@ -99,5 +102,7 @@ export function notImplementedAdapter(type: "CSV" | "API"): CourierAdapter {
 export function getAdapter(integrationType: string): CourierAdapter {
   if (integrationType === "MANUAL") return ManualAdapter;
   if (integrationType === "CSV") return notImplementedAdapter("CSV");
-  return notImplementedAdapter("API");
+  return createHttpAdapter();
 }
+
+export type TrackingData = { rawStatus: string; occurredAt: Date | null; raw?: unknown };
