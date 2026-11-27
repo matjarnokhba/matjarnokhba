@@ -6,6 +6,9 @@ import { SessionService } from "@/services/session.service";
 import { ShipmentQRService } from "@/services/shipment-qr.service";
 import { AssemblyService } from "@/services/assembly.service";
 import { AuditService } from "@/services/audit.service";
+import { ShipmentAssignmentService } from "@/services/shipment-assignment.service";
+import { LogisticsError } from "@/lib/logistics-errors";
+import { logisticsErrorResponse } from "@/lib/logistics-route";
 
 async function requireWarehouse() {
   const current = await SessionService.getCurrent();
@@ -20,6 +23,7 @@ async function requireWarehouse() {
 const schema = z.object({
   allowPartial: z.boolean().default(false),
   notes: z.string().trim().max(500).optional().nullable(),
+  warehouseId: z.number().int().positive().optional(),
 });
 
 export async function POST(
@@ -62,7 +66,7 @@ export async function POST(
       );
     }
 
-    const { allowPartial, notes } = parsed.data;
+    const { allowPartial, notes, warehouseId } = parsed.data;
 
     await prisma.$transaction(async (tx) => {
       await AssemblyService.recompute(tx, assemblyId);
@@ -233,8 +237,11 @@ export async function POST(
       const encrypted = ShipmentQRService.encryptToken(rawToken);
       const preview = ShipmentQRService.preview(rawToken);
 
+      const assign = await ShipmentAssignmentService.resolve(tx, { userId: auth.user.id, warehouseId });
+
       const shipment = await tx.shipment.create({
         data: {
+          ...assign,
           shipmentNumber,
           qrTokenHash: tokenHash,
           qrTokenEncrypted: encrypted,
@@ -317,6 +324,9 @@ export async function POST(
           ordersCount: uniqueOrderIds.length,
           totalCOD,
           isPartial,
+          warehouseId: assign.originWarehouseId,
+          companyId: assign.companyId,
+          platformId: assign.platformId,
         },
         ipAddress: reqInfo.ipAddress,
         userAgent: reqInfo.userAgent,
@@ -335,6 +345,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof LogisticsError) return logisticsErrorResponse(error);
     console.error("Assembly create shipment error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },

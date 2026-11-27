@@ -13,6 +13,7 @@ const createSchema = z.object({
     .min(1, "اختر عنصراً واحداً على الأقل")
     .max(100, "الحد الأقصى 100 عنصر"),
   notes: z.string().trim().max(500).optional().nullable(),
+  warehouseId: z.number().int().positive().optional(),
 });
 
 // ═══════ GET — قائمة الشحنات ═══════
@@ -139,6 +140,7 @@ export async function POST(request: Request) {
       fulfillmentItemIds: data.fulfillmentItemIds,
       createdById: current.user.id,
       notes: data.notes || null,
+      warehouseId: data.warehouseId ?? null,
     });
 
     // ═══ Audit مع معلومات الطلب ═══

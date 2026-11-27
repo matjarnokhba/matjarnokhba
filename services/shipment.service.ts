@@ -4,9 +4,11 @@ import { AuditService } from "@/services/audit.service";
 import { FulfillmentService } from "@/services/fulfillment.service";
 import { ShipmentQRService } from "@/services/shipment-qr.service";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
+import { ShipmentAssignmentService } from "@/services/shipment-assignment.service";
 
 type CreateFromFulfillmentInput = {
   fulfillmentItemIds: number[];
+  warehouseId?: number | null;
   createdById: number;
   notes?: string | null;
 };
@@ -179,8 +181,11 @@ export const ShipmentService = {
       async (tx) => {
         const shipmentNumber = await this.generateShipmentNumber(tx);
 
+        const assign = await ShipmentAssignmentService.resolve(tx, { userId: input.createdById, warehouseId: input.warehouseId });
+
         const newShipment = await tx.shipment.create({
           data: {
+            ...assign,
             shipmentNumber,
             qrTokenHash: tokenHash,
             qrTokenEncrypted: tokenEncrypted,
@@ -252,6 +257,9 @@ export const ShipmentService = {
           newData: {
             shipmentNumber,
             customerId,
+            warehouseId: assign.originWarehouseId,
+            companyId: assign.companyId,
+            platformId: assign.platformId,
             itemsCount: items.length,
             ordersCount: uniqueOrders.size,
             totalCOD,
