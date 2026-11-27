@@ -1,3 +1,4 @@
+import { ActorWarehouse } from "@/services/actor-warehouse.service";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "crypto";
@@ -37,10 +38,12 @@ export async function POST(request: Request) {
     const shortfall = Math.max(0, expectedAmount - actualAmount);
     const handoverToken = crypto.randomUUID();
 
+    const actorWarehouseId = await ActorWarehouse.forUser(current.user.id);
     const handover = await prisma.cashHandover.create({
       data: {
         driverId: parsed.data.driverId,
         warehouseId: current.user.id, // من استلم فعلياً (audit)
+        warehouseRefId: actorWarehouseId,
         amount: actualAmount,
         shortfall,
         handoverToken,
