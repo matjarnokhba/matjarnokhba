@@ -421,6 +421,7 @@ model User {
   deliveryPerson     DeliveryPerson?
   userPermissions    UserPermission[]
   collectionBatches  CollectionBatch[] @relation("CollectionBatchCollector")
+  logisticsMemberships LogisticsMembership[]
   collectionZones    Zone[]            @relation("UserCollectionZone")
   favorites          Favorite[]
   customerShipments  Shipment[]        @relation("CustomerShipments")
@@ -1824,6 +1825,12 @@ model Shipment {
   deliveryZoneId      Int?
   deliveryZone        Zone?                @relation("ShipmentDeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   assemblyItems       AssemblyItem[]
+  originWarehouseId Int?
+  companyId Int?
+  originWarehouse Warehouse? @relation("ShipmentOriginWarehouse", fields: [originWarehouseId], references: [id], onDelete: SetNull)
+  logisticsCompany LogisticsCompany? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  @@index([originWarehouseId])
+  @@index([companyId])
   cashCollectedAt     DateTime?
 
   @@index([status])
@@ -1906,6 +1913,9 @@ model FulfillmentItem {
   warehouseReceipts    WarehouseReceipt[]
   shipmentItems        ShipmentItem[]
   collectionBatchItems CollectionBatchItem[]
+  warehouseRefId Int?
+  warehouse Warehouse? @relation(fields: [warehouseRefId], references: [id], onDelete: SetNull)
+  @@index([warehouseRefId])
 
   @@index([sellerId])
   @@index([status])
@@ -4378,4 +4388,122 @@ model ReturnRefundPayout {
   returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
 
   @@index([status])
+}
+
+// ============================================
+// LOGISTICS FOUNDATION (additive): company / warehouse / scoped membership
+// ============================================
+
+enum LogisticsCompanyKind {
+  INTERNAL
+  EXTERNAL
+}
+
+enum LogisticsCompanyStatus {
+  ACTIVE
+  SUSPENDED
+  DETACHING
+  DETACHED
+}
+
+enum WarehouseStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum LogisticsScope {
+  PLATFORM
+  COMPANY
+  WAREHOUSE
+}
+
+enum LogisticsMembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum LogisticsJobRole {
+  MANAGER
+  RECEIVER
+  SHIPMENT_PREPARER
+  WORKER
+  COLLECTOR
+  TRANSFER_DRIVER
+  DELIVERY_DRIVER
+  RETURNS_HANDLER
+}
+
+model LogisticsCompany {
+  id         Int                    @id @default(autoincrement())
+  code       String                 @unique
+  name       String
+  kind       LogisticsCompanyKind   @default(INTERNAL)
+  status     LogisticsCompanyStatus @default(ACTIVE)
+  headUserId Int?
+  providerId Int? // ShippingProvider (EXTERNAL companies), relation added in the integration phase
+  settings   Json?
+  createdById Int?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  warehouses  Warehouse[]
+  memberships LogisticsMembership[]
+  shipments   Shipment[]
+
+  @@index([status])
+  @@index([kind])
+  @@index([headUserId])
+}
+
+model Warehouse {
+  id            Int             @id @default(autoincrement())
+  code          String          @unique
+  name          String
+  companyId     Int
+  city          String
+  district      String?
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  managerUserId Int?
+  status        WarehouseStatus @default(ACTIVE)
+  capacity      Int?
+  isDefault     Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  company          LogisticsCompany      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  memberships      LogisticsMembership[]
+  fulfillmentItems FulfillmentItem[]
+  shipments        Shipment[]            @relation("ShipmentOriginWarehouse")
+
+  @@index([companyId])
+  @@index([status])
+  @@index([city])
+  @@index([managerUserId])
+}
+
+model LogisticsMembership {
+  id            Int                       @id @default(autoincrement())
+  userId        Int
+  scope         LogisticsScope
+  companyId     Int?
+  warehouseId   Int?
+  jobRoles      LogisticsJobRole[]        @default([])
+  status        LogisticsMembershipStatus @default(ACTIVE)
+  appointedById Int?
+  notes         String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   LogisticsCompany? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  warehouse Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@index([scope])
 }
