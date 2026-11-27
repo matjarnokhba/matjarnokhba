@@ -32,7 +32,7 @@ export default function LogisticsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <h1 className="text-xl font-bold">إدارة اللوجستيك</h1>
-      <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+      <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -42,7 +42,7 @@ export default function LogisticsPage() {
               setTab(t.key);
             }}
             className={
-              "flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold " +
+              "shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold " +
               (tab === t.key ? "bg-white text-[#ff5c00] shadow" : "text-gray-600")
             }
           >
