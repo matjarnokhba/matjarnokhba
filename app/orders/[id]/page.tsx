@@ -1,6 +1,7 @@
 "use client";
 
 import { payerLabelForCustomer } from "@/lib/return-labels";
+import { refundMethodLabel, payoutStatusLabel } from "@/lib/refund-payout-status";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -81,6 +82,8 @@ type ReturnRequest = {
   shippingPayer?: string | null;
   shippingFee?: string | number | null;
   adminNote: string | null;
+  refundMethod?: string | null;
+  payout?: { method: string; status: string; amount: string | number | null; reference: string | null } | null;
   requestedAt: string;
   items: {
     id: number;
@@ -681,7 +684,21 @@ export default function OrderDetailPage() {
                       <div className="mt-1 text-[11px] text-gray-600">
                         {payerLabelForCustomer(ret.shippingPayer, ret.shippingFee)}
                       </div>
-                    )}                    <div className="mt-2 space-y-1">
+                    )}
+                    {ret.refundMethod && (
+                      <div className="mt-1 text-[11px] text-gray-600">
+                        <strong>طريقة الاسترداد:</strong> {refundMethodLabel(ret.refundMethod)}
+                        {ret.payout && ret.status === "COMPLETED" && (
+                          <>
+                            {" — "}
+                            <span className="font-bold">{payoutStatusLabel(ret.payout.status)}</span>
+                            {ret.payout.amount !== null && ` (${Number(ret.payout.amount).toFixed(2)} ${CURRENCY})`}
+                            {ret.payout.reference && ` · المرجع: ${ret.payout.reference}`}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <div className="mt-2 space-y-1">
                       {ret.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between text-[10px] text-gray-500">
                           <span className="truncate">

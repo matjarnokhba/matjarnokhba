@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { refundMethodLabel, payoutStatusLabel } from "@/lib/refund-payout-status";
 import {
   ArrowRight,
   Loader2,
@@ -20,6 +21,17 @@ type ReturnRequest = {
   reason: string;
   adminNote: string | null;
   reasonType?: string;
+  refundMethod?: string | null;
+  payout?: {
+    id: number;
+    method: string;
+    status: string;
+    amount: string | null;
+    bankName: string | null;
+    holderNameMasked: string;
+    ribMasked: string | null;
+    reference: string | null;
+  } | null;
   evidenceUrls?: string[];
   decisionDueAt?: string | null;
   shippingPayer?: string | null;
@@ -254,6 +266,38 @@ export default function AdminReturnDetailPage() {
             <div className="mt-0.5 font-bold">{ret.order.paymentStatus}</div>
           </div>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-xl bg-white p-5 shadow-sm">
+        <h2 className="mb-3 text-sm font-black">طريقة استرداد المبلغ</h2>
+        <div className="text-sm font-bold">{refundMethodLabel(ret.refundMethod ?? "WALLET")}</div>
+        {ret.payout ? (
+          <div className="mt-2 space-y-1 text-xs text-gray-600">
+            {ret.payout.bankName && <div>البنك: {ret.payout.bankName}</div>}
+            <div>الاسم: {ret.payout.holderNameMasked}</div>
+            {ret.payout.ribMasked && <div dir="ltr" className="text-right">RIB: {ret.payout.ribMasked}</div>}
+            {ret.status === "COMPLETED" ? (
+              <>
+                <div>
+                  الحالة: <strong>{payoutStatusLabel(ret.payout.status)}</strong>
+                  {ret.payout.amount !== null && ` — ${Number(ret.payout.amount).toFixed(2)} ${CURRENCY}`}
+                </div>
+                {ret.payout.reference && <div>المرجع: {ret.payout.reference}</div>}
+                <Link href="/admin/refund-payouts" className="inline-block font-bold text-[#ff5c00] underline">
+                  فتح صفحة استرداد المبالغ
+                </Link>
+              </>
+            ) : (
+              <div className="text-gray-500">تُنشأ عملية الاسترداد عند إكمال الإرجاع.</div>
+            )}
+          </div>
+        ) : (
+          ["BANK", "CASH_PLUS", "WAFACASH"].includes(ret.refundMethod ?? "") && (
+            <div className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
+              لا توجد بيانات استرداد محفوظة (طلب قديم) — تواصل مع الزبون للحصول عليها.
+            </div>
+          )
+        )}
       </div>
 
       <div className="mb-4 rounded-xl bg-white p-5 shadow-sm">

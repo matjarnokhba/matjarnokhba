@@ -19,3 +19,20 @@ export function nextPayoutStatus(current: string, action: PayoutAction): PayoutS
   if (action === "complete" && current === "SENT") return "COMPLETED";
   return null;
 }
+
+export const REFUND_METHOD_LABEL: Record<string, string> = {
+  WALLET: "رصيد في المحفظة",
+  COUPON: "قسيمة شراء",
+  BANK: "تحويل بنكي",
+  CASH_PLUS: "Cash Plus",
+  WAFACASH: "Wafacash",
+};
+
+export function refundMethodLabel(m?: string | null): string {
+  if (!m) return "";
+  return REFUND_METHOD_LABEL[m] ?? m;
+}
+
+export function payoutStatusLabel(s: string): string {
+  return (PAYOUT_STATUS_LABEL as Record<string, string>)[s] ?? s;
+}
