@@ -10,16 +10,17 @@ import TransfersTab from "@/components/admin/logistics/TransfersTab";
 import PlatformsTab from "@/components/admin/logistics/PlatformsTab";
 import ProvidersTab from "@/components/admin/logistics/ProvidersTab";
 import ExternalShipmentsTab from "@/components/admin/logistics/ExternalShipmentsTab";
+import GuidePanel from "@/components/admin/logistics/GuidePanel";
 
 type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "providers" | "external" | "audit" | "movements";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "warehouses", label: "المستودعات" },
-  { key: "companies", label: "الشركات" },
+  { key: "companies", label: "شركات داخلية" },
   { key: "staff", label: "الموظفون" },
   { key: "transfers", label: "التحويلات" },
   { key: "platforms", label: "المنصات" },
-  { key: "providers", label: "شركات التوصيل" },
+  { key: "providers", label: "شركات خارجية" },
   { key: "external", label: "الشحنات الخارجية" },
   { key: "audit", label: "سجل التدقيق" },
   { key: "movements", label: "حركة الطرود" },
@@ -50,6 +51,7 @@ export default function LogisticsPage() {
           </button>
         ))}
       </div>
+      <GuidePanel tab={tab} />
       {tab === "warehouses" && (
         <WarehousesTab
           onShowStaff={(id) => {
