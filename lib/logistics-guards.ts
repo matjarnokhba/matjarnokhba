@@ -38,3 +38,16 @@ export async function requireLogisticsAccess(opts?: {
   }
   return { ok: true, userId: current.user.id, role: current.user.role, scope };
 }
+
+/** للأدمن/رئيس المنصة فقط (نطاق platform). */
+export async function requireLogisticsPlatform(): Promise<LogisticsGuardResult> {
+  const r = await requireLogisticsAccess();
+  if (!r.ok) return r;
+  if (!r.scope.platform) {
+    return {
+      ok: false,
+      response: NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 }),
+    };
+  }
+  return r;
+}
