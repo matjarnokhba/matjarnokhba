@@ -99,9 +99,20 @@ export function notImplementedAdapter(type: "CSV" | "API"): CourierAdapter {
   return { type, testConnection: fail, createShipment: fail };
 }
 
+/** ربط CSV/Excel: لا اتصال خارجي؛ تُصدَّر الشحنات كملف وتُستورد الحالات من ملف الشركة. */
+export const CsvAdapter: CourierAdapter = {
+  type: "CSV",
+  async testConnection() {
+    return { ok: true, data: { manual: true } };
+  },
+  async createShipment() {
+    return { ok: true, data: { externalId: null, trackingNumber: null, manual: true } };
+  },
+};
+
 export function getAdapter(integrationType: string): CourierAdapter {
   if (integrationType === "MANUAL") return ManualAdapter;
-  if (integrationType === "CSV") return notImplementedAdapter("CSV");
+  if (integrationType === "CSV") return CsvAdapter;
   return createHttpAdapter();
 }
 

@@ -117,7 +117,7 @@ function NewProviderModal({ onClose, onCreated }: { onClose: () => void; onCreat
           >
             <option value="MANUAL">يدوي (بدون اتصال تقني)</option>
             <option value="API">API (قابل للضبط)</option>
-            <option value="CSV" disabled>CSV/Excel (قريباً)</option>
+            <option value="CSV">CSV/Excel (ملفات)</option>
           </select>
         </FieldRow>
         {type === "API" && (

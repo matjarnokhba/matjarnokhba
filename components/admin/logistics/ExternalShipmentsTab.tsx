@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api, Badge, Modal, FieldRow, inputCls, btnPrimary, btnGhost } from "./ui";
 import { CANONICAL_UI_LABEL, canonicalTone, SUBMIT_STATE_LABEL, submitTone, IGNORED_REASON_LABEL, OPERATION_LABEL } from "@/lib/integration-labels";
+import CsvPanel from "./CsvPanel";
 
 const fmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString("en-GB") : "—");
 
@@ -245,6 +246,7 @@ export default function ExternalShipmentsTab() {
         <button type="submit" disabled={busy || !shipId || !provId} className={btnPrimary + " w-full"}>{busy ? "..." : "إرسال"}</button>
         <p className="text-xs text-gray-500">الشحنة يجب أن تكون جاهزة وبلا سائق داخلي. إعادة الإرسال لا تُنشئ نسخة ثانية.</p>
       </form>
+      <CsvPanel providers={providers} onDone={load} />
       {msg && <p className="rounded-lg bg-green-50 p-2 text-sm text-green-700">{msg}</p>}
       {err && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{err}</p>}
 
