@@ -305,7 +305,7 @@ async function main() {
       orderItemId = o.items[0].id;
 
       const sh = await prisma.shipment.create({
-        data: {
+        data: { ...(await (async () => { const w = await prisma.warehouse.findFirstOrThrow({ orderBy: { id: "asc" } }); const p = await prisma.clientPlatform.findFirstOrThrow({ where: { code: "NOKHBA" } }); return { originWarehouseId: w.id, companyId: w.companyId, platformId: p.id }; })()),
           shipmentNumber: `SH-${prefix}`,
           status: "PARTIALLY_DELIVERED",
           qrTokenHash: crypto.randomBytes(32).toString("hex"),
