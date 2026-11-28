@@ -1,6 +1,8 @@
 export type Tone = "green" | "yellow" | "red" | "gray" | "blue";
 
 export const COMPANY_STATUS_LABEL: Record<string, string> = {
+  PENDING: "قيد المراجعة",
+  REJECTED: "مرفوضة",
   ACTIVE: "نشطة",
   SUSPENDED: "موقوفة",
   DETACHING: "قيد الفصل",

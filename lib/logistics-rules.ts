@@ -1,4 +1,6 @@
 export const COMPANY_TRANSITIONS: Record<string, string[]> = {
+  PENDING: [],
+  REJECTED: [],
   ACTIVE: ["SUSPENDED", "DETACHING"],
   SUSPENDED: ["ACTIVE", "DETACHING"],
   DETACHING: ["DETACHED", "ACTIVE"],
