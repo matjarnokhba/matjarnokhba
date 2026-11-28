@@ -1,4 +1,8 @@
 import { LogisticsScopeService } from "@/services/logistics-scope.service";
+import { LogisticsError } from "@/lib/logistics-errors";
+import { logisticsErrorResponse } from "@/lib/logistics-route";
+import { resolveActorWarehouseId } from "@/lib/actor-warehouse";
+import { hasAnyLogisticsAccess } from "@/lib/logistics-scope";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SessionService } from "@/services/session.service";
@@ -6,9 +10,10 @@ import { SessionService } from "@/services/session.service";
 export async function GET(request: Request) {
   try {
     const current = await SessionService.getCurrent();
+    const gateScope = current ? await LogisticsScopeService.forUser(current.user.id, current.user.role) : null;
     if (
       !current ||
-      !["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(current.user.role)
+      !gateScope || !hasAnyLogisticsAccess(gateScope)
     ) {
       return NextResponse.json(
         { success: false, message: "غير مصرح" },
@@ -17,12 +22,13 @@ export async function GET(request: Request) {
     }
 
     const scope = await LogisticsScopeService.forUser(current.user.id, current.user.role);
-    const wantedWh = Number(new URL(request.url).searchParams.get("warehouseId")) || (scope.platform ? 1 : scope.warehouseIds[0]) || 1;
+    const wantedWh = resolveActorWarehouseId(scope, Number(new URL(request.url).searchParams.get("warehouseId")) || null);
     if (!scope.platform && !scope.warehouseIds.includes(wantedWh)) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
     const whRow = await prisma.warehouse.findUnique({ where: { id: wantedWh }, select: { companyId: true } });
-    const companyDrivers = await prisma.deliveryPerson.findMany({ where: { companyId: whRow?.companyId ?? 1 }, select: { id: true } });
+    if (!whRow) return NextResponse.json({ success: false, message: "المستودع غير موجود" }, { status: 404 });
+    const companyDrivers = await prisma.deliveryPerson.findMany({ where: { companyId: whRow.companyId }, select: { id: true } });
     const companyDriverIds = companyDrivers.map((d) => d.id);
     const wallet = await prisma.wallet.findUnique({
       where: { ownerType_ownerId: { ownerType: "WAREHOUSE", ownerId: wantedWh } },
@@ -53,6 +59,7 @@ export async function GET(request: Request) {
       transactions: wallet?.transactions || [],
     });
   } catch (error) {
+    if (error instanceof LogisticsError) return logisticsErrorResponse(error);
     console.error("Warehouse wallet GET error:", error);
     return NextResponse.json(
       { success: false, message: "حدث خطأ" },
