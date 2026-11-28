@@ -2307,6 +2307,7 @@ model City {
   @@index([name])
   @@index([isActive])
   @@index([slug])
+  companyCoverage CompanyCityCoverage[]
 }
 
 model District {
@@ -4505,6 +4506,9 @@ model LogisticsCompany {
   platformLinks          CompanyPlatformLink[]
   deliveryPersons        DeliveryPerson[]
   provider               ShippingProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  routingPrimary  PlatformRoutingConfig[] @relation("RoutingPrimary")
+  routingFallback PlatformRoutingConfig[] @relation("RoutingFallback")
+  cityCoverage    CompanyCityCoverage[]
 }
 
 model Warehouse {
@@ -4737,6 +4741,7 @@ model ClientPlatform {
 
   @@index([status])
   @@index([kind])
+  routingConfig PlatformRoutingConfig?
 }
 
 model CompanyPlatformLink {
@@ -4953,4 +4958,42 @@ model ExternalCourierSettlement {
   createdAt       DateTime @default(now())
 
   @@index([providerId, createdAt])
+}
+
+enum RoutingMode {
+  MANUAL
+  AUTO
+  BY_CITY
+}
+
+model PlatformRoutingConfig {
+  id                Int         @id @default(autoincrement())
+  platformId        Int         @unique
+  mode              RoutingMode @default(MANUAL)
+  primaryCompanyId  Int?
+  fallbackCompanyId Int?
+  updatedById       Int?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  platform        ClientPlatform    @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  primaryCompany  LogisticsCompany? @relation("RoutingPrimary", fields: [primaryCompanyId], references: [id], onDelete: Restrict)
+  fallbackCompany LogisticsCompany? @relation("RoutingFallback", fields: [fallbackCompanyId], references: [id], onDelete: Restrict)
+
+  @@index([primaryCompanyId])
+  @@index([fallbackCompanyId])
+}
+
+model CompanyCityCoverage {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  cityId      Int
+  createdById Int?
+  createdAt   DateTime @default(now())
+
+  company LogisticsCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  city    City             @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, cityId])
+  @@index([cityId])
 }
