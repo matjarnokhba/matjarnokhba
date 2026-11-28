@@ -9,12 +9,13 @@ import MovementsTab from "@/components/admin/logistics/MovementsTab";
 import TransfersTab from "@/components/admin/logistics/TransfersTab";
 import PlatformsTab from "@/components/admin/logistics/PlatformsTab";
 import RoutingTab from "@/components/admin/logistics/RoutingTab";
+import ApplicationsTab from "@/components/admin/logistics/ApplicationsTab";
 import ProvidersTab from "@/components/admin/logistics/ProvidersTab";
 import ExternalShipmentsTab from "@/components/admin/logistics/ExternalShipmentsTab";
 import SettlementsTab from "@/components/admin/logistics/SettlementsTab";
 import GuidePanel from "@/components/admin/logistics/GuidePanel";
 
-type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "providers" | "external" | "settlements" | "audit" | "movements" | "routing";
+type Tab = "warehouses" | "companies" | "staff" | "transfers" | "platforms" | "providers" | "external" | "settlements" | "audit" | "movements" | "routing" | "applications";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "warehouses", label: "المستودعات" },
@@ -23,6 +24,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "transfers", label: "التحويلات" },
   { key: "platforms", label: "المنصات" },
   { key: "routing", label: "التوزيع" },
+  { key: "applications", label: "طلبات الشركات" },
   { key: "providers", label: "شركات خارجية" },
   { key: "external", label: "الشحنات الخارجية" },
   { key: "settlements", label: "التسويات" },
@@ -70,6 +72,7 @@ export default function LogisticsPage() {
       {tab === "transfers" && <TransfersTab />}
       {tab === "platforms" && <PlatformsTab />}
       {tab === "routing" && <RoutingTab />}
+      {tab === "applications" && <ApplicationsTab />}
       {tab === "providers" && <ProvidersTab />}
       {tab === "external" && <ExternalShipmentsTab />}
       {tab === "settlements" && <SettlementsTab />}
