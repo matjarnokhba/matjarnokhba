@@ -1,4 +1,4 @@
-import { ActorWarehouse } from "@/services/actor-warehouse.service";
+import { resolveBatchWarehouseId } from "@/lib/batch-warehouse";
 import { prisma } from "@/lib/prisma";
 import { ShipmentQRService } from "./shipment-qr.service";
 
@@ -136,7 +136,7 @@ export const SellerReturnService = {
           batchNumber,
           sellerId,
           warehouseId: warehouseUserId,
-          warehouseRefId: await ActorWarehouse.forUser(warehouseUserId),
+          warehouseRefId: await resolveBatchWarehouseId(prisma, pendingItems.map((i) => i.id), warehouseUserId),
           status: "PENDING",
           qrTokenHash: hash,
           qrTokenEnc: encrypted,
