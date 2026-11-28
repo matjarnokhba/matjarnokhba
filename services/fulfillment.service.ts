@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { FulfillmentStatus } from "@/app/generated/prisma/enums";
+import { ShipmentDistributor } from "@/services/shipment-distributor.service";
 
 const DEFAULT_PREP_DEADLINE_MINUTES = 60;
 
@@ -57,6 +58,9 @@ export const FulfillmentService = {
 
     let createdCount = 0;
 
+    // M1.2 — الموزّع يحدد مستودع الأصناف حسب إعداد المنصة. null = السلوك الحالي (لا يمنع الطلب أبداً)
+    const distribution = await ShipmentDistributor.resolve(tx, { shippingAddressId: order.shippingAddressId, snapshot: order.shippingAddressSnapshot }).catch(() => null);
+
     for (const item of order.items) {
       const sellerId =
         item.sellerId ?? item.product?.sellerId ?? order.seller?.id;
@@ -81,6 +85,7 @@ export const FulfillmentService = {
           quantity: item.quantity,
           status: "PENDING",
           deadline,
+          ...(distribution ? { warehouseRefId: distribution.warehouseId } : {}),
         },
       });
 
