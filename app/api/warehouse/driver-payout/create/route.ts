@@ -1,4 +1,8 @@
 import { ActorWarehouse } from "@/services/actor-warehouse.service";
+import { LogisticsError } from "@/lib/logistics-errors";
+import { logisticsErrorResponse } from "@/lib/logistics-route";
+import { assertDriverWarehouseMatch } from "@/lib/driver-warehouse";
+import { hasAnyLogisticsAccess } from "@/lib/logistics-scope";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "crypto";
@@ -11,12 +15,14 @@ const schema = z.object({
   driverId: z.number().int().positive(),
   amount: z.number().positive(),
   method: z.enum(["CASH", "BANK"]),
+  warehouseId: z.number().int().positive().optional(),
 });
 
 export async function POST(request: Request) {
   try {
     const current = await SessionService.getCurrent();
-    if (!current || !["WAREHOUSE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(current.user.role)) {
+    const gateScope = current ? await LogisticsScopeService.forUser(current.user.id, current.user.role) : null;
+    if (!current || !gateScope || !hasAnyLogisticsAccess(gateScope)) {
       return NextResponse.json({ success: false, message: "غير مصرح" }, { status: 403 });
     }
 
@@ -47,7 +53,8 @@ export async function POST(request: Request) {
 
     const payoutToken = crypto.randomUUID();
 
-    const actorWarehouseId = await ActorWarehouse.forUser(current.user.id);
+    const actorWarehouseId = await ActorWarehouse.forUser(current.user.id, parsed.data.warehouseId);
+    await assertDriverWarehouseMatch(prisma, parsed.data.driverId, actorWarehouseId);
     const payout = await prisma.driverPayout.create({
       data: {
         driverId: parsed.data.driverId,
@@ -62,6 +69,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, payoutId: payout.id, qrToken: payoutToken });
   } catch (error) {
+    if (error instanceof LogisticsError) return logisticsErrorResponse(error);
     console.error("Driver payout create error:", error);
     return NextResponse.json({ success: false, message: "حدث خطأ" }, { status: 500 });
   }
